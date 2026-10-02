@@ -1,0 +1,64 @@
+import assert from 'node:assert/strict';
+import {verifyNativeMacroVariables} from './verify-native-macro-variables.mjs';
+import {verifyExtensionMacroLifecycle} from './verify-extension-macro-lifecycle.mjs';
+import {verifyCharacterMacroPhases} from './verify-character-macro-phases.mjs';
+
+export async function verifyPluginMacroEngine(window, service, {reload} = {}) {
+  const evaluate = code => window.webContents.executeJavaScript(code);
+  const result = await evaluate(`(async()=>{
+    const host=await import('/plugin-runtime/desktop-host.js');await host.start();
+    const core=await import('/script.js'),power=await import('/scripts/power-user.js'),vars=await import('/scripts/variables.js');
+    const {MacroRegistry}=await import('/scripts/macros/engine/MacroRegistry.js');
+    const {macros}=await import('/scripts/macros/macro-system.js');
+    const {MacroEnvBuilder,env_provider_order}=await import('/scripts/macros/engine/MacroEnvBuilder.js');
+    const sameSingletons=macros.registry===MacroRegistry&&macros.envBuilder===MacroEnvBuilder;
+    let providerActive=true;const providerOrder=[];
+    MacroEnvBuilder.registerProvider((env,ctx)=>{if(providerActive&&ctx.content.includes('publicEnvFixture')){providerOrder.push('late');env.extra.publicFixture='ready';}},env_provider_order.LATE);
+    MacroEnvBuilder.registerProvider((env,ctx)=>{if(providerActive&&ctx.content.includes('publicEnvFixture'))providerOrder.push('early');},env_provider_order.EARLY);
+    macros.register('publicEnvFixture',{handler:({env})=>env.names.char+'/'+env.extra.publicFixture+'/'+env.dynamicMacros.maxresponse});
+    const previous=power.power_user.experimental_macro_engine;
+    power.power_user.experimental_macro_engine=false;
+    let postCalls=0;
+    const bridged=core.substituteParams('A{{publicEnvFixture}}B',{name2Override:'Override',dynamicMacros:{maxResponse:96},postProcessFn:value=>{postCalls++;return '['+value+']';}});
+    providerActive=false;MacroRegistry.unregisterMacro('publicEnvFixture');
+    power.power_user.experimental_macro_engine=true;await core.saveSettings();
+    let calls=0;
+    MacroRegistry.registerMacro('engineFixture',{unnamedArgs:2,handler:({unnamedArgs})=>{calls++;return unnamedArgs.join('/');}});
+    const name=core.name2;
+    vars.setLocalVariable('engineCounter',4);
+    const nested=core.substituteParams('{{engineFixture::{{reverse::{{char}}}}::{{maxResponse}}}}');
+    const lazy=core.substituteParams('{{if false}}{{incvar::engineCounter}}{{else}}{{incvar::engineCounter}}{{/if}}');
+    const shorthand=core.substituteParams('{{.engineCounter+=2}}{{.engineCounter}}');
+    await (await import('/plugin-runtime/chat.js')).flushChatSaves();
+    const template='ENGINE_NATIVE {{if {{getvar::engineCounter}}}}{{reverse::{{char}}}}/{{maxResponse}}{{else}}wrong{{/if}}';
+    const browser=core.substituteParams(template);
+    const response=await fetch('/api/conversations/'+core.getCurrentChatId()+'/prompt-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({extensionPrompts:[{key:'engine-parity',value:template,position:1,depth:0,role:0,scan:false}]})});
+    if(!response.ok)throw new Error(await response.text());
+    const preview=await response.json();
+    const answer={sameSingletons,bridged,postCalls,providerOrder,previous:previous??null,name,nested,lazy,shorthand,calls,browser,preview,story:core.getCurrentChatId(),counter:vars.getLocalVariable('engineCounter')};
+    MacroRegistry.unregisterMacro('engineFixture');return answer;
+  })()`);
+  assert.equal(result.sameSingletons,true);assert.equal(result.bridged,'A[Override/ready/96]B');
+  assert.equal(result.postCalls,1);assert.deepEqual(result.providerOrder,['early','late']);
+  assert.equal(result.calls,1);assert.equal(result.lazy,'5');assert.equal(result.counter,7);
+  assert(result.nested.startsWith(Array.from(result.name).reverse().join('')+'/'));
+  assert(result.preview.messages.some(message=>message.content.includes(result.browser)));
+  const stored=(await service.inject({method:'GET',url:'/api/conversations/'+result.story})).json();
+  assert.equal(stored.chatMetadata.variables.engineCounter,7);
+  const characterFields=await verifyCharacterMacroPhases(window,service);
+  const nativeVariables=await verifyNativeMacroVariables(window,service);
+  const extensionLifecycle=await verifyExtensionMacroLifecycle(window,service);
+  if(reload)await reload();
+  else await new Promise(resolve=>{window.webContents.once('did-finish-load',resolve);window.webContents.reload();});
+  const reloaded=await evaluate(`(async()=>{
+    await (await import('/plugin-runtime/desktop-host.js')).start();
+    const core=await import('/script.js'),power=await import('/scripts/power-user.js'),vars=await import('/scripts/variables.js');
+    const {MacroRegistry}=await import('/scripts/macros/engine/MacroRegistry.js');
+    const result={nativeLocal:vars.getLocalVariable('engineNativeLocal'),nativeGlobal:vars.getGlobalVariable('engineNativeGlobal'),enabled:power.power_user.experimental_macro_engine,parsed:core.substituteParams('{{reverse::abc}}'),callbackRetained:MacroRegistry.hasMacro('engineFixture')};
+    power.power_user.experimental_macro_engine=${JSON.stringify(result.previous)};
+    vars.deleteLocalVariable('engineCounter');vars.deleteLocalVariable('engineNativeLocal');vars.deleteGlobalVariable('engineNativeGlobal');await core.saveSettings();await (await import('/plugin-runtime/chat.js')).flushChatSaves();
+    return result;
+  })()`);
+  assert.deepEqual(reloaded,{nativeLocal:1,nativeGlobal:1,enabled:true,parsed:'cba',callbackRetained:false});
+  return {passed:true,characterFields,nativeVariables,extensionLifecycle,stages:['public-macro-entrypoints-share-singletons-and-ordered-live-providers','legacy-bridge-preserves-call-overrides-and-postprocesses-once','typed-nested-extension-macro-executes-once','lazy-conditional-and-shorthand-persist-real-story-variable','native-preview-and-browser-share-parser-and-budget-values','native-macro-commits-survive-browser-saves-and-reload','engine-selection-survives-reload-without-serializing-callbacks']};
+}

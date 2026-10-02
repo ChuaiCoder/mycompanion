@@ -1,0 +1,76 @@
+import { useEffect, useState } from "react";
+
+import type { ConversationDetail, ConversationSummary } from "@mycompanion/shared";
+
+import { ApiRequestError, createConversation, fetchConversation } from "../api";
+import type { WorkspaceView } from "./useExtensionResume";
+
+// 故事会话：创建/打开与当前激活会话，和角色选中共用 navigationRevision 防竞态。
+export function useConversations(deps: {
+  navigationRevision: { current: number };
+  resumeConversationId: string | undefined;
+  selectedCharacterId: string | undefined;
+  setWorkspaceView: (view: WorkspaceView) => void;
+  setRuntimeError: (message: string | null) => void;
+}) {
+  const {
+    navigationRevision,
+    resumeConversationId,
+    selectedCharacterId,
+    setWorkspaceView,
+    setRuntimeError,
+  } = deps;
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
+
+  useEffect(() => {
+    if (!resumeConversationId) return;
+    const controller = new AbortController();
+    const revision = navigationRevision.current;
+    const current = () => !controller.signal.aborted && revision === navigationRevision.current;
+    void fetchConversation(resumeConversationId, controller.signal)
+      .then(conversation => { if (current()) setActiveConversation(conversation); })
+      .catch(error => { if (current() && error?.name !== "AbortError") setRuntimeError("无法恢复之前的故事。"); });
+    return () => controller.abort();
+    // 仅在挂载时执行一次：resumeConversationId 来自挂载快照。
+  }, []);
+
+  const handleStartConversation = async (): Promise<void> => {
+    if (!selectedCharacterId) return;
+    const revision = ++navigationRevision.current;
+    setRuntimeError(null);
+    try {
+      const conversation = await createConversation(selectedCharacterId);
+      if (revision !== navigationRevision.current) return;
+      setActiveConversation(conversation);
+      setConversations((current) => [conversation, ...current]);
+      setWorkspaceView("chat");
+    } catch (error) {
+      if (revision !== navigationRevision.current) return;
+      setRuntimeError(error instanceof ApiRequestError ? error.message : "无法创建故事。");
+    }
+  };
+
+  const handleOpenConversation = async (id: string): Promise<void> => {
+    const revision = ++navigationRevision.current;
+    setRuntimeError(null);
+    try {
+      const conversation = await fetchConversation(id);
+      if (revision !== navigationRevision.current) return;
+      setActiveConversation(conversation);
+      setWorkspaceView("chat");
+    } catch (error) {
+      if (revision !== navigationRevision.current) return;
+      setRuntimeError(error instanceof ApiRequestError ? error.message : "无法打开故事。");
+    }
+  };
+
+  return {
+    conversations,
+    setConversations,
+    activeConversation,
+    setActiveConversation,
+    handleStartConversation,
+    handleOpenConversation,
+  };
+}

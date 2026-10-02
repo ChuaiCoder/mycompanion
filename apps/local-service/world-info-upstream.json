@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/SillyTavern/SillyTavern",
+  "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "license": "AGPL-3.0-only",
+  "files": [
+    {
+      "path": "src/world-info-upstream-runtime.ts",
+      "upstreamPath": "public/scripts/world-info.js",
+      "upstreamSha256": "111c7f47945839e75b021e09bdbb112a54f0a9b7857d2b95435f573efc7cd9a5",
+      "adaptedSha256": "d49bb5f4237d7222135b2ec8c2cb0a6dbd410243ae0f2e409a8cfb892df6fa6b",
+      "components": [
+        "WorldInfoBuffer",
+        "WorldInfoTimedEffects",
+        "filterGroupsByScoring",
+        "filterGroupsByTimedEffects",
+        "filterByInclusionGroups",
+        "parseDecorators",
+        "checkWorldInfo (scan phase only)"
+      ],
+      "adaptation": "Invocation-local dependencies and metadata; synchronous native tokenizer/macro adapter; injection text already prepared; presentation/regex is a separate existing native stage. Weighted/probability draws use the request session. An idempotent removeEntry repairs splice(-1) deletion for overlapping groups. At zero chat depth, explicit extension scan injections remain eligible while chat/character/recursive text stay excluded. Scanner selection/state transitions/timer algorithms otherwise retained. Async extension scan listeners are not part of this synchronous native tranche."
+    },
+    {
+      "upstreamPath": "public/scripts/utils.js",
+      "upstreamSha256": "2a2cfe240d5a84ce2e09ba053db6c0c71473b6406173f614f3521d89f50ada61",
+      "components": [
+        "getStringHash",
+        "escapeRegex"
+      ],
+      "attribution": "cyrb53, bryc 2018, Public domain (or MIT); attribution preserved in the generated source. escapeRegex remains under the upstream AGPL-3.0-only license."
+    }
+  ]
+}

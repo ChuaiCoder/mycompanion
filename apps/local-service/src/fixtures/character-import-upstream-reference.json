@@ -1,0 +1,274 @@
+{
+  "meta": {
+    "repository": "https://github.com/SillyTavern/SillyTavern",
+    "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+    "license": "AGPL-3.0-only",
+    "oracle": "scripts/upstream-oracles/character-import.mjs",
+    "sourceHashes": {
+      "src/endpoints/characters.js": "3235555529e9ff17ecc2ebe9168b0af77fe6ef5947f3d1f7de3df6d5f2567d89",
+      "src/byaf.js": "dc056d1b7f9d616e08b8b49e3db1150cd824665bd1e041ed79ef86ec417765dc"
+    },
+    "hostStubs": [
+      "File read/write and avatar storage; no copied application server.",
+      "Filesystem-safe test names and deterministic date label."
+    ],
+    "intentionalDifferences": [
+      "Preserve foreign fields discarded by legacy/YAML upstream import.",
+      "Keep display names; UUID storage replaces filename sanitization.",
+      "Preserve explicit legacy advanced fields; upstream V1 import discards them.",
+      "BYAF ISO dates remain valid; AI-only histories import instead of upstream TypeError.",
+      "BYAF card/assets/scenarios use one SQLite transaction; original archive JSON remains byte-identical."
+    ],
+    "knownUpstreamAiOnlyError": "TypeError: Cannot read properties of undefined (reading 'createdAt')"
+  },
+  "cases": [
+    {
+      "name": "v1",
+      "input": {
+        "name": "Legacy Cartographer",
+        "description": "A keeper",
+        "personality": "Quiet",
+        "scenario": "Harbor",
+        "first_mes": "Hello",
+        "mes_example": "<START>\nKeeper: Hi",
+        "creator_notes": "Notes",
+        "tags": "map, harbor",
+        "creator": "Fixture",
+        "foreign": {
+          "retained": true
+        }
+      },
+      "expectedCore": {
+        "name": "Legacy Cartographer",
+        "description": "A keeper",
+        "personality": "Quiet",
+        "scenario": "Harbor",
+        "first_mes": "Hello",
+        "mes_example": "<START>\nKeeper: Hi",
+        "creator_notes": "Notes",
+        "tags": [
+          "map",
+          "harbor"
+        ],
+        "creator": "Fixture"
+      }
+    },
+    {
+      "name": "v1-missing",
+      "input": {
+        "name": "Minimal"
+      },
+      "expectedCore": {
+        "name": "Minimal",
+        "description": "",
+        "personality": "",
+        "scenario": "",
+        "first_mes": "",
+        "mes_example": "",
+        "creator_notes": "",
+        "tags": [],
+        "creator": ""
+      }
+    },
+    {
+      "name": "pygmalion",
+      "input": {
+        "char_name": "Pygmalion",
+        "char_persona": "A guide",
+        "world_scenario": "Port",
+        "char_greeting": "Welcome",
+        "example_dialogue": "User: Hi",
+        "tags": [
+          "legacy"
+        ],
+        "creator": "Fixture",
+        "foreign": {
+          "retained": true
+        }
+      },
+      "expectedCore": {
+        "name": "Pygmalion",
+        "description": "A guide",
+        "personality": "",
+        "scenario": "Port",
+        "first_mes": "Welcome",
+        "mes_example": "User: Hi",
+        "creator_notes": "",
+        "tags": [
+          "legacy"
+        ],
+        "creator": "Fixture"
+      }
+    },
+    {
+      "name": "yaml",
+      "input": "name: YAML Guide\ncontext: A harbor guide\ngreeting: Welcome\nforeign:\n  retained: true\n",
+      "expectedCore": {
+        "name": "YAML Guide",
+        "description": "A harbor guide",
+        "personality": "",
+        "scenario": "",
+        "first_mes": "Welcome",
+        "mes_example": "",
+        "creator_notes": "",
+        "tags": [],
+        "creator": ""
+      }
+    },
+    {
+      "name": "byaf-card",
+      "input": {
+        "manifest": {
+          "author": {
+            "name": "Fixture",
+            "backyardURL": "https://example.com/author"
+          }
+        },
+        "character": {
+          "name": "BYAF Guide",
+          "persona": "{character} remembers {user}",
+          "displayName": "The Guide",
+          "loreItems": [
+            {
+              "key": "port, harbor",
+              "value": "Home of {character}"
+            }
+          ]
+        },
+        "scenarios": [
+          {
+            "narrative": "Harbor {character}",
+            "formattingInstructions": "Become {character}",
+            "firstMessages": [
+              {
+                "text": "Greeting"
+              }
+            ],
+            "exampleMessages": [
+              {
+                "text": "#{character}: Hi"
+              }
+            ],
+            "messages": [
+              {
+                "type": "human",
+                "createdAt": "1749816000000",
+                "text": "Where?"
+              },
+              {
+                "type": "ai",
+                "outputs": [
+                  {
+                    "createdAt": "1749816000000",
+                    "activeTimestamp": "2025-06-13T12:00:00.000Z",
+                    "text": "Old"
+                  },
+                  {
+                    "createdAt": "1749816000000",
+                    "activeTimestamp": "2025-06-13T12:01:00.000Z",
+                    "text": "New"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "firstMessages": [
+              {
+                "text": "Alternative"
+              }
+            ]
+          }
+        ]
+      },
+      "expectedCore": {
+        "name": "BYAF Guide",
+        "description": "{{char}} remembers {{user}}",
+        "personality": "",
+        "scenario": "Harbor {{char}}",
+        "first_mes": "Greeting",
+        "mes_example": "<START>\n{{char}}: Hi",
+        "creator_notes": "https://example.com/author",
+        "tags": [],
+        "creator": "Fixture"
+      },
+      "alternateGreetings": [
+        "Alternative"
+      ],
+      "characterBook": {
+        "entries": [
+          {
+            "keys": [
+              "port",
+              "harbor"
+            ],
+            "content": "Home of {{char}}",
+            "extensions": {},
+            "enabled": true,
+            "insertion_order": 0
+          }
+        ],
+        "extensions": {}
+      },
+      "systemPrompt": "Become {{char}}"
+    },
+    {
+      "name": "byaf-chat",
+      "input": {
+        "narrative": "Harbor {character}",
+        "formattingInstructions": "Become {character}",
+        "firstMessages": [
+          {
+            "text": "Greeting"
+          }
+        ],
+        "exampleMessages": [
+          {
+            "text": "#{character}: Hi"
+          }
+        ],
+        "messages": [
+          {
+            "type": "human",
+            "createdAt": "1749816000000",
+            "text": "Where?"
+          },
+          {
+            "type": "ai",
+            "outputs": [
+              {
+                "createdAt": "1749816000000",
+                "activeTimestamp": "2025-06-13T12:00:00.000Z",
+                "text": "Old"
+              },
+              {
+                "createdAt": "1749816000000",
+                "activeTimestamp": "2025-06-13T12:01:00.000Z",
+                "text": "New"
+              }
+            ]
+          }
+        ]
+      },
+      "expectedMessages": [
+        {
+          "role": "assistant",
+          "content": "Greeting"
+        },
+        {
+          "role": "user",
+          "content": "Where?"
+        },
+        {
+          "role": "assistant",
+          "content": "New",
+          "swipes": [
+            "Old",
+            "New"
+          ],
+          "swipeId": 1
+        }
+      ]
+    }
+  ]
+}

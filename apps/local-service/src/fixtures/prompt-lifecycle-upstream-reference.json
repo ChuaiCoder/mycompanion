@@ -1,0 +1,166 @@
+{
+  "upstreamCommit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "oracle": "scripts/upstream-oracles/prompt-lifecycle-upstream-oracle-20261002.mjs",
+  "runs": [
+    {
+      "mode": "public-single",
+      "experimental": false,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=9/1"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=1/1"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "scanned": 1,
+        "assembled": 11
+      }
+    },
+    {
+      "mode": "public-readonly",
+      "experimental": false,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=7/"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "assembled": 9
+      }
+    },
+    {
+      "mode": "extension-residual",
+      "experimental": false,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "SECOND"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "inner": "SECOND"
+      }
+    },
+    {
+      "mode": "public-single",
+      "experimental": true,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=1/1"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=1/1"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "scanned": 1,
+        "assembled": 1
+      }
+    },
+    {
+      "mode": "public-readonly",
+      "experimental": true,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=1/"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "assembled": 1
+      }
+    },
+    {
+      "mode": "extension-residual",
+      "experimental": true,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "SECOND"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "inner": "SECOND"
+      }
+    }
+  ]
+}

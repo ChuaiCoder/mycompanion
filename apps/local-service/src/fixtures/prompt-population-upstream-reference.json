@@ -1,0 +1,719 @@
+{
+  "upstreamCommit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "oracle": "scripts/upstream-oracles/prompt-population-upstream-oracle-20261002.mjs",
+  "sources": {
+    "script.js": {
+      "sha256": "955c603d0bad84bac5a716f0818d85c2543e44d4c43878e0d63ef1e55ca91855",
+      "declarations": [
+        {
+          "name": "getExtensionPrompt",
+          "line": 3301,
+          "sha256": "4fcd870803e5084e1339fd0f7c7bce71b9bd7c4c07fc940bffe49ef1e0061148"
+        },
+        {
+          "name": "getExtensionPromptMaxDepth",
+          "line": 3281,
+          "sha256": "49cc91d94680a7b169adcd990b2c89935ff0d42c24ad2726477a52dbc2e0ee41"
+        }
+      ]
+    },
+    "scripts/variables.js": {
+      "sha256": "92e1bfa793e6072c2daeecdbb6d7429faf990e251bfc5f8d97c0ba7088a1282a",
+      "declarations": [
+        {
+          "name": "getLocalVariable",
+          "line": 22,
+          "sha256": "ef3788eb9a270a96cddd3487f114369d3c7a3752123410b5e54c0c291b9ec488"
+        },
+        {
+          "name": "setLocalVariable",
+          "line": 48,
+          "sha256": "effc1c8c595ca967de7a1910c06b1ffa65029c02308a9c3dd7eff6c7cef5b034"
+        },
+        {
+          "name": "getGlobalVariable",
+          "line": 83,
+          "sha256": "372be7e628c83e5a5e90cafb6999ee9f8d7b19f442951802662c9d9109e7fd5e"
+        },
+        {
+          "name": "setGlobalVariable",
+          "line": 105,
+          "sha256": "cf68ad91a3637480b369bfe05817f3d997d21bdc27374b0b2fe57e596d946250"
+        },
+        {
+          "name": "addLocalVariable",
+          "line": 136,
+          "sha256": "2514bf4bfb6f83236e6a0017f8033fbda1b22e0f9a558fbc347fe521b7013547"
+        },
+        {
+          "name": "addGlobalVariable",
+          "line": 166,
+          "sha256": "93b1dd493b6684180514dc233ea402ffc11c1fa4cc6a31c041aa7594c3867183"
+        },
+        {
+          "name": "incrementLocalVariable",
+          "line": 196,
+          "sha256": "cd6deb6f7f60725cc967d99c8a8eb28e948db2ed83f24bddfa4f14d11fc2d62e"
+        },
+        {
+          "name": "incrementGlobalVariable",
+          "line": 200,
+          "sha256": "645a3b5601e89f7d14d2a05114c7cdd720774f9bf18899c043565b5618f28a05"
+        },
+        {
+          "name": "decrementLocalVariable",
+          "line": 204,
+          "sha256": "19d329511f44ea4f0dee991f30d01e6c5ad3792e28cb940390a71aa736083899"
+        },
+        {
+          "name": "decrementGlobalVariable",
+          "line": 208,
+          "sha256": "f6860cadc66cb6d5104c7696ef3274d49276820985fcfcccdfe908a54202c032"
+        },
+        {
+          "name": "getVariableMacros",
+          "line": 238,
+          "sha256": "b3aca8b6b60991c72e0aa16be3d4345382634aeaa0a3103636f236ddfbf5f5b2"
+        }
+      ]
+    },
+    "scripts/macros.js": {
+      "sha256": "1926c394e22a35827f594a4c4bfb044ed4c80dcc911680875991a880f8e53f11",
+      "declarations": [
+        {
+          "name": "MacrosParser",
+          "line": 42,
+          "sha256": "c5dcd040a55204b06b5fd3b57b4a5b89e285b4ccecd227d4da0f10262de9f122"
+        },
+        {
+          "name": "evaluateMacros",
+          "line": 610,
+          "sha256": "bf6db7842ef4098fe97a6a44b6e257b3f3e226f10bec37de17cfbb329392bcdc"
+        },
+        {
+          "name": "getBannedWordsMacro",
+          "line": 442,
+          "sha256": "8519f78fa560bd9435064f5d97391ee195ec0554bcdb721154f14b596f8927aa"
+        },
+        {
+          "name": "getRandomReplaceMacro",
+          "line": 491,
+          "sha256": "ca445be3483d3cb96b46672187592536fd4e71a215ff602b9768d5a8d86314a9"
+        },
+        {
+          "name": "getPickReplaceMacro",
+          "line": 516,
+          "sha256": "290ae7c29a31f84bf54457b8a20f13dfcd03b92b6f7af9c1e3c2ae4ad8c2c844"
+        },
+        {
+          "name": "getDiceRollMacro",
+          "line": 550,
+          "sha256": "24f2a56bcd3821ec83877c832c383de7ae03318d90a73575b106e67de84b42ce"
+        },
+        {
+          "name": "getTimeDiffMacro",
+          "line": 579,
+          "sha256": "9ee3e8b360d26906a8ca58ef4735faf401acbdd3314aa66b6913ccd7633c2d66"
+        },
+        {
+          "name": "getChatIdHash",
+          "line": 315,
+          "sha256": "13878f99c4e1f55c15576e71333af511be87f16b8c49f0310e6d53adad6f8e4f"
+        }
+      ]
+    },
+    "scripts/utils.js": {
+      "sha256": "2a2cfe240d5a84ce2e09ba053db6c0c71473b6406173f614f3521d89f50ada61",
+      "declarations": [
+        {
+          "name": "stringFormat",
+          "line": 756,
+          "sha256": "aca03f844792a50e82332f85112398021dde6f04ca11d20d0685aa9622a3532e"
+        }
+      ]
+    },
+    "scripts/PromptManager.js": {
+      "sha256": "b0054793b763d92b265f5f487645b68b4eca0867cb5ad6b5deb1034004b2c1cc",
+      "declarations": [
+        {
+          "name": "Prompt",
+          "line": 80,
+          "sha256": "3d7ca3c972c7346aaff5a49d5bdabd4f8b10587d0f35debcaa5859a078854219"
+        },
+        {
+          "name": "PromptCollection",
+          "line": 201,
+          "sha256": "7c5f4db2cd2f6bced73ca1e294d16143dd82de89f5c8e1d62d9b7b4a3f05e1c7"
+        },
+        {
+          "name": "PromptManager",
+          "line": 300,
+          "sha256": "6d1e8883fe0389de714f3ceff30c71c86aaf40803d3b7dc1f455479956b65a4b"
+        }
+      ]
+    },
+    "scripts/openai.js": {
+      "sha256": "0b77c30282825540265d5a09e681e5ccacf6760b05111ec880ffe237a9250604",
+      "declarations": [
+        {
+          "name": "formatWorldInfo",
+          "line": 789,
+          "sha256": "3c2a962237fdf5a2f9b42e46bd64ed304094a13cc158d6c2693cb00d724125d0"
+        },
+        {
+          "name": "preparePromptsForChatCompletion",
+          "line": 1367,
+          "sha256": "1ba90d4c210ee6a20cf975d47a9f616f5e31f869f537f17bf4a63ceeefc0f4be"
+        },
+        {
+          "name": "getPromptRole",
+          "line": 1157,
+          "sha256": "e4fd51be2b34e15d1f4dd762949e9e224c39d571818c74e17f52f981e1da63d0"
+        },
+        {
+          "name": "getPromptPosition",
+          "line": 1140,
+          "sha256": "82b7cccde73b4c98679ea4b1ef1b9188094f6b031b41636bda7983a10fc22976"
+        },
+        {
+          "name": "parseExampleIntoIndividual",
+          "line": 729,
+          "sha256": "6b2340b4e5c99184fb9811c1af23327c4925dbda91840f875f9ab178a2619804"
+        },
+        {
+          "name": "IdentifierNotFoundError",
+          "line": 3485,
+          "sha256": "0f124ccf71ce52100131f74b29ee50f343086b833a0b80166c0073a710e59a4d"
+        },
+        {
+          "name": "TokenBudgetExceededError",
+          "line": 3493,
+          "sha256": "db74f81c721b0ff70716cfc1f651475d279144a80edc554871f853638cee6cae"
+        },
+        {
+          "name": "InvalidCharacterNameError",
+          "line": 3501,
+          "sha256": "f5bcd0ee1377a197cbf65151332893555c7435e1c39f73d2a739e091626420aa"
+        },
+        {
+          "name": "Message",
+          "line": 3511,
+          "sha256": "d216ea8edc07ade83a1bf91c2d294f142eb4e2a8f55e8d499725fbd7a0ecba66"
+        },
+        {
+          "name": "MessageCollection",
+          "line": 3808,
+          "sha256": "9c8df64a18036358bcb16d2cce1f15d11b3aff08860df071d2e98e2124f76694"
+        },
+        {
+          "name": "ChatCompletion",
+          "line": 3917,
+          "sha256": "25b40fd68a6ddb33d523b81855ac02b60efab190055ffaf4126b94f358943425"
+        },
+        {
+          "name": "populationInjectionPrompts",
+          "line": 810,
+          "sha256": "cd7418dab0a8f2c49cb7adf1ecd34c58ed4ce820d823154d0d469b68df2912ae"
+        },
+        {
+          "name": "populateChatHistory",
+          "line": 885,
+          "sha256": "2383782590629b6d1fcdf2047faa7659448c1c9726958efb98fd39327db655ea"
+        },
+        {
+          "name": "populateDialogueExamples",
+          "line": 1101,
+          "sha256": "05444043a2063087aa4b8e4645d4324b501b417935272f6bf1666f1f2e78e7a5"
+        },
+        {
+          "name": "populateChatCompletion",
+          "line": 1185,
+          "sha256": "0f9558143dad99e7315e533f471917b25398bb8e9bf264351b651cc54dc7204d"
+        }
+      ]
+    },
+    "scripts/power-user.js": {
+      "sha256": "bb62dd0116183cdc2a06a0cf98dd18496da1619c48254053bcf2c69ef97bcb7f",
+      "declarations": [
+        {
+          "name": "collapseNewlines",
+          "line": 408,
+          "sha256": "532a1c61ac13416a5d5bfb002f8c737335cd79e0bb7b54eb5e5733c6d02f420e"
+        }
+      ]
+    }
+  },
+  "scope": "Single-character normal text PromptManager population; real unchanged legacy functions and pinned shared new engine with documented host bindings.",
+  "cases": [
+    {
+      "mode": "public",
+      "experimental": false,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=9/1"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=1/1"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "scanned": 1,
+        "assembled": 12
+      }
+    },
+    {
+      "mode": "native",
+      "experimental": false,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "S=1/1"
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=177/17"
+        },
+        {
+          "role": "system",
+          "content": "D=3/1"
+        },
+        {
+          "role": "system",
+          "content": "P=59/6"
+        },
+        {
+          "role": "system",
+          "content": "SCENARIO=50/5"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=33;systemRuns=3;exampleRuns=3;descriptionRuns=3;personalityRuns=3;personaRuns=3;scenarioRuns=3;jailbreakRuns=3;depthRuns=3;notesRuns=3;firstRuns=3;alternateRuns=3;TRACE=S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>\nMATCHED_DESCRIPTION=4"
+        },
+        {
+          "role": "system",
+          "content": "[Example Chat]"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "system",
+          "content": "DEPTH=8/1"
+        },
+        {
+          "role": "assistant",
+          "content": "FIRST=233/22"
+        },
+        {
+          "role": "system",
+          "content": "PHI=7/1"
+        }
+      ],
+      "variables": {
+        "trace": "S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>PERSONA>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>FIRST>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>",
+        "phase": 255,
+        "systemRuns": 23,
+        "exampleRuns": 23,
+        "descriptionRuns": 23,
+        "personalityRuns": 23,
+        "personaRuns": 24,
+        "scenarioRuns": 23,
+        "jailbreakRuns": 23,
+        "depthRuns": 23,
+        "notesRuns": 23,
+        "firstRuns": 24,
+        "alternateRuns": 23
+      }
+    },
+    {
+      "mode": "native",
+      "experimental": false,
+      "round": 2,
+      "messages": [
+        {
+          "role": "system",
+          "content": "S=256/24"
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=432/41"
+        },
+        {
+          "role": "system",
+          "content": "D=258/24"
+        },
+        {
+          "role": "system",
+          "content": "P=314/29"
+        },
+        {
+          "role": "system",
+          "content": "SCENARIO=305/28"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=288;systemRuns=26;exampleRuns=26;descriptionRuns=26;personalityRuns=26;personaRuns=27;scenarioRuns=26;jailbreakRuns=26;depthRuns=26;notesRuns=26;firstRuns=27;alternateRuns=26;TRACE=S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>PERSONA>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>FIRST>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>\nMATCHED_DESCRIPTION=27"
+        },
+        {
+          "role": "system",
+          "content": "[Example Chat]"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "system",
+          "content": "DEPTH=263/24"
+        },
+        {
+          "role": "assistant",
+          "content": "FIRST=499/47"
+        },
+        {
+          "role": "assistant",
+          "content": "reply"
+        },
+        {
+          "role": "system",
+          "content": "PHI=262/24"
+        }
+      ],
+      "variables": {
+        "trace": "S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>PERSONA>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>FIRST>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>PERSONA>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>FIRST>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>",
+        "phase": 521,
+        "systemRuns": 47,
+        "exampleRuns": 47,
+        "descriptionRuns": 47,
+        "personalityRuns": 47,
+        "personaRuns": 49,
+        "scenarioRuns": 47,
+        "jailbreakRuns": 47,
+        "depthRuns": 47,
+        "notesRuns": 47,
+        "firstRuns": 49,
+        "alternateRuns": 47
+      }
+    },
+    {
+      "mode": "normalized",
+      "experimental": false,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Character macro phases's next reply in a fictional chat between Character macro phases and User."
+        },
+        {
+          "role": "system",
+          "content": "DESCRIPTION\nTAIL 1"
+        },
+        {
+          "role": "system",
+          "content": "OVERRIDE_SCENARIO=7"
+        },
+        {
+          "role": "system",
+          "content": "COUNTERS=4/4/4/8\nMATCHED_NORMALIZED_DESCRIPTION\nMATCHED_OVERRIDE_SCENARIO"
+        },
+        {
+          "role": "system",
+          "content": "[Example Chat]"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "assistant",
+          "content": "Opening"
+        }
+      ],
+      "variables": {
+        "exampleRuns": 18,
+        "descriptionRuns": 18,
+        "scenarioRuns": 18,
+        "duplicateRuns": 36
+      }
+    },
+    {
+      "mode": "public",
+      "experimental": true,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Macro API's next reply in a fictional chat between Macro API and User."
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=1/1"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=1/1"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "assistant",
+          "content": "Hello"
+        },
+        {
+          "role": "user",
+          "content": "input"
+        }
+      ],
+      "variables": {
+        "scanned": 1,
+        "assembled": 1
+      }
+    },
+    {
+      "mode": "native",
+      "experimental": true,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "S=1/1"
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=14/2"
+        },
+        {
+          "role": "system",
+          "content": "D=3/1"
+        },
+        {
+          "role": "system",
+          "content": "P=13/2"
+        },
+        {
+          "role": "system",
+          "content": "SCENARIO=12/2"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=11;systemRuns=1;exampleRuns=1;descriptionRuns=1;personalityRuns=1;personaRuns=1;scenarioRuns=1;jailbreakRuns=1;depthRuns=1;notesRuns=1;firstRuns=1;alternateRuns=1;TRACE=S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>\nMATCHED_DESCRIPTION=1"
+        },
+        {
+          "role": "system",
+          "content": "[Example Chat]"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "system",
+          "content": "DEPTH=8/1"
+        },
+        {
+          "role": "assistant",
+          "content": "FIRST=15/2"
+        },
+        {
+          "role": "system",
+          "content": "PHI=7/1"
+        }
+      ],
+      "variables": {
+        "phase": 15,
+        "systemRuns": 1,
+        "trace": "S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>SCENARIO>P>PERSONA>FIRST>",
+        "exampleRuns": 1,
+        "descriptionRuns": 1,
+        "personalityRuns": 2,
+        "personaRuns": 2,
+        "scenarioRuns": 2,
+        "jailbreakRuns": 1,
+        "depthRuns": 1,
+        "notesRuns": 1,
+        "firstRuns": 2,
+        "alternateRuns": 1
+      }
+    },
+    {
+      "mode": "native",
+      "experimental": true,
+      "round": 2,
+      "messages": [
+        {
+          "role": "system",
+          "content": "S=16/2"
+        },
+        {
+          "role": "system",
+          "content": "PERSONA=29/4"
+        },
+        {
+          "role": "system",
+          "content": "D=18/2"
+        },
+        {
+          "role": "system",
+          "content": "P=28/4"
+        },
+        {
+          "role": "system",
+          "content": "SCENARIO=27/4"
+        },
+        {
+          "role": "system",
+          "content": "WORLD=26;systemRuns=2;exampleRuns=2;descriptionRuns=2;personalityRuns=3;personaRuns=3;scenarioRuns=3;jailbreakRuns=2;depthRuns=2;notesRuns=2;firstRuns=3;alternateRuns=2;TRACE=S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>SCENARIO>P>PERSONA>FIRST>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>\nMATCHED_DESCRIPTION=2"
+        },
+        {
+          "role": "system",
+          "content": "[Example Chat]"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "system",
+          "content": "DEPTH=23/2"
+        },
+        {
+          "role": "assistant",
+          "content": "FIRST=30/4"
+        },
+        {
+          "role": "assistant",
+          "content": "reply"
+        },
+        {
+          "role": "system",
+          "content": "PHI=22/2"
+        }
+      ],
+      "variables": {
+        "phase": 30,
+        "systemRuns": 2,
+        "trace": "S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>SCENARIO>P>PERSONA>FIRST>S>E>D>P>PERSONA>SCENARIO>PHI>DEPTH>NOTES>FIRST>ALT>SCENARIO>P>PERSONA>FIRST>",
+        "exampleRuns": 2,
+        "descriptionRuns": 2,
+        "personalityRuns": 4,
+        "personaRuns": 4,
+        "scenarioRuns": 4,
+        "jailbreakRuns": 2,
+        "depthRuns": 2,
+        "notesRuns": 2,
+        "firstRuns": 4,
+        "alternateRuns": 2
+      }
+    },
+    {
+      "mode": "normalized",
+      "experimental": true,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Character macro phases's next reply in a fictional chat between Character macro phases and User."
+        },
+        {
+          "role": "system",
+          "content": "DESCRIPTION\nTAIL 1"
+        },
+        {
+          "role": "system",
+          "content": "OVERRIDE_SCENARIO=2"
+        },
+        {
+          "role": "system",
+          "content": "COUNTERS=1/1/1/2\nMATCHED_NORMALIZED_DESCRIPTION\nMATCHED_OVERRIDE_SCENARIO"
+        },
+        {
+          "role": "system",
+          "content": "[Example Chat]"
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "assistant",
+          "content": "Opening"
+        }
+      ],
+      "variables": {
+        "exampleRuns": 1,
+        "descriptionRuns": 1,
+        "scenarioRuns": 2,
+        "duplicateRuns": 2
+      }
+    },
+    {
+      "mode": "tight-budget",
+      "experimental": false,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Budget actor's next reply in a fictional chat between Budget actor and User."
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "LATEST=1"
+        }
+      ],
+      "variables": {
+        "latest": 1,
+        "rejected": 1
+      }
+    },
+    {
+      "mode": "tight-budget",
+      "experimental": true,
+      "round": 1,
+      "messages": [
+        {
+          "role": "system",
+          "content": "Write Budget actor's next reply in a fictional chat between Budget actor and User."
+        },
+        {
+          "role": "system",
+          "content": "[Start a new Chat]"
+        },
+        {
+          "role": "user",
+          "content": "LATEST=1"
+        }
+      ],
+      "variables": {
+        "latest": 1,
+        "rejected": 1
+      }
+    }
+  ]
+}

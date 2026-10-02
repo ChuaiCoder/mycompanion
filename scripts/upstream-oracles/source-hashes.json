@@ -1,0 +1,10 @@
+{
+  "script.js": "955c603d0bad84bac5a716f0818d85c2543e44d4c43878e0d63ef1e55ca91855",
+  "scripts/variables.js": "92e1bfa793e6072c2daeecdbb6d7429faf990e251bfc5f8d97c0ba7088a1282a",
+  "scripts/macros.js": "1926c394e22a35827f594a4c4bfb044ed4c80dcc911680875991a880f8e53f11",
+  "scripts/utils.js": "2a2cfe240d5a84ce2e09ba053db6c0c71473b6406173f614f3521d89f50ada61",
+  "scripts/PromptManager.js": "b0054793b763d92b265f5f487645b68b4eca0867cb5ad6b5deb1034004b2c1cc",
+  "scripts/openai.js": "0b77c30282825540265d5a09e681e5ccacf6760b05111ec880ffe237a9250604",
+  "scripts/power-user.js": "bb62dd0116183cdc2a06a0cf98dd18496da1619c48254053bcf2c69ef97bcb7f",
+  "scripts/personas.js": "9cef6f9ad424f9c59628b039a65b8e141ffa71aa4519c7108e8c33b5d97f090c"
+}

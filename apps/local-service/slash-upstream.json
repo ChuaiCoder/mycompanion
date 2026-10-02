@@ -1,0 +1,199 @@
+{
+  "repository": "https://github.com/SillyTavern/SillyTavern",
+  "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "license": "AGPL-3.0-only",
+  "files": [
+    {
+      "path": "upstream-slash/AbstractEventTarget.js",
+      "upstreamPath": "public/scripts/slash-commands/AbstractEventTarget.js",
+      "upstreamSha256": "cd1dcd29778d7017d05460c9c69cdd809264a908c315b950d7676a7335382997",
+      "adaptedSha256": "2af3757736eb332f1517e1b5607a8d846845a3026a32788c9ad5cd01a48b2360",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandAbortController.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandAbortController.js",
+      "upstreamSha256": "7cbf738791df408fc9ff3f7f96e343be6df048e24325c97a177180fad4dfaeb2",
+      "adaptedSha256": "5d47d093d87ba059dd7cb8c20572022bc9d0032cac5e54ba9600df5f803eb322",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandBreakController.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandBreakController.js",
+      "upstreamSha256": "d57b58d2ccd53980437ac82e3a95e31336872c8df7ad64e443391df6c8a267a7",
+      "adaptedSha256": "d653ce598602162d43225ccb0a30216a486932399609eaa17f8fd7e68c59036a",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandClosureResult.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandClosureResult.js",
+      "upstreamSha256": "72cc71ab8373fdbe8d529867ac0dd5aa29a7d55fdb705eb6ce0ff386948f9602",
+      "adaptedSha256": "4c734c103442e11eebf979ed1b31f3bb2ea46ed30932f4e21026b88750fd3a92",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandParserError.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandParserError.js",
+      "upstreamSha256": "3d02b441c7561118fa8b7d269d25eb1cef28ebbd126da06656a7bd13d14bb432",
+      "adaptedSha256": "d0744b45da0ecc5b1250738d773dfa4137008eeb28f89f9c0be64a018e7138dd",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandExecutionError.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandExecutionError.js",
+      "upstreamSha256": "c134cf5fd4634212a08da5ce05261aaa22133f660a6dc3a4b63ae8c07a31733e",
+      "adaptedSha256": "a1c8bb2f1a0170929a91ab581a20630b85fbb14281d196ed7b48ff2fc13403a1",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandNamedArgumentAssignment.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandNamedArgumentAssignment.js",
+      "upstreamSha256": "6c8122bfe6a0e180785dd20ecbdf3be1c50ac46620f63cb4eb52f5d75c2db13b",
+      "adaptedSha256": "d7f83efece9d65aed72cb665898ffb9fca4e837ac11282a5ad7eac625cadb73d",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandUnnamedArgumentAssignment.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandUnnamedArgumentAssignment.js",
+      "upstreamSha256": "f6dac2d450db9eed8adbfee841622d7b6a67649c734079d05439b79f457c8acc",
+      "adaptedSha256": "2deafeb45b14eba16093d30b659d6b3f9037445bf224cad459d7a854b6fae840",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommand.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommand.js",
+      "upstreamSha256": "013016f70af2e8de7c3dd30dcb8dd8aa9278a2b4229e91dfe5010862a5e95f09",
+      "adaptedSha256": "959d8aeab75ded4e334051c69dcaf6312763f79d8ef4d057863e3935aed2878c",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandArgument.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandArgument.js",
+      "upstreamSha256": "5219d4e8153b48783c93c4e01751d412a80743040ff0301a33bfb210a956b3fd",
+      "adaptedSha256": "71d9e10fdd29034faf0beb6a82fa4f6b0f230dfec9d1c49b37d4e3c5365cb46b",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandEnumValue.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandEnumValue.js",
+      "upstreamSha256": "df4c88a4efe2e86958c6ca260837ca862747912dce6ae96c2d9b9a1e425b1291",
+      "adaptedSha256": "808d5a78a1b794858597359c41d939d76ad277d98ca3c307cad1e8ca427328d0",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandScope.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandScope.js",
+      "upstreamSha256": "669e6912a90f5bbbdd145263b53591d09293588f0127bac47bb0a9c24dea7e36",
+      "adaptedSha256": "d27e77b4e9557ad2e76b4e9dcd1c1b2fda09c8b6bd275dfa2f05e00d2424fab9",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path. Redirect utility imports to the extracted fixed-upstream Slash utility module."
+    },
+    {
+      "path": "upstream-slash/SlashCommandExecutor.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandExecutor.js",
+      "upstreamSha256": "ec801ec399c82e99ff35a9d5171490a6a499ad3adb7cb06aa397c371670dc6f7",
+      "adaptedSha256": "7390e6cc8801a244d0365d51ea207ee398fbabd5a97c551a4ed9610e15f3b2dc",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path. Redirect utility imports to the extracted fixed-upstream Slash utility module."
+    },
+    {
+      "path": "upstream-slash/SlashCommandBreakPoint.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandBreakPoint.js",
+      "upstreamSha256": "80c43c84ecb319f355b165ed22058c77e7a51bf17b8f311c15b6f0ed0925a5f0",
+      "adaptedSha256": "5c72de501db9af8f04c968dbcce3d60f05214577d9a5cf44cd04f7f88168d93c",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandBreak.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandBreak.js",
+      "upstreamSha256": "7cf4a943bf5d2b170ba484bc5c57c6fb3c83e255bacda7d500e44d3c27d517ae",
+      "adaptedSha256": "f6842f3aea1d5ea657d6caa704a9ebf028a097b68e3d0c4824307e010084add4",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandDebugController.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandDebugController.js",
+      "upstreamSha256": "64a972a6fab07804e1da94406768391fabac76a4b5486f9f6ce2fef7aceb284d",
+      "adaptedSha256": "7ca8a89447a1cf462ead11ad1fff048f0d180e83241a836a00640015681bee4e",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Unchanged execution component; served under the upstream-compatible module path."
+    },
+    {
+      "path": "upstream-slash/SlashCommandClosure.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandClosure.js",
+      "upstreamSha256": "a0aab000ed491ca809fb5d33cb2b7a005ea4f97c3d641490f1026fa1e563bbe3",
+      "adaptedSha256": "1e50f937ea219492393b9e81194cc9a2d3cf41c7222cb6bc33849c8b3823145e",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Keep the upstream closure execution/argument/scope/macro logic. Replace pause polling with native abort/continue listeners. Preserve a completed executeStep result after argument resolution: upstream discarded a pre-callback abort result by calling next() once more. Redirect utility imports to the extracted fixed-upstream Slash utility module."
+    },
+    {
+      "path": "upstream-slash/SlashCommandParser.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandParser.js",
+      "upstreamSha256": "2ed3512bf887be9e944bacc5f29461ad460a87bd876277f5898e9a53766017eb",
+      "adaptedSha256": "27a5a3bb261d94c23c44eec51465a1e9ea744c380d411652a9c462664d6ab468",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Remove editor-only autocomplete imports, getNameAt/indexMacros methods and macro-index collection calls. Parsing, flags, closure/argument grammar and execution metadata retain upstream behavior. Notify the native contribution registry after registration; no new name restrictions. Redirect utility imports to the extracted fixed-upstream Slash utility module."
+    },
+    {
+      "path": "upstream-slash/VariableCommands.js",
+      "upstreamPath": "public/scripts/variables.js",
+      "upstreamSha256": "92e1bfa793e6072c2daeecdbb6d7429faf990e251bfc5f8d97c0ba7088a1282a",
+      "adaptedSha256": "2cbddc4a609d2d74f22d5670dfb291fe456f49beb913ab482360070f2933b1df",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Reuse every variable/control-flow/math/closure command and callback; replace original storage functions with existing invocation-aware chat/settings storage adapters. Keep original MAX_LOOPS and guard=off behavior."
+    },
+    {
+      "path": "upstream-slash/DefaultCommands.js",
+      "upstreamPath": "public/scripts/slash-commands.js",
+      "upstreamSha256": "3da6aa888a52d09fd5d54eadee1724b7c3b7dbc208a3d56fe98c7d23d86fcde3",
+      "adaptedSha256": "e6eb650c85b3cbe78017e97f32eb5cc3e57a3eb798febaf0877b92c33c5a3ef0",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Extract original run/abort/delay/pass/echo callbacks and command descriptors. Only delay waits add abort-listener/timer cleanup without changing successful output. Other native/UI command registrations remain explicitly outside this first execution-core tranche."
+    },
+    {
+      "path": "upstream-slash/SlashUtils.js",
+      "upstreamPath": "public/scripts/utils.js",
+      "upstreamSha256": "2a2cfe240d5a84ce2e09ba053db6c0c71473b6406173f614f3521d89f50ada61",
+      "adaptedSha256": "2e01afb05eb7133aa8b114931496b58f0a2b12d32c2f0080866fffcf79bc0569",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Extract unmodified conversion, boolean, regex, UUID and delay utility implementations used by the execution core."
+    },
+    {
+      "path": "upstream-slash/SlashCommandCommonEnumsProvider.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandCommonEnumsProvider.js",
+      "upstreamSha256": "b0585af8d51c8ae8c6f8d38234069726dbabc2255d60083ca9a809651ed6b890",
+      "adaptedSha256": "d1df2d92566ca5221758acf8d54babf75d0de15d340372597e6437467a57371b",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Extract unmodified icons and boolean/variable/number/type/message enum providers needed by the selected command families; UI/entity providers remain outside this tranche."
+    },
+    {
+      "path": "upstream-slash/SlashExecution.js",
+      "upstreamPath": "public/scripts/slash-commands.js",
+      "upstreamSha256": "3da6aa888a52d09fd5d54eadee1724b7c3b7dbc208a3d56fe98c7d23d86fcde3",
+      "adaptedSha256": "10cee86a93540cff9192fc23cb72b9e7bbd45096b0aa28406713a127a1c3201e",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Extract unmodified public execution wrappers and their error/toast behavior; desktop composer uses handleParserErrors=false and converts errors to explicit failed results."
+    },
+    {
+      "path": "upstream-slash/SlashCommandReturnHelper.js",
+      "upstreamPath": "public/scripts/slash-commands/SlashCommandReturnHelper.js",
+      "upstreamSha256": "fa1f733d000f9774dc7f84c5e372c9e5aca84fdb7b86c0dc90f634ff108c5b24",
+      "adaptedSha256": "a6029de29a57b5b3a75924d19e43de2f0a276ffdedeb10542a7605aaa4688f06",
+      "license": "AGPL-3.0-only",
+      "adaptation": "Keep return dispatch/converters/options. Route Markdown to the existing renderer and system-message output to native chat/persistence; do not add a parallel renderer."
+    }
+  ]
+}

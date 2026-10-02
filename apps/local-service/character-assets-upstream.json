@@ -1,0 +1,46 @@
+{
+  "reviewedAt": "2026-10-02T16:45:59.803Z",
+  "license": "AGPL-3.0-only",
+  "adaptedFiles": [
+    "src/character-archive.ts",
+    "src/character-assets.ts",
+    "src/bounded-zip.ts",
+    "src/character-yaml.ts",
+    "../../packages/character-card/src/legacy.ts",
+    "../../packages/character-card/src/png.ts"
+  ],
+  "inputs": [
+    {
+      "repository": "https://github.com/SillyTavern/SillyTavern",
+      "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+      "path": "src/endpoints/characters.js",
+      "license": "AGPL-3.0-only",
+      "use": "Adapted importFromJson, convertToV2/charaFormatData and importFromYaml field mappings; retain original unknown fields and use existing schema validation and transactional desktop storage.",
+      "sha256": "3235555529e9ff17ecc2ebe9168b0af77fe6ef5947f3d1f7de3df6d5f2567d89"
+    },
+    {
+      "repository": "https://github.com/SillyTavern/SillyTavern",
+      "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+      "path": "src/charx.js",
+      "license": "AGPL-3.0-only",
+      "use": "Adapted embedded URI, archive prefix and main icon selection; filesystem storage replaced with bounded ZIP and transactional SQLite asset store.",
+      "sha256": "92e0045ff69691057cca55b7514f2bdd3615cf5ab35bf11be3231709669e6680"
+    },
+    {
+      "repository": "https://github.com/kwaroran/RisuAI",
+      "commit": "f9728b14c733d073168d8d0c6a8f34f8febf0304",
+      "path": "src/ts/characterCards.ts",
+      "license": "GPL-3.0",
+      "use": "Reference only; PNG legacy asset chunks, URI aliases and roundtrip flow compared; no code copied.",
+      "sha256": "7579189692aab34ee673d8600b2b4b2f5f4be33563c8b8caae5e225389b35443"
+    },
+    {
+      "repository": "https://github.com/kwaroran/character-card-spec-v3",
+      "commit": "f3a86af019fbd99f788f7a1155f399655b34ab35",
+      "path": "SPEC_V3.md",
+      "license": "MIT",
+      "use": "Normative format reference; pinned GitHub API contents verified byte-identical on 2026-10-03.",
+      "sha256": "3c472a16eeda5d018837e90d30fce2816b0982f07f4dba14c8fcc89aa11fe76c"
+    }
+  ]
+}

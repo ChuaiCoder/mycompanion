@@ -1,0 +1,45 @@
+{
+  "name": "mycompanion",
+  "version": "0.2.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "A beginner-friendly desktop AI roleplaying application with observable memory.",
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0",
+    "npm": ">=11.0.0"
+  },
+  "workspaces": [
+    "packages/macro-engine",
+    "packages/shared",
+    "packages/character-card",
+    "apps/local-service",
+    "apps/renderer",
+    "apps/desktop"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @mycompanion/macro-engine && npm run build -w @mycompanion/shared",
+    "build:character-card": "npm run build:shared && npm run build -w @mycompanion/character-card",
+    "build": "npm run build:character-card && npm run build -w @mycompanion/local-service && npm run build -w @mycompanion/renderer",
+    "build:desktop": "npm run build && npm run build -w @mycompanion/desktop",
+    "dev:desktop": "npm run build:desktop && npm run start -w @mycompanion/desktop",
+    "package:win": "node scripts/release-candidate.mjs",
+    "promote:release": "node scripts/promote-release.mjs",
+    "test": "npm run build:character-card && node --test scripts/*.test.mjs && npm run test --workspaces --if-present",
+    "typecheck": "npm run build:character-card && npm run typecheck --workspaces --if-present",
+    "check": "npm run typecheck && npm run test && npm run build",
+    "verify:plugins": "npm run build && npm run verify:plugins -w @mycompanion/desktop",
+    "verify:plugin-url": "npm run build && node apps/desktop/scripts/verify-plugin-url-update.mjs",
+    "prepare:source": "node scripts/package-source.mjs",
+    "verify:cdn": "npm run build -w @mycompanion/desktop && node node_modules/electron/cli.js apps/desktop/scripts/verify-cdn.mjs",
+    "verify:packaged": "node apps/desktop/scripts/verify-packaged.mjs",
+    "verify:packaged-helper": "node apps/desktop/scripts/verify-packaged-helper.mjs",
+    "audit:independent-helper": "node apps/desktop/scripts/audit-independent-helper.mjs"
+  },
+  "devDependencies": {
+    "acorn": "8.18.0",
+    "es-module-lexer": "2.3.2",
+    "tar": "7.5.22",
+    "typescript": "7.0.2"
+  }
+}

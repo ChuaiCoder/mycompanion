@@ -1,0 +1,91 @@
+{
+  "name": "@mycompanion/desktop",
+  "version": "0.2.1",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "description": "Windows desktop shell for MyCompanion",
+  "author": "MyCompanion contributors",
+  "type": "module",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "node scripts/create-icon.mjs && node scripts/build.mjs",
+    "start": "electron .",
+    "package:win": "electron-builder --win portable --x64 --publish never --config.electronDist=../../node_modules/electron/dist",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "verify:plugins": "electron scripts/verify-plugin-runtime.mjs"
+  },
+  "dependencies": {
+    "@mycompanion/local-service": "0.2.1"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.3",
+    "electron": "44.4.4",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.28.2"
+  },
+  "build": {
+    "appId": "io.mycompanion.app",
+    "productName": "MyCompanion",
+    "asar": true,
+    "compression": "normal",
+    "npmRebuild": false,
+    "afterPack": "scripts/verify-package.cjs",
+    "directories": {
+      "buildResources": "build",
+      "output": "../../.cache/packaging/candidate-staging"
+    },
+    "files": [
+      "dist/main.js",
+      "dist/main.js.map",
+      "package.json",
+      "!**/*.sqlite*",
+      "!**/*.db",
+      "!**/*.db-*",
+      "!node_modules/@mycompanion/*/{data,fixtures,src}{,/**/*}"
+    ],
+    "extraResources": [
+      {
+        "from": "../renderer/dist",
+        "to": "renderer",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../../.cache/packaging/independent-source",
+        "to": "source",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
+        "from": "../../LICENSE",
+        "to": "LICENSE"
+      },
+      {
+        "from": "../../THIRD_PARTY_NOTICES.md",
+        "to": "THIRD_PARTY_NOTICES.md"
+      }
+    ],
+    "electronLanguages": [
+      "en-US",
+      "zh-CN"
+    ],
+    "portable": {
+      "useZip": true,
+      "unpackDirName": true
+    },
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "MyCompanion-${version}-windows-${arch}.${ext}"
+    }
+  }
+}

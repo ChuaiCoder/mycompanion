@@ -1,0 +1,34 @@
+{
+  "reviewedAt": "2026-10-02T17:25:13.199Z",
+  "adaptedFiles": [
+    "src/character-byaf-upstream.ts",
+    "src/character-byaf-schemas.ts"
+  ],
+  "inputs": [
+    {
+      "repository": "https://github.com/SillyTavern/SillyTavern",
+      "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+      "path": "src/byaf.js",
+      "license": "AGPL-3.0-only",
+      "sha256": "dc056d1b7f9d616e08b8b49e3db1150cd824665bd1e041ed79ef86ec417765dc",
+      "adaptedSha256": "20e65239c14073352cfe57b42bfda217c501eed357b030208ad98dd29e4e84c8",
+      "adaptations": [
+        "Read one bounded, CRC-verified ZIP map instead of repeated unbounded extraction.",
+        "Own fallback portrait instead of upstream application asset.",
+        "Preserve ISO and numeric message dates; handle AI-only/no-message chat start.",
+        "Use validated POSIX archive paths; original card and swipe conversion retained."
+      ]
+    },
+    {
+      "repository": "https://github.com/backyardai/byaf",
+      "commit": "7ebf2fdbb06a36b4f900a8de45480c4a2965df03",
+      "path": "src/byaf/types/schemas.ts",
+      "license": "MIT",
+      "sha256": "d7c2e1067043e271ed7412acbf563b9d548836bd5a3754ccf2ca9f10d255f096",
+      "adaptations": [
+        "None; validate normalized legacy inputs without using schema-stripped output."
+      ],
+      "licenseSha256": "13b5dbf0183ebb120e3e33cb0c6bd97715061941c0adf360a49a303d7680ab93"
+    }
+  ]
+}

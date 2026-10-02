@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "scene-director",
+  "name": "场景导演",
+  "version": "1.0.0",
+  "description": "要求模型明确维护场景连续性，并提供 /scene 命令。",
+  "author": "MyCompanion contributors",
+  "license": "AGPL-3.0-only",
+  "permissions": [
+    "prompt:system",
+    "command:register"
+  ],
+  "contributes": {
+    "systemPrompt": "Maintain spatial and temporal continuity. Do not move characters, objects, or time forward without support from the conversation.",
+    "commands": [
+      {
+        "name": "scene",
+        "description": "设置下一幕的地点、时间或氛围",
+        "prompt": "Continue the roleplay with this scene direction while preserving established facts: {{args}}"
+      }
+    ]
+  }
+}

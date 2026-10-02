@@ -1,0 +1,83 @@
+{
+  "upstreamCommit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "oracle": "scripts/upstream-oracles/prompt-persona-examples-upstream-oracle-20261003.mjs",
+  "runs": [
+    {
+      "mode": "legacy-persona-position",
+      "before": 1,
+      "after": 0
+    },
+    {
+      "mode": "persona-author-note",
+      "note": "EXPLICIT_NOTE",
+      "result": "PERSONA_TEXT\nEXPLICIT_NOTE"
+    },
+    {
+      "mode": "persona-author-note",
+      "note": "PERSONA_TEXT\nEXPLICIT_NOTE",
+      "result": "PERSONA_TEXT\nPERSONA_TEXT\nEXPLICIT_NOTE"
+    },
+    {
+      "mode": "world-info-examples",
+      "experimental": false,
+      "examples": [
+        [
+          {
+            "role": "system",
+            "content": "TOP=1",
+            "name": "example_assistant"
+          }
+        ],
+        [
+          {
+            "role": "system",
+            "content": "ORIGINAL",
+            "name": "example_assistant"
+          }
+        ],
+        [
+          {
+            "role": "system",
+            "content": "BOTTOM=2",
+            "name": "example_assistant"
+          }
+        ]
+      ],
+      "variables": {
+        "exampleRuns": 2
+      },
+      "traces": []
+    },
+    {
+      "mode": "world-info-examples",
+      "experimental": true,
+      "examples": [
+        [
+          {
+            "role": "system",
+            "content": "TOP=1",
+            "name": "example_assistant"
+          }
+        ],
+        [
+          {
+            "role": "system",
+            "content": "ORIGINAL",
+            "name": "example_assistant"
+          }
+        ],
+        [
+          {
+            "role": "system",
+            "content": "BOTTOM=2",
+            "name": "example_assistant"
+          }
+        ]
+      ],
+      "variables": {
+        "exampleRuns": 2
+      },
+      "traces": []
+    }
+  ]
+}
