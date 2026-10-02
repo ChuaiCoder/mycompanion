@@ -15,4 +15,5 @@ vendor/
 output/
 release/
 .playwright-cli/
+apps/desktop/build/
 card-info.txt
