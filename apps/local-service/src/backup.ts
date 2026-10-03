@@ -27,16 +27,6 @@ export interface BackupSources {
   runtime: RuntimeRepository;
 }
 
-function extensionSource(value: Pick<BackupPayload["codePlugins"][number], "sourceUrl" | "sourceRef" | "sourceRevision" | "extensionName" | "installationScope">): Record<string, string> {
-  return {
-    ...(value.sourceUrl ? { sourceUrl: value.sourceUrl } : {}),
-    ...(value.sourceRef ? { sourceRef: value.sourceRef } : {}),
-    ...(value.sourceRevision ? { sourceRevision: value.sourceRevision } : {}),
-    ...(value.extensionName ? { extensionName: value.extensionName } : {}),
-    ...(value.installationScope ? { installationScope: value.installationScope } : {}),
-  };
-}
-
 function canonicalJson(value: unknown): string {
   if (value === null || typeof value !== "object") return JSON.stringify(value) ?? "null";
   if (Array.isArray(value)) return `[${value.map((item) => canonicalJson(item)).join(",")}]`;
@@ -88,18 +78,6 @@ export function assembleBackupPayload(sources: BackupSources): BackupPayload {
       enabled: plugin.enabled,
       installedAt: plugin.installedAt,
     }));
-  const codePlugins = runtime.listCodePlugins().items.map((plugin) => {
-    const entry = runtime.getCodePluginBackupEntry(plugin.id);
-    return {
-      id: plugin.id,
-      manifest: runtime.getCodePluginManifest(plugin.id) as Record<string, unknown>,
-      enabled: plugin.enabled,
-      installedAt: plugin.installedAt,
-      contributions: entry?.contributions ?? { systemPrompt: "", commands: [] },
-      files: entry?.files ?? {},
-      ...extensionSource(plugin),
-    };
-  });
   const settings = runtime.getProvider();
 
   const base = {
@@ -137,7 +115,6 @@ export function assembleBackupPayload(sources: BackupSources): BackupPayload {
     stageSummaries: stageSummaries.map((summary) => ({ ...summary })),
     conversationSettings: conversationSettings.map((setting) => ({ ...setting })),
     plugins,
-    codePlugins,
     extensionSettings: runtime.getExtensionSettings(),
     userAvatars: runtime.avatars.listForBackup(),
     worldbooks: runtime.worldInfo.names().map(name => ({ name, data: runtime.worldInfo.get(name)! })),
@@ -164,7 +141,6 @@ export function assembleBackupPayload(sources: BackupSources): BackupPayload {
       messageCount: base.conversations.reduce((sum, item) => sum + item.messages.length, 0),
       memoryCount: base.memories.length,
       pluginCount: base.plugins.length,
-      codePluginCount: base.codePlugins.length,
       settingsIncluded: true,
       checksum,
     },
@@ -346,7 +322,6 @@ export function previewRestore(
         conversations: emptyTally(),
         memories: emptyTally(),
         plugins: emptyTally(),
-        codePlugins: emptyTally(),
         extensionSettings: emptyTally(),
         userAvatars: emptyTally(),
         worldbooks: emptyTally(),
@@ -443,32 +418,6 @@ export function previewRestore(
     }
   }
 
-  const codePluginTally = emptyTally();
-  for (const entry of backup.codePlugins) {
-    if (!runtime.codePluginExists(entry.id)) {
-      codePluginTally.new += 1;
-      continue;
-    }
-    const existing = runtime.getCodePluginBackupEntry(entry.id);
-    const existingManifest = runtime.getCodePluginManifest(entry.id);
-    const existingState = runtime.getCodePlugin(entry.id);
-    const same =
-      existing !== undefined &&
-      existingManifest !== undefined &&
-      existingState?.enabled === entry.enabled && existingState.installedAt === entry.installedAt &&
-      canonicalJson(existingManifest) === canonicalJson(entry.manifest) &&
-      canonicalJson(extensionSource(existing)) === canonicalJson(extensionSource(entry)) &&
-      canonicalJson(existing.contributions) === canonicalJson(entry.contributions) &&
-      canonicalJson(existing.files) === canonicalJson(entry.files);
-    if (same) {
-      codePluginTally.skip += 1;
-    } else if (strategy === "skip") {
-      codePluginTally.skip += 1;
-    } else {
-      codePluginTally.overwrite += 1;
-    }
-  }
-
   const extensionSettingsTally = emptyTally();
   if (backup.extensionSettings !== undefined) {
     if (!runtime.hasExtensionSettings()) extensionSettingsTally.new = 1;
@@ -517,7 +466,7 @@ export function previewRestore(
     else if (strategy === "skip" || canonicalJson(runtime.providers.assignments()) === canonicalJson(backup.providerProfiles.tasks)) providerTally.skip++;
     else providerTally.overwrite++;
   }
-  for (const section of [characterTally, conversationTally, memoryTally, pluginTally, codePluginTally, extensionSettingsTally, userAvatarTally, worldbookTally, worldInfoSettingsTally, retainedTally, providerTally]) {
+  for (const section of [characterTally, conversationTally, memoryTally, pluginTally, extensionSettingsTally, userAvatarTally, worldbookTally, worldInfoSettingsTally, retainedTally, providerTally]) {
     totals.new += section.new;
     totals.overwrite += section.overwrite;
     totals.skip += section.skip;
@@ -531,7 +480,6 @@ export function previewRestore(
       conversations: conversationTally,
       memories: memoryTally,
       plugins: pluginTally,
-      codePlugins: codePluginTally,
       extensionSettings: extensionSettingsTally,
       userAvatars: userAvatarTally,
       worldbooks: worldbookTally,
@@ -574,7 +522,6 @@ function applyRestoreSections(
     conversations: 0,
     memories: 0,
     plugins: 0,
-    codePlugins: 0,
     extensionSettings: 0,
     userAvatars: 0,
     worldbooks: 0,
@@ -586,7 +533,6 @@ function applyRestoreSections(
     conversations: 0,
     memories: 0,
     plugins: 0,
-    codePlugins: 0,
     extensionSettings: 0,
     userAvatars: 0,
     worldbooks: 0,
@@ -667,30 +613,6 @@ function applyRestoreSections(
     }
     runtime.restorePlugin(entry);
     applied.plugins += 1;
-  }
-
-  for (const entry of backup.codePlugins) {
-    const existing = runtime.getCodePluginBackupEntry(entry.id);
-    const existingManifest = runtime.getCodePluginManifest(entry.id);
-    const existingState = runtime.getCodePlugin(entry.id);
-    if (
-      existing &&
-      existingManifest &&
-      existingState?.enabled === entry.enabled && existingState.installedAt === entry.installedAt &&
-      canonicalJson(existingManifest) === canonicalJson(entry.manifest) &&
-      canonicalJson(extensionSource(existing)) === canonicalJson(extensionSource(entry)) &&
-      canonicalJson(existing.contributions) === canonicalJson(entry.contributions) &&
-      canonicalJson(existing.files) === canonicalJson(entry.files)
-    ) {
-      skipped.codePlugins += 1;
-      continue;
-    }
-    if (strategy === "skip" && existing) {
-      skipped.codePlugins += 1;
-      continue;
-    }
-    runtime.restoreCodePlugin(entry);
-    applied.codePlugins += 1;
   }
 
   // 阶段摘要与对话设置随故事恢复。

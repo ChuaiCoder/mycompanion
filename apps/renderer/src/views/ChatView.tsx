@@ -52,6 +52,7 @@ export interface ChatViewProps {
   onContinue?: () => void;
   onImpersonate?: () => void;
   onActivateBranch?: (conversationId: string, branchId: string) => Promise<void>;
+  onSwiped?: (conversationId: string) => Promise<void> | void;
   onEditMessage: (message: ChatMessage) => void;
   onEditingDraft: (value: string) => void;
   onSaveEdit: (messageId: string) => void;
@@ -280,6 +281,7 @@ export function ChatView({
   sourceFocus,
   onOpenMemorySource,
   onActivateBranch,
+  onSwiped,
 }: ChatViewProps) {
   const { i18n } = useTranslation(), en = i18n.language.startsWith("en");
   const [surface] = useState(() => new MessageSurface());
@@ -379,7 +381,7 @@ export function ChatView({
               )}
               <MessageTokenUsage metadata={message.generationMetadata} />
               <GenerationDetails metadata={message.generationMetadata} />
-              {activeConversation ? <ReplyCandidates message={message} conversation={activeConversation} disabled={generationControlsBusy} onActivateBranch={onActivateBranch} /> : null}
+              {activeConversation ? <ReplyCandidates message={message} conversation={activeConversation} disabled={generationControlsBusy} onActivateBranch={onActivateBranch} onSwiped={onSwiped} /> : null}
               {activeConversation && <MessageActions
                 conversation={activeConversation}
                 isGenerating={generationControlsBusy}

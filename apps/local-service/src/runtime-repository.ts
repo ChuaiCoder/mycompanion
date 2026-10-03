@@ -11,14 +11,10 @@ import { PersonaAvatarRepository } from "./persona-avatars.js";
 import { VectorStore } from "./vector-store.js";
 import { VectorCollectionRepository } from "./vector-collections.js";
 import { ProviderRepository } from "./provider-repository.js";
-import { visibleCodePlugins } from "./code-plugin-identity.js";
 
 import type {
   BackupPayload,
   ChatMessage,
-  CodePlugin,
-  CodePluginContribution,
-  CodePluginListResponse,
   ConversationDetail,
   ConversationListResponse,
   ConversationSummary,
@@ -37,10 +33,18 @@ import type {
   UpdateProviderSettings,
 } from "@mycompanion/shared";
 import type { CharacterDetail } from "@mycompanion/shared";
-import { mergeChatMessages, mergeJsonChanges, toExtensionMessage, projectNativeCandidateMessage, hasNativeCandidateHistory, NATIVE_CANDIDATE_INFO_KEY, type ExtensionChatSave } from "@mycompanion/shared";
+import { projectNativeCandidateMessage, hasNativeCandidateHistory, NATIVE_CANDIDATE_INFO_KEY, messageGenerationMetadataSchema } from "@mycompanion/shared";
 
 /** 模型上下文上限的默认值；旧数据库与未保存过设置的行都按此回退。 */
 export const DEFAULT_CONTEXT_LIMIT_TOKENS = 32_768;
+
+/** 候选回复切换冲突（消息流式中、序号失效）。路由映射为 409。 */
+export class SwipeSelectionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SwipeSelectionError";
+  }
+}
 
 interface ConversationRow {
   id: string;
@@ -73,21 +77,6 @@ interface PluginRow {
   manifest_json: string;
   enabled: number;
   installed_at: string;
-}
-
-interface CodePluginRow {
-  id: string;
-  manifest_json: string;
-  normalized_json: string;
-  enabled: number;
-  installed_at: string;
-  contributions_json: string;
-  file_count: number;
-  total_bytes: number;
-}
-
-interface CodePluginFileRow {
-  content: Uint8Array;
 }
 
 interface StageSummaryRow {
@@ -567,6 +556,7 @@ export class RuntimeRepository {
     }).format(new Date())}`;
 
     // 每个新故事都有独立的根分支；开场白作为该分支的第一条角色消息。
+    // 有备用开场白时，候选列表随消息落库（原生 swipe 选择的数据源）。
     this.withTransaction(() => {
       this.#database.prepare(`
         INSERT INTO conversations (
@@ -574,11 +564,17 @@ export class RuntimeRepository {
         ) VALUES (?, ?, ?, ?, ?, ?, ?)
       `).run(id, character.id, character.name, title, id, timestamp, timestamp);
       if (greeting.trim()) {
+        const alternates = character.alternateGreetings;
+        const extensionData = JSON.stringify(alternates.length ? {
+          swipes: [greeting, ...alternates.map(value => expandMacros(value, character.name))],
+          swipe_id: 0,
+          swipe_info: [greeting, ...alternates].map(() => ({ send_date: timestamp, extra: {} })),
+        } : {});
         this.#database.prepare(`
           INSERT INTO messages (
-            id, conversation_id, branch_id, parent_message_id, role, content, status, created_at
-          ) VALUES (?, ?, ?, NULL, 'assistant', ?, 'complete', ?)
-        `).run(randomUUID(), id, id, expandMacros(greeting, character.name), timestamp);
+            id, conversation_id, branch_id, parent_message_id, role, content, status, extension_data_json, created_at
+          ) VALUES (?, ?, ?, NULL, 'assistant', ?, 'complete', ?, ?)
+        `).run(randomUUID(), id, id, expandMacros(greeting, character.name), extensionData, timestamp);
       }
     });
     const detail = this.getConversation(id);
@@ -1241,76 +1237,6 @@ export class RuntimeRepository {
     `).run(plugin.id, JSON.stringify(plugin.manifest), plugin.enabled ? 1 : 0, plugin.installedAt);
   }
 
-  restoreCodePlugin(entry: BackupPayload["codePlugins"][number]): void {
-    this.#database.exec("SAVEPOINT restore_code_plugin");
-    try {
-      const normalized = JSON.stringify({
-        ...JSON.parse(this.#codePluginNormalizedJson(entry.manifest)),
-        // Tavern manifests do not require an id; the original installed folder
-        // identity must remain authoritative for subsequent reads and exports.
-        id: entry.id,
-        ...(entry.sourceUrl ? { sourceUrl: entry.sourceUrl } : {}),
-        ...(entry.sourceRef ? { sourceRef: entry.sourceRef } : {}),
-        ...(entry.sourceRevision ? { sourceRevision: entry.sourceRevision } : {}),
-        ...(entry.extensionName ? { extensionName: entry.extensionName } : {}),
-        ...(entry.installationScope ? { installationScope: entry.installationScope } : {}),
-      });
-      this.#database.prepare(`
-        INSERT INTO code_plugins (id, manifest_json, normalized_json, enabled, installed_at, contributions_json)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          manifest_json = excluded.manifest_json,
-          normalized_json = excluded.normalized_json,
-          enabled = excluded.enabled,
-          installed_at = excluded.installed_at,
-          contributions_json = excluded.contributions_json
-      `).run(entry.id, JSON.stringify(entry.manifest), normalized, entry.enabled ? 1 : 0, entry.installedAt, JSON.stringify(entry.contributions));
-      this.#database.prepare("DELETE FROM code_plugin_files WHERE plugin_id = ?").run(entry.id);
-      const insert = this.#database.prepare(
-        "INSERT INTO code_plugin_files (plugin_id, path, content) VALUES (?, ?, ?)",
-      );
-      for (const [path, base64] of Object.entries(entry.files)) {
-        insert.run(entry.id, path, Buffer.from(base64, "base64"));
-      }
-      this.#database.exec("RELEASE SAVEPOINT restore_code_plugin");
-    } catch (error) {
-      try {
-        this.#database.exec("ROLLBACK TO SAVEPOINT restore_code_plugin");
-        this.#database.exec("RELEASE SAVEPOINT restore_code_plugin");
-      } catch { /* SQLite can automatically roll back on a disk/IO failure. */ }
-      throw error;
-    }
-  }
-
-  /**
-   * 由原始 manifest 重建 code_plugins.normalized_json。
-   * 字段须满足 codePluginSchema（kind/js/css/warnings 为必需项，enabled/installedAt/fileCount/totalBytes
-   * 由 listCodePlugins 从 DB 补齐），否则恢复后扩展列表接口解析会失败。
-   */
-  #codePluginNormalizedJson(manifest: Record<string, unknown>): string {
-    const stringField = (key: string, fallback: string): string =>
-      typeof manifest[key] === "string" ? (manifest[key] as string).trim().slice(0, 300) : fallback;
-    const fileField = (key: string): string | null =>
-      typeof manifest[key] === "string" && (manifest[key] as string).trim()
-        ? (manifest[key] as string).trim()
-        : null;
-    const homepage = stringField("homepage", "");
-    return JSON.stringify({
-      kind: "sillytavern-js",
-      id: stringField("id", "restored"),
-      displayName: stringField("display_name", "已恢复的扩展"),
-      version: stringField("version", "0.0.0"),
-      author: stringField("author", "未知"),
-      license: stringField("license", "UNLICENSED"),
-      ...(homepage ? { homepage } : {}),
-      js: fileField("js"),
-      css: fileField("css"),
-      // 内容告警（DOM 依赖等）是安装时基于文件内容派生的提示；备份只保存文件与 manifest，
-      // 恢复时不重复计算，故此处留空，避免误导。
-      warnings: [] as string[],
-    });
-  }
-
   // 备份恢复存在性检查（FR-DATA-003 预览）。
   conversationExists(id: string): boolean {
     return this.#database.prepare("SELECT 1 FROM conversations WHERE id = ?").get(id) !== undefined;
@@ -1325,46 +1251,12 @@ export class RuntimeRepository {
   pluginExists(id: string): boolean {
     return this.#database.prepare("SELECT 1 FROM plugins WHERE id = ?").get(id) !== undefined;
   }
-  codePluginExists(id: string): boolean {
-    return this.#database.prepare("SELECT 1 FROM code_plugins WHERE id = ?").get(id) !== undefined;
-  }
   // 声明式插件的原始 manifest（备份用）。
   getPluginManifest(id: string): Record<string, unknown> | undefined {
     const row = this.#database
       .prepare("SELECT manifest_json FROM plugins WHERE id = ?")
       .get(id) as { manifest_json: string } | undefined;
     return row ? (JSON.parse(row.manifest_json) as Record<string, unknown>) : undefined;
-  }
-  // 代码扩展的贡献 + 全部文件（备份用）。
-  getCodePluginBackupEntry(id: string): {
-    contributions: CodePluginContribution;
-    files: Record<string, string>;
-    sourceUrl?: string;
-    sourceRef?: string;
-    sourceRevision?: string;
-    extensionName?: string;
-    installationScope?: "local" | "global";
-  } | undefined {
-    const plugin = this.getCodePlugin(id);
-    if (!plugin) return undefined;
-    const contributionsRow = this.#database
-      .prepare("SELECT contributions_json FROM code_plugins WHERE id = ?")
-      .get(id) as { contributions_json: string } | undefined;
-    const contributions = contributionsRow
-      ? (JSON.parse(contributionsRow.contributions_json) as CodePluginContribution)
-      : { systemPrompt: "", commands: [] };
-    const rows = this.#database
-      .prepare("SELECT path, content FROM code_plugin_files WHERE plugin_id = ?")
-      .all(id) as unknown as Array<{ path: string; content: Uint8Array }>;
-    const files: Record<string, string> = {};
-    for (const row of rows) files[row.path] = Buffer.from(row.content).toString("base64");
-    return { contributions, files,
-      ...(plugin.sourceUrl ? { sourceUrl: plugin.sourceUrl } : {}),
-      ...(plugin.sourceRef ? { sourceRef: plugin.sourceRef } : {}),
-      ...(plugin.sourceRevision ? { sourceRevision: plugin.sourceRevision } : {}),
-      ...(plugin.extensionName ? { extensionName: plugin.extensionName } : {}),
-      ...(plugin.installationScope ? { installationScope: plugin.installationScope } : {}),
-    };
   }
 
   // 该角色关联的故事数（FR-DATA-004 删除前计数）。
@@ -1406,71 +1298,6 @@ export class RuntimeRepository {
     const metadata = { ...current.chatMetadata, timedWorldInfo: structuredClone(next.timedWorldInfo),
       [WORLD_INFO_STATE_KEY]: structuredClone(next[WORLD_INFO_STATE_KEY]) };
     this.#database.prepare("UPDATE conversations SET metadata_json = ? WHERE id = ?").run(JSON.stringify(metadata), id);
-  }
-
-  saveExtensionChatState(id: string, input: ExtensionChatSave): ConversationDetail | undefined {
-    const conversation = this.getConversation(id);
-    if (!conversation) return undefined;
-    const rows = this.#database.prepare("SELECT * FROM messages WHERE conversation_id = ? AND branch_id = ? ORDER BY rowid")
-      .all(id, input.branchId) as unknown as MessageRow[];
-    if (input.branchId !== conversation.activeBranchId && !rows.length) throw new Error("要保存的故事分支不存在。");
-    const current = rows.map(messageFromRow);
-    const existing = new Map(current.map(message => [message.id, message]));
-    const projected = current.map(message => toExtensionMessage(message, conversation.characterName));
-    const merged = mergeChatMessages(input.base.messages, input.next.messages, projected, mergeJsonChanges);
-    const metadata = mergeJsonChanges(input.base.metadata, input.next.metadata, conversation.chatMetadata);
-    const timestamp = new Date().toISOString();
-    const projectedById = new Map(projected.map(message => [message.id, message]));
-    const extensionFields = (raw: (typeof projected)[number]) => {
-      const { id: _id, mes: _mes, is_user: _user, role: _role, content: _content,
-        status: _status, generationMetadata: _generation, ...fields } = raw;
-      return fields;
-    };
-    const messages = isDeepStrictEqual(merged, projected) ? current : merged.map((raw, index): ChatMessage => {
-      const previous = existing.get(raw.id);
-      const previousProjection = projectedById.get(raw.id);
-      const parentMessageId = merged[index - 1]?.id ?? null;
-      if (previous && isDeepStrictEqual(raw, previousProjection)) {
-        return previous.parentMessageId === parentMessageId ? previous : { ...previous, parentMessageId };
-      }
-      // Projection-only fields never override our generation status/identity.
-      // Apply only changed extension fields so editing a message does not make
-      // its unchanged presentation defaults (or its neighbors') durable data.
-      const extensionData = previousProjection ? mergeJsonChanges(extensionFields(previousProjection), extensionFields(raw),
-        previous?.extensionData ?? {}) as Record<string, unknown> : extensionFields(raw);
-      const message: ChatMessage = { ...previous, id: raw.id, conversationId: id, branchId: input.branchId,
-        parentMessageId, role: raw.is_user ? "user" : "assistant", content: raw.mes,
-        status: previous?.status ?? "complete", createdAt: previous?.createdAt ?? timestamp, extensionData,
-        ...(previous?.generationMetadata&&hasNativeCandidateHistory(previous.extensionData)
-          ?{generationMetadata:{...previous.generationMetadata,nativeCandidates:true as const}}:{}),
-      };
-      if (!Object.keys(extensionData).length) delete message.extensionData;
-      return projectNativeCandidateMessage(message);
-    });
-    const messagesChanged = !isDeepStrictEqual(messages, current);
-    // Debounced/stale unchanged snapshots and ignored projection-only edits
-    // remain full no-ops. A metadata-only save does not rewrite message rows.
-    if (!messagesChanged && isDeepStrictEqual(metadata, conversation.chatMetadata)) {
-      return { ...conversation, activeBranchId: input.branchId, messages: current,
-        messageCount: current.length, lastMessagePreview: current.at(-1)?.content.slice(0, 120) ?? "" };
-    }
-    this.#database.exec("BEGIN IMMEDIATE");
-    try {
-      if (messagesChanged) {
-        this.#database.prepare("DELETE FROM messages WHERE conversation_id = ? AND branch_id = ?").run(id, input.branchId);
-        const insert = this.#database.prepare(`INSERT INTO messages
-          (id, conversation_id, branch_id, parent_message_id, role, content, status, generation_json, extension_data_json, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-        for (const message of messages) insert.run(message.id, id, input.branchId, message.parentMessageId, message.role, message.content, message.status,
-          message.generationMetadata ? JSON.stringify(message.generationMetadata) : null, JSON.stringify(message.extensionData ?? {}), message.createdAt);
-      }
-      this.#database.prepare("UPDATE conversations SET metadata_json = ?, updated_at = ? WHERE id = ?")
-        .run(JSON.stringify(metadata), timestamp, id);
-      if (messagesChanged && input.branchId === conversation.activeBranchId) this.syncMemoryReachability(id);
-      this.#database.exec("COMMIT");
-    } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
-    return { ...conversation, activeBranchId: input.branchId, messages, messageCount: messages.length,
-      lastMessagePreview: messages.at(-1)?.content.slice(0, 120) ?? "", updatedAt: timestamp, chatMetadata: metadata as Record<string, unknown> };
   }
 
   // 只返回当前激活分支的消息，按发生顺序（parent_message_id 链接的链）排序。
@@ -1658,6 +1485,55 @@ export class RuntimeRepository {
     return edited;
   }
 
+  // 选择候选回复（FR-CHAT）：swipe_id/内容/扩展数据/投影的服务端原子更新。
+  // 语义与投影逻辑保持一致：原候选保留当前展示状态，新候选继承自己的 extra。
+  selectMessageSwipe(conversationId: string, message: ChatMessage, swipeId: number): ChatMessage {
+    if (message.role !== "assistant" || message.status === "streaming") throw new SwipeSelectionError("此消息暂时不能切换候选回复。");
+    const extensionData = structuredClone(message.extensionData ?? {});
+    const swipes = extensionData.swipes;
+    if (!Number.isInteger(swipeId) || !Array.isArray(swipes) || typeof swipes[swipeId] !== "string")
+      throw new SwipeSelectionError("候选回复已改变，请重新选择。");
+    const old = typeof extensionData.swipe_id === "number" ? extensionData.swipe_id : 0;
+    if (old === swipeId) return message;
+    const record = (value: unknown): Record<string, unknown> =>
+      value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const infos = (Array.isArray(extensionData.swipe_info) ? extensionData.swipe_info : swipes.map(() => ({ send_date: message.createdAt, extra: {} }))) as Record<string, unknown>[];
+    const conversation = this.getConversation(conversationId);
+    if (typeof swipes[old] === "string") {
+      if (conversation?.chatMetadata?.tainted || (conversation?.messages.length ?? 0) > 1) swipes[old] = message.content;
+      const oldExtra = record(record(infos[old]).extra), currentExtra = record(structuredClone(extensionData.extra ?? {}));
+      // Native host provenance remains attached to its own candidate.
+      if (Object.hasOwn(oldExtra, NATIVE_CANDIDATE_INFO_KEY) && !Object.hasOwn(currentExtra, NATIVE_CANDIDATE_INFO_KEY))
+        currentExtra[NATIVE_CANDIDATE_INFO_KEY] = structuredClone(oldExtra[NATIVE_CANDIDATE_INFO_KEY]);
+      infos[old] = { ...record(infos[old]), send_date: extensionData.send_date ?? message.createdAt,
+        gen_started: extensionData.gen_started, gen_finished: extensionData.gen_finished, extra: currentExtra };
+    }
+    const info = record(infos[swipeId]);
+    extensionData.swipe_info = infos;
+    extensionData.swipe_id = swipeId;
+    extensionData.send_date = info.send_date;
+    extensionData.gen_started = info.gen_started;
+    extensionData.gen_finished = info.gen_finished;
+    extensionData.extra = structuredClone(info.extra ?? {});
+    let next: ChatMessage = { ...message, content: swipes[swipeId] as string, extensionData };
+    const generation = messageGenerationMetadataSchema.safeParse(message.generationMetadata);
+    if (generation.success) {
+      const projected = projectNativeCandidateMessage({ content: next.content, status: message.status,
+        generationMetadata: generation.data, extensionData });
+      next = { ...next, status: projected.status,
+        ...(projected.generationMetadata ? { generationMetadata: projected.generationMetadata } : {}) };
+    }
+    this.withTransaction(() => {
+      this.#database.prepare(`UPDATE messages SET content = ?, status = ?, generation_json = ?, extension_data_json = ?
+        WHERE id = ? AND conversation_id = ? AND branch_id = ?`).run(
+        next.content, next.status, next.generationMetadata ? JSON.stringify(next.generationMetadata) : null,
+        JSON.stringify(extensionData), message.id, message.conversationId, message.branchId);
+      this.#database.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?").run(new Date().toISOString(), conversationId);
+      this.syncMemoryReachability(conversationId);
+    });
+    return this.getMessage(conversationId, message.id, message.branchId) ?? next;
+  }
+
   // 删除当前分支中的一条消息。
   deleteMessage(conversationId: string, messageId: string): boolean {
     const branchId = this.activeBranchId(conversationId);
@@ -1801,145 +1677,5 @@ export class RuntimeRepository {
 
   activePlugins(): InstalledPlugin[] {
     return this.listPlugins().items.filter((plugin) => plugin.enabled);
-  }
-
-  listCodePlugins(): CodePluginListResponse {
-    const rows = this.#database.prepare(`
-      SELECT p.*,
-        (SELECT count(*) FROM code_plugin_files f WHERE f.plugin_id = p.id) AS file_count,
-        COALESCE((SELECT sum(length(content)) FROM code_plugin_files f WHERE f.plugin_id = p.id), 0) AS total_bytes
-      FROM code_plugins p ORDER BY p.installed_at DESC
-    `).all() as unknown as CodePluginRow[];
-    const items = rows.map((row) => ({
-      ...(JSON.parse(row.normalized_json) as Omit<CodePlugin, "enabled" | "installedAt" | "fileCount" | "totalBytes">),
-      enabled: Boolean(row.enabled),
-      installedAt: row.installed_at,
-      fileCount: row.file_count,
-      totalBytes: row.total_bytes,
-    }));
-    return { items, total: items.length };
-  }
-
-  getCodePlugin(id: string): CodePlugin | undefined {
-    const row = this.#database.prepare(`
-      SELECT p.*,
-        (SELECT count(*) FROM code_plugin_files f WHERE f.plugin_id = p.id) AS file_count,
-        COALESCE((SELECT sum(length(content)) FROM code_plugin_files f WHERE f.plugin_id = p.id), 0) AS total_bytes
-      FROM code_plugins p WHERE p.id = ?
-    `).get(id) as CodePluginRow | undefined;
-    if (!row) return undefined;
-    return {
-      ...(JSON.parse(row.normalized_json) as Omit<CodePlugin, "enabled" | "installedAt" | "fileCount" | "totalBytes">),
-      enabled: Boolean(row.enabled),
-      installedAt: row.installed_at,
-      fileCount: row.file_count,
-      totalBytes: row.total_bytes,
-    };
-  }
-
-  getCodePluginManifest(id: string): Record<string, unknown> | undefined {
-    const row = this.#database
-      .prepare("SELECT manifest_json FROM code_plugins WHERE id = ?")
-      .get(id) as Pick<CodePluginRow, "manifest_json"> | undefined;
-    return row ? JSON.parse(row.manifest_json) as Record<string, unknown> : undefined;
-  }
-
-  installCodePlugin(options: {
-    plugin: Omit<CodePlugin, "enabled" | "installedAt">;
-    manifest: Record<string, unknown>;
-    files: Map<string, Buffer>;
-  }): CodePlugin {
-    const previous = this.getCodePlugin(options.plugin.id);
-    const installedAt = previous?.installedAt ?? new Date().toISOString();
-    const previousContributions = previous
-      ? this.#database.prepare("SELECT contributions_json FROM code_plugins WHERE id = ?")
-        .get(options.plugin.id) as { contributions_json: string }
-      : undefined;
-    this.withTransaction(() => {
-      this.#database.prepare(`
-        INSERT INTO code_plugins (
-          id, manifest_json, normalized_json, enabled, installed_at, contributions_json
-        ) VALUES (?, ?, ?, ?, ?, ?)
-        ON CONFLICT(id) DO UPDATE SET
-          manifest_json = excluded.manifest_json,
-          normalized_json = excluded.normalized_json,
-          enabled = excluded.enabled,
-          installed_at = excluded.installed_at,
-          contributions_json = excluded.contributions_json
-      `).run(
-        options.plugin.id,
-        JSON.stringify(options.manifest),
-        JSON.stringify(options.plugin),
-        previous?.enabled ? 1 : 0,
-        installedAt,
-        previousContributions?.contributions_json ?? '{"systemPrompt":"","commands":[]}',
-      );
-      this.#database.prepare("DELETE FROM code_plugin_files WHERE plugin_id = ?")
-        .run(options.plugin.id);
-      const insert = this.#database.prepare(`
-        INSERT INTO code_plugin_files (plugin_id, path, content) VALUES (?, ?, ?)
-      `);
-      for (const [path, content] of options.files) {
-        insert.run(options.plugin.id, path, content);
-      }
-    });
-    const installed = this.getCodePlugin(options.plugin.id);
-    if (!installed) throw new Error("Code plugin installation failed.");
-    return installed;
-  }
-
-  getCodePluginFile(id: string, path: string): Buffer | undefined {
-    const row = this.#database
-      .prepare("SELECT content FROM code_plugin_files WHERE plugin_id = ? AND path = ?")
-      .get(id, path) as CodePluginFileRow | undefined;
-    return row ? Buffer.from(row.content) : undefined;
-  }
-
-  setCodePluginEnabled(id: string, enabled: boolean): CodePlugin | undefined {
-    const result = this.#database
-      .prepare("UPDATE code_plugins SET enabled = ? WHERE id = ?")
-      .run(enabled ? 1 : 0, id);
-    return result.changes > 0 ? this.getCodePlugin(id) : undefined;
-  }
-
-  deleteCodePlugin(id: string): boolean {
-    return this.#database.prepare("DELETE FROM code_plugins WHERE id = ?").run(id).changes > 0;
-  }
-
-  saveCodePluginContributions(id: string, value: CodePluginContribution): boolean {
-    return this.#database.prepare(
-      "UPDATE code_plugins SET contributions_json = ? WHERE id = ? AND enabled = 1",
-    ).run(JSON.stringify(value), id).changes > 0;
-  }
-
-  activeCodePluginsAsInstalled(): InstalledPlugin[] {
-    const visible = new Set(visibleCodePlugins(this.listCodePlugins().items).map(plugin => plugin.id));
-    const rows = this.#database.prepare(`
-      SELECT p.*,
-        (SELECT count(*) FROM code_plugin_files f WHERE f.plugin_id = p.id) AS file_count,
-        COALESCE((SELECT sum(length(content)) FROM code_plugin_files f WHERE f.plugin_id = p.id), 0) AS total_bytes
-      FROM code_plugins p WHERE p.enabled = 1 ORDER BY p.installed_at
-    `).all() as unknown as CodePluginRow[];
-    return rows.filter(row => visible.has((JSON.parse(row.normalized_json) as CodePlugin).id)).map((row) => {
-      const plugin = JSON.parse(row.normalized_json) as Omit<CodePlugin, "enabled" | "installedAt">;
-      const contributions = JSON.parse(row.contributions_json) as CodePluginContribution;
-      const permissions: InstalledPlugin["permissions"] = [];
-      if (contributions.systemPrompt) permissions.push("prompt:system");
-      if (contributions.commands.length > 0) permissions.push("command:register");
-      return {
-        schemaVersion: 1,
-        id: plugin.id,
-        name: plugin.displayName,
-        version: plugin.version,
-        description: "SillyTavern JavaScript extension contribution",
-        author: plugin.author,
-        license: plugin.license,
-        ...(plugin.homepage ? { homepage: plugin.homepage } : {}),
-        permissions,
-        contributes: contributions,
-        enabled: true,
-        installedAt: row.installed_at,
-      };
-    });
   }
 }

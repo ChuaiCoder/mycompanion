@@ -8,10 +8,10 @@ vi.mock("../extension-settings", () => ({ flushSharedExtensionSettings: host.flu
 vi.mock("../world-editor-drafts", () => ({ flushWorldEditorDrafts: host.world }));
 vi.mock("../composer-drafts", () => ({ flushComposerDrafts: host.composer }));
 const backup = { format: "mycompanion-backup", formatVersion: 1, createdAt: "2026-10-02T00:00:00.000Z",
-  manifest: { characterCount: 0, conversationCount: 0, messageCount: 0, memoryCount: 0, pluginCount: 0, codePluginCount: 0, settingsIncluded: false, checksum: "0".repeat(64) },
-  characters: [], conversations: [], memories: [], stageSummaries: [], conversationSettings: [], plugins: [], codePlugins: [], providerSettings: null };
+  manifest: { characterCount: 0, conversationCount: 0, messageCount: 0, memoryCount: 0, pluginCount: 0, settingsIncluded: false, checksum: "0".repeat(64) },
+  characters: [], conversations: [], memories: [], stageSummaries: [], conversationSettings: [], plugins: [], providerSettings: null };
 const tally = { new: 0, overwrite: 0, skip: 0, conflict: 0 };
-const applied = { characters: 0, conversations: 0, memories: 0, plugins: 0, codePlugins: 0, extensionSettings: 0, userAvatars: 0, worldbooks: 0, worldInfoSettings: 0, retainedCharacterChats: 0 };
+const applied = { characters: 0, conversations: 0, memories: 0, plugins: 0, extensionSettings: 0, userAvatars: 0, worldbooks: 0, worldInfoSettings: 0, retainedCharacterChats: 0 };
 const preview = { valid: true, errors: [], sections: Object.fromEntries(Object.keys(applied).map(key => [key, tally])), totals: tally };
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 function file(value: unknown = backup) { const result = new File([JSON.stringify(value)], "backup.json", { type: "application/json" }); Object.defineProperty(result, "text", { value: async () => JSON.stringify(value) }); return result; }

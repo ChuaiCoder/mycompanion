@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { conversationDetailSchema } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
+import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
 import {
   apps,
   commitCard,
@@ -87,9 +88,7 @@ describe("prompt budget (FR-PROMPT-003)", () => {
     expect(budgetEvent?.report.diagnostics.join("")).toContain("较早消息");
     expect(budgetEvent?.report.diagnostics.join("")).toContain("世界书条目");
     expect(JSON.stringify(generatedMessages)).not.toContain("工作室建在废弃天文台内部");
-    const exact = (await app.inject({ method: "POST", url: "/api/extensions/token-count", payload: {
-      messages: generatedMessages, model: "test-model", full: true,
-    } })).json();
-    expect(budgetEvent?.report.totalTokens).toBe(exact.token_count + 712);
+    const exact = countCompatibilityMessagesSync(generatedMessages as never, "test-model", true);
+    expect(budgetEvent?.report.totalTokens).toBe(exact + 712);
   });
 });

@@ -1,10 +1,8 @@
-import type { FastifyInstance } from "fastify";
 import { modelToEncodingMap } from "gpt-tokenizer/mapping";
 import * as modelCatalog from "gpt-tokenizer/models";
 import * as cl100k from "gpt-tokenizer/encoding/cl100k_base";
 import * as o200k from "gpt-tokenizer/encoding/o200k_base";
 import { contentTokenCost } from "./content-token-cost.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
 
 export function tokenizerDescriptor(model: string) {
   // The package's model map lists encoding exceptions; catalog models absent
@@ -58,18 +56,4 @@ export async function countCompatibilityMessages(messages: Array<Record<string, 
   const tokenizer = await tokenizerFor(model);
   return { token_count: countMessages(messages, model, full, tokenizer.count), model, encoding: tokenizer.encoding,
     estimated: true, textEstimated: tokenizer.estimated, framingEstimated: true };
-}
-
-export function registerTokenizerRoutes(app: FastifyInstance, runtime: RuntimeRepository): void {
-  app.post<{ Body: { text?: string; messages?: Array<Record<string, unknown>>; full?: boolean; model?: string } }>("/api/extensions/token-count", {
-    schema: { body: { type: "object", properties: { text: { type: "string" },
-      messages: { type: "array", items: { type: "object", additionalProperties: true } }, full: { type: "boolean" }, model: { type: "string" },
-    }, oneOf: [{ required: ["text"] }, { required: ["messages"] }] } },
-  }, async request => {
-    const { text, messages, full } = request.body;
-    const model = request.body.model ?? runtime.getProvider().model;
-    if (messages) return countCompatibilityMessages(messages, model, full);
-    const tokenizer = await tokenizerFor(model);
-    return { token_count: tokenizer.count(text!), model, encoding: tokenizer.encoding, estimated: tokenizer.estimated };
-  });
 }

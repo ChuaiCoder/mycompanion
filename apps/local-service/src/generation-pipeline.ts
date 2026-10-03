@@ -1,4 +1,3 @@
-import { createGenerationPreflight } from "./generation-preflight.js";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import type {
@@ -8,8 +7,6 @@ import type {
   GenerationSseEvent,
   LorebookReport,
   MessageGenerationMetadata,
-  NativeCompletionRequest,
-  ModelResponseState,
   ModelCandidateSnapshot,
   ProviderSettings,
   ProviderTask,
@@ -37,7 +34,6 @@ import { MacroEvaluationSession } from "./prompt-macros.js";
 import { MacroVariableConflictError } from "./macro-variable-conflict.js";
 import { bindCharacterMacroEnvironment, buildCharacterDepthPrompt, prepareCharacterMacroFields } from "./character-macros.js";
 import type { SecretCodec } from "./route-types.js";
-import { createMacroBoundaryRpc, createEffectBoundaryRpc, runMacroBoundary } from "./macro-boundary.js";
 import { getWorldInfoOutlets, getWorldInfoActivatedEntries, worldInfoOutletsFromPrompts } from "./world-info-activation.js";
 
 export interface GenerationPipelineDeps {
@@ -64,9 +60,6 @@ export interface NativeRegexContext {
 // version did: regex executor close, preClose shutdown, memory job drain.
 export function createGenerationPipeline(app: FastifyInstance, deps: GenerationPipelineDeps) {
   const { runtime, characters, secretCodec } = deps;
-  const preflight = createGenerationPreflight(app);
-  const macroRpc = createMacroBoundaryRpc(app);
-  const effectRpc = createEffectBoundaryRpc(app);
 
   // 每个对话同时最多一个进行中的流式生成；用于“停止”时中止请求。
   const inFlightGenerations = new Map<string, AbortController>();
@@ -320,7 +313,7 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
     userMessage?: ChatMessage,
     sourceHistory?: ChatMessage[],
     extensionPrompts: ExtensionPrompt[] = [],
-    options: { browserPreflight?: boolean; browserMacros?: boolean; inputContent?: string; dryRun?: boolean; prepareAssistant?: () => ChatMessage; continueFrom?: ChatMessage; ephemeral?: boolean; regexContext?: NativeRegexContext; generationType?: string } = {},
+    options: { inputContent?: string; dryRun?: boolean; prepareAssistant?: () => ChatMessage; continueFrom?: ChatMessage; ephemeral?: boolean; regexContext?: NativeRegexContext; generationType?: string } = {},
   ): Promise<void> => {
     const regexContext = options.regexContext ?? createRegexContext(character, conversationId);
     const { settings, macroSession } = regexContext;
@@ -345,12 +338,7 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
     };
     let macroBranchId = runtime.getConversation(conversationId)?.activeBranchId ?? null;
     const worldInfoScanBranchId = macroBranchId;
-    const browserResolver = macroRpc(controller.signal, (requestId, call) => send({ type: "macro_request", requestId, conversationId, branchId: macroBranchId,
-      evaluation: { ...call } }));
-    const effectResolver = effectRpc(controller.signal, (requestId, call) => send({ type: "effect_request", requestId, conversationId, branchId: macroBranchId,
-      evaluation: { ...call } }), invocationId => send({ type: "effect_end", invocationId }));
-    const phase = <T>(work: () => T | Promise<T>): Promise<T> => options.browserMacros
-      ? runMacroBoundary(macroSession, controller.signal, browserResolver, work, effectResolver) : Promise.resolve().then(work);
+    const phase = <T>(work: () => T | Promise<T>): Promise<T> => Promise.resolve().then(work);
     if (userMessage) {
       send({ type: "user_message", message: userMessage });
     }
@@ -410,12 +398,10 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
       const savedSummary = runtime.getSummary(conversationId);
       const summary = savedSummary?.valid && (!excludedSourceId || !savedSummary.sourceMessageIds?.includes(excludedSourceId)) ? savedSummary : undefined;
       const result = await streamReply({
-        ...(options.browserMacros ? { preparePrompt: phase } : {}),
         macroSession,
         generationType: options.generationType ?? (options.prepareAssistant ? "regenerate" : "normal"),
         ...(options.continueFrom ? { preserveOutput: true } : {}),
         dryRun: options.dryRun ?? false,
-        ...(options.browserPreflight ? { onRequest: (request: NativeCompletionRequest, signal: AbortSignal) => preflight(signal, requestId => send({ type: "completion_request", requestId, request, dryRun: options.dryRun ?? false, provider: settings })) } : {}),
         onReady: request => {
           controller.signal.throwIfAborted();
           const changes=macroSession.changes();
@@ -456,10 +442,7 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
         ...(apiKey ? { apiKey } : {}),
         character,
         history,
-        plugins: [
-          ...runtime.activePlugins(),
-          ...runtime.activeCodePluginsAsInstalled(),
-        ],
+        plugins: runtime.activePlugins(),
         lorebook,
         memory,
         ...(summary ? { stageSummary: summary.content } : {}),
@@ -471,18 +454,6 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
             generation.responseState = state;
         },
         onCandidates: snapshot => { candidates=structuredClone(snapshot); },
-        onToolRound: rounds => { generation.toolRounds=rounds; },
-        ...(options.browserPreflight ? {onToolCalls:async (state:ModelResponseState,signal:AbortSignal,assistantText:string)=>{
-          const invocationId=crypto.randomUUID();
-          const tools=effectRpc(signal,(requestId,call)=>send({type:"effect_request",requestId,conversationId,branchId:macroBranchId,evaluation:{...call}}),
-            id=>send({type:"effect_end",invocationId:id}));
-          try{
-            const result=await tools({invocationId,ordinal:generation.toolRounds?.length??0,kind:"tool-calls",payload:{state,assistantText},
-              environment:structuredClone(macroSession.getCharacterEnvironment()),local:structuredClone(macroSession.local),global:structuredClone(macroSession.global)});
-            signal.throwIfAborted();macroSession.replaceVariables(result.local,result.global);macroSession.checkpointChanges();
-            return result.payload;
-          }finally{tools.dispose?.(invocationId);}
-        }}:{}),
         onFinish: end => { generation.finishReason = end.finishReason; generation.completionOutcome = end.completionOutcome;
           if(end.candidates)candidates=structuredClone(end.candidates);
           if (end.responseState) generation.responseState = end.responseState;
@@ -591,9 +562,6 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
   });
 
   return {
-    preflight,
-    macroRpc,
-    effectRpc,
     allowNativeCharacterRegex,
     createRegexContext,
     retrieveMemory,

@@ -1,27 +1,19 @@
 import { expect, it } from "vitest";
 import { buildApp } from "./app.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { apps } from "./test-helpers.js";
 import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
 import { CONTEXT_RESERVE_TOKENS } from "./prompt-budget.js";
 
-const cases: Array<{ name: string; supplied: Record<string, string | null>; expected: string[] }> = [
-  { name: "omitted", supplied: {}, expected: [] },
-  { name: "explicit empty", supplied: { worldInfoBefore: "", worldInfoAfter: "" }, expected: [] },
-  { name: "before empty", supplied: { worldInfoBefore: "" }, expected: [] },
-  { name: "after empty", supplied: { worldInfoAfter: "" }, expected: [] },
-  { name: "null", supplied: { worldInfoBefore: null, worldInfoAfter: null }, expected: [] },
-  { name: "before only", supplied: { worldInfoBefore: "SUPPLIED_BEFORE" }, expected: ["SUPPLIED_BEFORE"] },
-  { name: "after only", supplied: { worldInfoAfter: "SUPPLIED_AFTER" }, expected: ["SUPPLIED_AFTER"] },
-  { name: "both", supplied: { worldInfoBefore: "SUPPLIED_BEFORE", worldInfoAfter: "SUPPLIED_AFTER" }, expected: ["SUPPLIED_BEFORE", "SUPPLIED_AFTER"] },
-];
-
+// 原生 prompt-preview 不再接受调用方直接供给的世界书文本（那是已删除的
+// extension-prompt-assembly 兼容接口的能力）。这里的边界是：预览/组装不得
+// 执行未被请求的世界书条目或 scan-only 扩展提示词。
 for (const experimental of [false, true]) {
-  it.each(cases)(`uses only caller-supplied WI during public assembly: $name (experimental=${experimental})`, async ({ supplied, expected }) => {
+  it(`keeps unrequested world info and scan-only extension prompts out of prompt preview (experimental=${experimental})`, async () => {
     const app = buildApp(); apps.push(app);
-    const avatar = (await app.inject({ method: "POST", url: "/api/characters/create", payload: {
+    const character = await createTestCharacter(app, {
       ch_name: "Public WI boundary", description: "CARD_ANCHOR", first_mes: "Hello",
-    } })).body;
-    const character = (await app.inject({ method: "POST", url: "/api/characters/get", payload: { avatar_url: avatar } })).json();
+    });
     const story = (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json();
     await app.inject({ method: "PUT", url: "/api/settings/provider", payload: {
       kind: "ollama", baseUrl: "http://provider.test/v1", model: "gpt-4o", maxTokens: 128, contextLimitTokens: 4096,
@@ -44,7 +36,7 @@ for (const experimental of [false, true]) {
     const settings = async () => (await app.inject({ method: "GET", url: "/api/extensions/settings" })).json().extensionSettings;
     const before = await chat(), initialSettings = await settings();
     // A positive control proves this selected constant entry is executable.
-    // Scanning is a separate public call; this read-only draft is not assembly input.
+    // Scanning is a separate public call; the read-only preview is not assembly input.
     const scan = await app.inject({ method: "POST", url: "/api/worldinfo/prompt", payload: {
       chat: [], maxContext: 4096, characterId: character.id, conversationId: story.id, commitVariables: false,
     } });
@@ -53,25 +45,21 @@ for (const experimental of [false, true]) {
     expect(await chat()).toEqual(before);
     expect(await settings()).toEqual(initialSettings);
 
-    const assembly = await app.inject({ method: "POST", url: `/api/conversations/${story.id}/extension-prompt-assembly`, payload: {
-      messages: [{ role: "user", content: "input" }], commitVariables: true,
+    const preview = await app.inject({ method: "POST", url: `/api/conversations/${story.id}/prompt-preview`, payload: {
+      draft: "input",
       extensionPrompts: [{ key: "scan-only", value: "UNREQUESTED_SCAN={{incvar::scanOnly}}", position: -1, scan: true, depth: 0, role: 0 }],
-      ...supplied,
     } });
-    expect(assembly.statusCode, assembly.body).toBe(200);
-    const report = assembly.json(), text = report.messages.map((message: { content: string }) => message.content).join("\n");
-    expect.soft(text).not.toContain("UNREQUESTED_WORLD");
+    expect(preview.statusCode, preview.body).toBe(200);
+    const report = preview.json(), text = report.messages.map((message: { content: string }) => message.content).join("\n");
+    // 原生预览与真实生成一致：选中的常驻世界书会被注入并求值。
+    expect.soft(text).toContain("UNREQUESTED_WORLD=");
+    // scan-only 扩展提示词只应在明确要求扫描的入口求值，不进预览正文。
     expect.soft(text).not.toContain("UNREQUESTED_SCAN");
-    for (const marker of expected) expect.soft(text).toContain(marker);
-    for (const marker of ["SUPPLIED_BEFORE", "SUPPLIED_AFTER"].filter(marker => !expected.includes(marker)))
-      expect.soft(text).not.toContain(marker);
-    if (expected.includes("SUPPLIED_BEFORE")) expect.soft(text.indexOf("SUPPLIED_BEFORE")).toBeLessThan(text.indexOf("CARD_ANCHOR"));
-    if (expected.includes("SUPPLIED_AFTER")) expect.soft(text.indexOf("CARD_ANCHOR")).toBeLessThan(text.indexOf("SUPPLIED_AFTER"));
+    expect.soft(text).toContain("CARD_ANCHOR");
     const worldTokens = report.regions.filter((region: { key: string }) => ["worldbook", "worldbook_constant"].includes(region.key))
       .reduce((sum: number, region: { tokens: number }) => sum + region.tokens, 0);
-    expect.soft(worldTokens > 0).toBe(expected.length > 0);
+    expect.soft(worldTokens > 0).toBe(true);
     expect.soft(report.totalTokens).toBe(countCompatibilityMessagesSync(report.messages, "gpt-4o", true) + 128 + CONTEXT_RESERVE_TOKENS);
-    expect.soft(report.macroChanges).toEqual([]);
     expect.soft(await chat()).toEqual(before);
     expect.soft(await settings()).toEqual(initialSettings);
   });

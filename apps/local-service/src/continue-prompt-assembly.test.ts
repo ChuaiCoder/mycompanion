@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
 import { assembleModelPrompt, type PromptAssemblyOptions } from "./model-client.js";
-import { productCardForTests } from "./macro-boundary-test-helper.js";
+import { productCardForTests } from "./native-fixtures.js";
 import { MacroEvaluationSession } from "./prompt-macros.js";
 import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
 

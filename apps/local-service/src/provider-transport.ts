@@ -1,7 +1,6 @@
-import { modelResponseStateSchema, modelToolRoundSchema, type ProviderSettings } from "@mycompanion/shared";
+import { modelResponseStateSchema, type ProviderSettings } from "@mycompanion/shared";
 import { ModelRequestError } from "./model-request-error.js";
 import { convertClaudeMessages, convertGooglePrompt, calculateClaudeBudgetTokens, calculateGoogleBudgetTokens } from "./provider-converters-upstream.js";
-import { createToolContinuation } from "./tool-generation.js";
 
 export type CompletionProtocol = "openai" | "claude" | "gemini";
 const object = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};
@@ -26,41 +25,15 @@ function endpoint(baseUrl: string, path: string): URL {
 }
 
 /** Native reasoning signatures are scoped to the model that produced them.
- * The internal replay marker is removed before any request reaches a provider. */
-function toolHistoryMessages(rounds:unknown,protocol:CompletionProtocol,model:string):Array<Record<string,unknown>> {
-  const parsed=modelToolRoundSchema.array().safeParse(rounds);
-  if(!parsed.success)throw new ModelRequestError("历史工具回合状态无效。",400);
-  return parsed.data.flatMap(round=>{
-    const state=structuredClone(round.responseState),sourceProtocol=state.protocol,sourceModel=state.model;
-    if(sourceProtocol!==protocol){
-      state.protocol=protocol;state.reasoning="";state.signature="";state.providerContent=[];
-      for(const call of state.toolCalls)delete call.signature;
-      const media=state.media.map(part=>({type:part.mimeType.startsWith("image/")?"image_url":part.mimeType.startsWith("audio/")?"audio_url":"video_url",
-        url:`data:${part.mimeType};base64,${part.data}`}));
-      if(protocol==="claude")state.providerContent=[...(round.content?[{type:"text",text:round.content}]:[]),
-        ...media.map(part=>({type:part.type,[part.type]:{url:part.url}})),...state.toolCalls.map(call=>({type:"tool_use",id:call.id,name:call.function.name,input:JSON.parse(call.function.arguments||"{}")}))];
-      else if(protocol==="gemini")state.providerContent=[...(round.content?[{text:round.content}]:[]),
-        ...state.media.map(part=>({inlineData:{mimeType:part.mimeType,data:part.data}})),
-        ...state.toolCalls.map(call=>({functionCall:{id:call.id,name:call.function.name,args:JSON.parse(call.function.arguments||"{}")}}))];
-    }
-    const continuation=createToolContinuation(state,round.content,{invocations:round.invocations,errors:[],stealthCalls:[]});
-    if(sourceProtocol!==protocol&&protocol==="openai"&&state.media.length){
-      continuation.messages[0]!.content=[{type:"text",text:round.content},...state.media.map(part=>{
-        const type=part.mimeType.startsWith("image/")?"image_url":part.mimeType.startsWith("audio/")?"audio_url":"video_url";
-        return {type,[type]:{url:`data:${part.mimeType};base64,${part.data}`}};
-      })];
-    }
-    return continuation.messages.map(message=>({...message,provider_response_protocol:protocol,
-      provider_response_model:sourceProtocol===protocol?sourceModel??"":model}));
-  });
-}
-
+ * The internal replay marker is removed before any request reaches a provider.
+ * Historical tool rounds from legacy databases are not replayed to providers;
+ * the canonical assistant text is sent on its own. */
 export function replayProviderResponseMessages(messages:unknown,protocol:CompletionProtocol,model:string,preserveOrigin=false):unknown {
   if(!Array.isArray(messages))return messages;
   const expanded=messages.flatMap(raw=>{
     const message=object(raw),rounds=message.toolRounds;if(rounds===undefined)return [raw];
     const canonical={...message};delete canonical.toolRounds;
-    return [...toolHistoryMessages(rounds,protocol,model),canonical];
+    return [canonical];
   });
   return expanded.map(raw=>{
     const message=structuredClone(object(raw));

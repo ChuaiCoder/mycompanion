@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { join,resolve } from "node:path";
 import { buildApp } from "./app.js";
 import { RuntimeRepository } from "./runtime-repository.js";
+import { createTestCharacter } from "./native-fixtures.js";
 
 it("reads only the current branch's latest requested window in stable insertion order while keeping complete history available",async()=>{
   const prefix=join(tmpdir(),"mycompanion-window-"),folder=mkdtempSync(prefix),databasePath=join(folder,"runtime.sqlite");
   const app=buildApp({databasePath}),db=new DatabaseSync(databasePath),runtime=new RuntimeRepository(db);
   try {
-  const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Window fixture",first_mes:"Opening"}})).body;
-  const character=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();
+  const character=await createTestCharacter(app,{ch_name:"Window fixture",first_mes:"Opening"});
   const created=(await app.inject({method:"POST",url:"/api/conversations",payload:{characterId:character.id}})).json();
   for(let index=0;index<130;index++)runtime.addMessage(created.id,index%2?"assistant":"user",`ordered-${index}`);
   const recent=(await app.inject({method:"GET",url:`/api/conversations/${created.id}?messageLimit=100`})).json();

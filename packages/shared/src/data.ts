@@ -214,23 +214,6 @@ const backupPluginSchema = z.object({
   installedAt: z.string().datetime(),
 });
 
-const backupCodePluginSchema = z.object({
-  id: z.string(),
-  manifest: z.record(z.string(), z.unknown()),
-  enabled: z.boolean(),
-  installedAt: z.string().datetime(),
-  sourceUrl: z.string().url().optional(),
-  extensionName: z.string().min(1).max(255).regex(/^[^/\\\u0000]+$/).optional(),
-  installationScope: z.enum(["local", "global"]).optional(),
-  sourceRef: z.string().max(200).optional(),
-  sourceRevision: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
-  contributions: z.object({
-    systemPrompt: z.string(),
-    commands: z.array(z.record(z.string(), z.unknown())),
-  }),
-  files: z.record(z.string(), z.string()), // path → base64 内容
-});
-
 const backupSettingsSchema = z.object({
   // 非秘密设置（FR-DATA-003）：kind/地址/模型/参数；API Key 以 hasApiKey 占位，不含密文。
   kind: z.enum(["openai-compatible", "ollama", "anthropic", "gemini"]),
@@ -252,7 +235,6 @@ const backupPayloadSchema = z.object({
     messageCount: z.number().int().nonnegative(),
     memoryCount: z.number().int().nonnegative(),
     pluginCount: z.number().int().nonnegative(),
-    codePluginCount: z.number().int().nonnegative(),
     settingsIncluded: z.boolean(),
     // 内容完整性校验：sha256(规范化 JSON)，恢复前必须通过。
     checksum: z.string().regex(/^[a-f0-9]{64}$/),
@@ -263,7 +245,6 @@ const backupPayloadSchema = z.object({
   stageSummaries: z.array(backupStageSummarySchema),
   conversationSettings: z.array(backupConversationSettingSchema),
   plugins: z.array(backupPluginSchema),
-  codePlugins: z.array(backupCodePluginSchema),
   // Optional without a default: old backup checksums must remain unchanged.
   extensionSettings: z.record(z.string(), z.unknown()).optional(),
   userAvatars: z.array(z.object({ avatarId: z.string().min(5).max(200), bytesBase64: z.string().min(1) })).optional(),
@@ -293,7 +274,6 @@ export const backupRestorePreviewResponseSchema = z.object({
     conversations: backupSectionPreviewSchema,
     memories: backupSectionPreviewSchema,
     plugins: backupSectionPreviewSchema,
-    codePlugins: backupSectionPreviewSchema,
     extensionSettings: backupSectionPreviewSchema,
     userAvatars: backupSectionPreviewSchema,
     worldbooks: backupSectionPreviewSchema,
@@ -316,7 +296,6 @@ export const backupRestoreResponseSchema = z.object({
     conversations: z.number().int().nonnegative(),
     memories: z.number().int().nonnegative(),
     plugins: z.number().int().nonnegative(),
-    codePlugins: z.number().int().nonnegative(),
     extensionSettings: z.number().int().nonnegative(),
     userAvatars: z.number().int().nonnegative(),
     worldbooks: z.number().int().nonnegative(),
@@ -329,7 +308,6 @@ export const backupRestoreResponseSchema = z.object({
     conversations: z.number().int().nonnegative(),
     memories: z.number().int().nonnegative(),
     plugins: z.number().int().nonnegative(),
-    codePlugins: z.number().int().nonnegative(),
     extensionSettings: z.number().int().nonnegative(),
     userAvatars: z.number().int().nonnegative(),
     worldbooks: z.number().int().nonnegative(),

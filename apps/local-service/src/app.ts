@@ -5,20 +5,11 @@ import fastifyStatic from "@fastify/static";
 import Fastify, { type FastifyInstance } from "fastify";
 
 import { CharacterRepository } from "./character-repository.js";
-import { codePluginLimits } from "./code-plugin-repository.js";
 import { RuntimeRepository } from "./runtime-repository.js";
-import { registerPersonaAvatarRoutes } from "./persona-avatars.js";
 import { registerWorldInfoRoutes } from "./world-info-routes.js";
-import { registerVectorCompatibilityRoutes } from "./vector-compat-routes.js";
-import {registerQuickReplyRoutes} from "./quick-reply-routes.js";
 import { registerCharacterWorldInfoEditor } from "./character-world-info-editor.js";
-import { registerRawGeneration } from "./raw-generation.js";
-import { registerTokenizerRoutes } from "./tokenizer-service.js";
-import { registerChatCompletionRoutes } from "./chat-completion-routes.js";
-import { registerProviderPatchRoutes } from "./provider-patch-routes.js";
 import { registerProviderProfileRoutes } from "./provider-profile-routes.js";
 import { registerPresetRoutes } from "./preset-routes.js";
-import { registerCharacterCompatibility } from "./character-compatibility.js";
 import { createGenerationPipeline } from "./generation-pipeline.js";
 import { registerHealthRoutes } from "./health-routes.js";
 import { registerSettingsRoutes } from "./settings-routes.js";
@@ -30,10 +21,12 @@ import { registerPromptAssemblyRoutes } from "./prompt-assembly-routes.js";
 import { registerGenerationRoutes } from "./generation-routes.js";
 import { registerBackupRoutes } from "./backup-routes.js";
 import { registerPluginRoutes } from "./plugin-routes.js";
-import { registerPluginRuntimeAssets } from "./plugin-runtime-assets.js";
 import type { SecretCodec } from "./route-types.js";
 
 const packageVersion = "0.2.1";
+
+// 角色导入（CHARX/ZIP/BYAF）的体积上限（沿用原共享解析器的 32 MiB）。
+const characterArchiveBytes = 32 * 1024 * 1024;
 
 export interface BuildAppOptions {
   databasePath?: string;
@@ -55,17 +48,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   app.addHook("onClose", async () => { database.close(); });
   const characters = new CharacterRepository(database);
   const runtime = new RuntimeRepository(database);
-  registerCharacterCompatibility(app, characters, runtime);
-  registerPersonaAvatarRoutes(app, runtime.avatars);
   registerWorldInfoRoutes(app, runtime.worldInfo, characters, runtime);
-  registerVectorCompatibilityRoutes(app, runtime, options.secretCodec);
-  registerQuickReplyRoutes(app,runtime);
   registerCharacterWorldInfoEditor(app, database, characters, runtime.worldInfo);
-  registerRawGeneration(app, runtime, options.secretCodec ? value => options.secretCodec!.unseal(value) : undefined);
-  registerTokenizerRoutes(app, runtime);
-  registerProviderPatchRoutes(app,runtime);
   registerPresetRoutes(app, runtime);
-  registerChatCompletionRoutes(app, runtime, options.secretCodec ? value => options.secretCodec!.unseal(value) : undefined);
   registerSettingsRoutes(app, runtime, options.secretCodec);
   registerProviderProfileRoutes(app, runtime, options.secretCodec);
   // The pipeline owns cancellation, memory job draining and worker shutdown.
@@ -81,38 +66,26 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (_request, body, done) => done(null, body),
   );
 
-  // Bound the legacy ZIP endpoint before buffering the request.
+  // Bound the archive parser before buffering the request.
   app.addContentTypeParser(
     ["application/zip", "application/x-zip-compressed", "application/charx", "application/byaf"],
-    { parseAs: "buffer", bodyLimit: codePluginLimits.archiveBytes },
+    { parseAs: "buffer", bodyLimit: characterArchiveBytes },
     (_request, body, done) => done(null, body),
   );
-
-  app.addHook("onSend", async (request, reply, payload) => {
-    if (request.url.startsWith("/plugin-runtime/")) {
-      reply.headers({
-        "Access-Control-Allow-Origin": "*",
-        "Referrer-Policy": "no-referrer",
-        "X-Content-Type-Options": "nosniff",
-      });
-      return payload;
-    }
-    if (options.rendererRoot) {
-      // ST 1.19.0 disables CSP. Installed extensions require inline/Blob scripts,
-      // eval, frames and external fetches in the document they operate on.
-      // Keep Chromium's origin rules and the Electron process sandbox.
-      reply.headers({
-        "Referrer-Policy": "no-referrer",
-        "X-Content-Type-Options": "nosniff",
-      });
-    }
-    return payload;
-  });
 
   if (options.rendererRoot) {
     void app.register(fastifyStatic, {
       root: options.rendererRoot,
       index: ["index.html"],
+    });
+    // 桌面渲染器安全响应头：禁用 CSP（原生 UI 需要内联脚本），但保留
+    // Chromium 源规则、Electron 沙箱、no-referrer 与 nosniff。
+    app.addHook("onSend", async (_request, reply, payload) => {
+      reply.headers({
+        "Referrer-Policy": "no-referrer",
+        "X-Content-Type-Options": "nosniff",
+      });
+      return payload;
     });
   }
 
@@ -125,8 +98,6 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerGenerationRoutes(app, runtime, characters, pipeline);
   registerBackupRoutes(app, runtime, characters);
   registerPluginRoutes(app, runtime);
-  // Must stay last: it registers the /plugin-runtime/* and /scripts/* 404 fallbacks.
-  registerPluginRuntimeAssets(app);
 
   return app;
 }

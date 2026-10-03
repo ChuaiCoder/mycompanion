@@ -35,9 +35,6 @@ function seed(sources: ReturnType<typeof setup>, label: string): BackupPayload {
   runtime.saveSummary(conversation.id, label + " summary", 1, "fixture");
   runtime.restoreConversationSetting({ conversationId: conversation.id, autoSummaryEnabled: false });
   runtime.restorePlugin({ id: "atomic-prompt", manifest: { id: "atomic-prompt", name: label, version: "1", systemPrompt: label, commands: [] }, enabled: true, installedAt: timestamp });
-  runtime.restoreCodePlugin({ id: "atomic-code", manifest: { display_name: label, version: "1", author: "MyCompanion fixture", license: "AGPL-3.0-only", js: "dist/index.js" },
-    enabled: true, installedAt: timestamp, contributions: { systemPrompt: label, commands: [] },
-    files: { "dist/index.js": Buffer.from("export const value = " + JSON.stringify(label)).toString("base64"), "asset.bin": Buffer.from(label).toString("base64") } });
   runtime.retainedChats.save({ avatar: "retained.png", characterId: randomUUID(), conversations: [], memories: [], stageSummaries: [], conversationSettings: [] });
   runtime.saveExtensionSettings({ atomicMarker: label, variables: { global: { atomic: label } } });
   runtime.avatars.put("atomic-user.png", png(label));
@@ -62,7 +59,6 @@ function changedBackup(original: BackupPayload): BackupPayload {
   incoming.conversations[0]!.messages[0]!.content = "Restored message";
   incoming.memories[0]!.content = "Restored memory";
   incoming.plugins[0]!.manifest.name = "Restored prompt";
-  incoming.codePlugins[0]!.files["asset.bin"] = Buffer.from("Restored plugin bytes").toString("base64");
   incoming.stageSummaries[0]!.content = "Restored summary";
   incoming.conversationSettings[0]!.autoSummaryEnabled = true;
   incoming.retainedCharacterChats![0]!.characterId = randomUUID();
@@ -97,7 +93,7 @@ function providerWriteEvent(section: string, mode: string, payload: BackupPayloa
   return { event: "INSERT", condition: "1" };
 }
 
-const sections = ["characters", "conversations", "messages", "memories", "plugins", "code_plugins", "code_plugin_files",
+const sections = ["characters", "conversations", "messages", "memories", "plugins",
   "stage_summaries", "conversation_settings", "retained_character_chats", "extension_settings", "user_avatars", "world_info_books", "world_info_settings", "provider_profiles", "provider_task_assignments"];
 it.each(sections.flatMap(section => ["new", "overwrite"].map(mode => ({ section, mode }))))(
   "rolls back every section after $section fails during $mode restore", ({ section, mode }) => {
@@ -131,8 +127,8 @@ it("rolls back new sections under skip policy while keeping all prior records", 
   target.database.exec("DROP TRIGGER reject_restore");
   const result = applyRestore(payload, target, "skip");
   expect(result.applied.characters).toBe(1);
-  expect(result.skipped.codePlugins).toBe(1);
-  expect(target.runtime.getCodePluginBackupEntry("atomic-code")?.files).toEqual(original.codePlugins[0]!.files);
+  expect(result.skipped.plugins).toBe(1);
+  expect(target.runtime.getPluginManifest("atomic-prompt")).toEqual(original.plugins[0]!.manifest);
 });
 
 it.each(["provider_profiles", "provider_task_assignments"].flatMap(section => ["new", "overwrite"].map(mode => ({ section, mode }))))(
@@ -209,7 +205,7 @@ it("returns a failed HTTP restore without persisting an earlier section, then al
     expect(snapshot(target.database)).toEqual(state);
     const publicBackup = (await app.inject({ method: "GET", url: "/api/backup" })).json() as BackupPayload;
     expect(publicBackup.characters).toEqual(before.characters);
-    expect(publicBackup.codePlugins).toEqual(before.codePlugins);
+    expect(publicBackup.plugins).toEqual(before.plugins);
     expect(publicBackup.userAvatars).toEqual(before.userAvatars);
     target.database.exec("DROP TRIGGER reject_restore");
     const retry = await app.inject({ method: "POST", url: "/api/backup/restore", payload: { backup: payload, strategy: "overwrite" } });

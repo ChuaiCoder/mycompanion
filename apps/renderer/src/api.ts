@@ -684,9 +684,7 @@ async function streamNativeGeneration(id: string, content: string | undefined, s
   });
   if (!response.ok || !response.body) { await readApiPayload(response); throw new Error("生成请求失败。"); }
   await readSseStream(response.body, async event => {
-    // 原生路径下服务端不会发出浏览器 RPC 事件；macro_variables 透传给调用方同步本地草稿。
-    if (event.type === "macro_request" || event.type === "effect_request" || event.type === "effect_end"
-      || event.type === "completion_request") return;
+    // 服务端只下发原生生成事件；macro_variables 透传给调用方同步本地草稿。
     onEvent(event);
   });
 }

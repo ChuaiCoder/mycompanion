@@ -1,6 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
 import { apps, completionResponse, sseResponse } from "./test-helpers.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { sameProviderCredentialScope } from "./provider-credential-scope.js";
 
 const settings={kind:"openai-compatible" as const,baseUrl:"https://old-provider.example/v1",model:"gpt-4o",maxTokens:128,contextLimitTokens:4096};
@@ -14,30 +15,38 @@ it("compares the effective endpoint path and protocol, allowing only transport-e
   expect(sameProviderCredentialScope(settings,{...settings,baseUrl:"https://new-provider.example/v1"})).toBe(false);
 });
 
-it.each(["settings-put","extension-patch","same-origin-path","protocol-kind"])("clears a saved credential when %s changes its target and sends no key in a real native request",async mode=>{
+it.each(["settings-put","same-origin-path","protocol-kind"])("clears a saved credential when %s changes its target and sends no key in a real native request",async mode=>{
   const app=buildApp({secretCodec:codec});apps.push(app);
   const first=await app.inject({method:"PUT",url:"/api/settings/provider",payload:{...settings,apiKey:"old-scope-secret"}});
   expect(first.json().hasApiKey).toBe(true);
   const next=mode==="same-origin-path"?{...settings,baseUrl:"https://old-provider.example/v2"}
     :mode==="protocol-kind"?{...settings,kind:"ollama"}:{...settings,baseUrl:"https://new-provider.example/v1"};
-  const saved=mode==="extension-patch"
-    ?await app.inject({method:"PATCH",url:"/api/settings/provider/extension-patch",payload:{values:{baseUrl:next.baseUrl},baseline:first.json()}})
-    :await app.inject({method:"PUT",url:"/api/settings/provider",payload:next});
+  const saved=await app.inject({method:"PUT",url:"/api/settings/provider",payload:next});
   expect(saved.statusCode,saved.body).toBe(200);
-  expect(mode==="extension-patch"?saved.json().provider.hasApiKey:saved.json().hasApiKey).toBe(false);
+  expect(saved.json().hasApiKey).toBe(false);
   const requests:Array<{url:string;authorization:string|null}>=[];
   vi.stubGlobal("fetch",async(url:URL|string|Request,init?:RequestInit)=>{
     requests.push({url:String(url),authorization:new Headers(init?.headers).get("Authorization")});
     return JSON.parse(String(init?.body)).stream?sseResponse(["actual reply"]):completionResponse('{"memories":[]}');
   });
-  const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Credential scope",first_mes:"Hello"}})).body;
-  const character=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();
+  const character=await createTestCharacter(app,{ch_name:"Credential scope",first_mes:"Hello"});
   const story=(await app.inject({method:"POST",url:"/api/conversations",payload:{characterId:character.id}})).json();
   const result=await app.inject({method:"POST",url:`/api/conversations/${story.id}/messages`,payload:{content:"Speak"}});
   expect(result.statusCode,result.body).toBe(200);expect(result.body).toContain('"type":"done"');
   expect(requests.length).toBeGreaterThan(0);expect(requests[0]!.url).toBe(next.baseUrl+"/chat/completions");
   expect(requests.every(request=>request.authorization===null)).toBe(true);
   expect(result.body+saved.body).not.toContain("old-scope-secret");
+});
+
+it("clears a saved credential when a named profile's target changes without a new key",async()=>{
+  const app=buildApp({secretCodec:codec});apps.push(app);
+  const created=await app.inject({method:"POST",url:"/api/settings/providers",payload:{name:"备用连接",settings:{...settings,apiKey:"profile-scope-secret"}}});
+  expect(created.statusCode,created.body).toBe(201);
+  expect(created.json().settings.hasApiKey).toBe(true);
+  const saved=await app.inject({method:"PUT",url:`/api/settings/providers/${created.json().id}`,payload:{name:"备用连接",settings:{...settings,baseUrl:"https://new-provider.example/v1"}}});
+  expect(saved.statusCode,saved.body).toBe(200);
+  expect(saved.json().settings.hasApiKey).toBe(false);
+  expect(saved.body).not.toContain("profile-scope-secret");
 });
 
 it("keeps credentials for the same target and accepts an explicit new target key",async()=>{

@@ -16,6 +16,7 @@ import { normalizeWorldInfoEntries, matchLorebookEntries } from "./worldbook-eng
 import { createWorldInfoRuntime } from "./world-info-upstream-runtime.js";
 import { MacroEvaluationSession } from "./prompt-macros.js";
 import { buildApp } from "./app.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { apps, sseResponse, completionResponse } from "./test-helpers.js";
 import type { CharacterLorebookEntry, ChatMessage } from "@mycompanion/shared";
 
@@ -109,30 +110,13 @@ it("prepares the pinned newest-message query with attachment removal, doubled re
   expect(await worldInfoVectorQueryText(messages,settings,session,{characterName:"Actor"})).toBe("1\nquery");expect(session.local.count).toBe(2);
 });
 
-it("serves genuine Tavern collection API shapes with assigned embedding HTTP and threshold-consistent single-query hashes",async()=>{
-  const f=await fixture(),app=buildApp();apps.push(app);
-  expect((await app.inject({method:"POST",url:"/api/vector/list",payload:{collectionId:"api"}})).statusCode).toBe(503);
-  const profile=(await app.inject({method:"POST",url:"/api/settings/providers",payload:{name:"embedding",settings:{...f.selection.settings,maxTokens:128,contextLimitTokens:4096}}})).json();
-  expect((await app.inject({method:"PATCH",url:"/api/settings/provider-tasks",payload:{embedding:profile.id}})).statusCode).toBe(200);
-  const insert=await app.inject({method:"POST",url:"/api/vector/insert",payload:{collectionId:"api",source:"openai",model:"legacy-model",items:[{hash:1,text:"nearB",index:1},{hash:2,text:"far",index:2}]}});
-  expect(insert.statusCode,insert.body).toBe(200);expect((await app.inject({method:"POST",url:"/api/vector/list",payload:{collectionId:"api"}})).json()).toEqual([1,2]);
-  const query=await app.inject({method:"POST",url:"/api/vector/query",payload:{collectionId:"api",searchText:"query",topK:2,threshold:.99}});
-  expect(query.statusCode,query.body).toBe(200);expect(query.json()).toEqual({hashes:[],metadata:[]});
-  expect(f.requests.every(item=>item.body.model==="embed-fixed")).toBe(true);
-  expect((await app.inject({method:"POST",url:"/api/vector/delete",payload:{collectionId:"api",hashes:[1]}})).statusCode).toBe(200);
-  expect((await app.inject({method:"POST",url:"/api/vector/list",payload:{collectionId:"api"}})).json()).toEqual([2]);
-  expect((await app.inject({method:"POST",url:"/api/vector/purge",payload:{collectionId:"api"}})).statusCode).toBe(200);
-  expect((await app.inject({method:"POST",url:"/api/vector/list",payload:{collectionId:"api"}})).json()).toEqual([]);
-});
-
-it.each(["normal","quiet","preview","public-wi"])("uses actual embedding-derived WI activation only at the pinned %s generation boundary",async mode=>{
+it.each(["normal","preview","public-wi"])("uses actual embedding-derived WI activation only at the pinned %s boundary",async mode=>{
   const f=await fixture(),nativeFetch=globalThis.fetch,app=buildApp();apps.push(app);const providerRequests:Record<string,any>[]=[];
   vi.stubGlobal("fetch",async(url:string|URL|Request,init?:RequestInit)=>{
     if(!String(url).startsWith("http://provider.test/"))return nativeFetch(url,init);
     const body=JSON.parse(String(init?.body));if(body.stream)providerRequests.push(body);return body.stream?sseResponse(["reply"]):completionResponse();
   });
-  const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Vector role",first_mes:"Opening"}})).body;
-  const character=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();
+  const character=await createTestCharacter(app,{ch_name:"Vector role",first_mes:"Opening"});
   const story=(await app.inject({method:"POST",url:"/api/conversations",payload:{characterId:character.id}})).json();
   await app.inject({method:"PUT",url:"/api/settings/provider",payload:{kind:"ollama",baseUrl:"http://provider.test/v1",model:"gpt-4o",contextLimitTokens:4096,maxTokens:128}});
   const profile=(await app.inject({method:"POST",url:"/api/settings/providers",payload:{name:"embedding",settings:{...f.selection.settings,maxTokens:128,contextLimitTokens:4096}}})).json();
@@ -141,14 +125,14 @@ it.each(["normal","quiet","preview","public-wi"])("uses actual embedding-derived
   await app.inject({method:"POST",url:"/api/worldinfo/edit",payload:{name:"VectorWorld",data:{entries:{1:{uid:1,key:["NEVER_LITERAL"],vectorized:true,content:"SEMANTIC_WI",position:1}}}}});
   const wi=(await app.inject({method:"GET",url:"/api/worldinfo/settings"})).json();
   await app.inject({method:"PUT",url:"/api/worldinfo/settings",payload:{...wi,world_info:{globalSelect:["VectorWorld"],charLore:[]}}});
-  const path=mode==="public-wi"?"/api/worldinfo/prompt":`/api/conversations/${story.id}/${mode==="quiet"?"quiet-generation":mode==="preview"?"prompt-preview":"messages"}`;
+  const path=mode==="public-wi"?"/api/worldinfo/prompt":`/api/conversations/${story.id}/${mode==="preview"?"prompt-preview":"messages"}`;
   const payload=mode==="public-wi"?{chat:["query"],maxContext:4096,conversationId:story.id,characterId:character.id,isDryRun:false}
-    :mode==="quiet"?{quietPrompt:"query"}:mode==="preview"?{draft:"query"}:{content:"query"};
+    :mode==="preview"?{draft:"query"}:{content:"query"};
   const response=await app.inject({method:"POST",url:path,payload});expect(response.statusCode,response.body).toBe(200);
   if(mode==="normal"){
     expect(providerRequests).toHaveLength(1);expect(JSON.stringify(providerRequests[0]!.messages)).toContain("SEMANTIC_WI");
     expect(f.requests).toHaveLength(2);expect(f.requests[0]!.body.input).toEqual(["SEMANTIC_WI"]);expect(f.requests[1]!.body.input).toEqual(["query"]);
-  }else{expect(f.requests).toEqual([]);expect(mode==="quiet"?JSON.stringify(providerRequests):response.body).not.toContain('"content":"SEMANTIC_WI"');}
+  }else{expect(f.requests).toEqual([]);expect(response.body).not.toContain('"content":"SEMANTIC_WI"');}
 });
 
 it.skipIf(!process.env.SILLYTAVERN_WORLD_INFO_ORACLE_ROOT)("matches pristine fixed-source vector orchestration, global top-K and real query macro occurrence counts",async()=>{

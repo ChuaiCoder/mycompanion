@@ -14,7 +14,6 @@ import { createWorldInfoEffectsDraft, commitWorldInfoEffects, getWorldInfoEffect
 import { RuntimeRepository } from "./runtime-repository.js";
 import { CharacterRepository } from "./character-repository.js";
 import { MacroEvaluationSession, resolveMacroField } from "./prompt-macros.js";
-import { runMacroBoundary } from "./macro-boundary.js";
 import { buildWorldInfoReport, finalizeWorldInfoRegex } from "./world-info-service.js";
 import { getWorldInfoOutletEntries } from "./world-info-activation.js";
 import { TavernRegexExecutor } from "./tavern-regex-service.js";
@@ -106,15 +105,13 @@ describe("fixed-upstream native world-info semantics", () => {
   });
   it("replays group/probability draws once per actual ordinal without committing timer drafts", async () => {
     const entries = [entry(0, { group: "g", probability: 50, sticky: 4 }, { content: "{{incvar::count}}" }), entry(1, { group: "g", probability: 50 })];
-    const session = new MacroEvaluationSession(), signal = new AbortController().signal;
-    let draws = 0, browserCalls = 0;
+    const session = new MacroEvaluationSession();
+    let draws = 0;
     const metadata = {}, effectsDraft = createWorldInfoEffectsDraft(metadata, "branch", [message(1, "hit")]);
-    const report = await runMacroBoundary(session, signal, async call => {
-      browserCalls++; return { content: call.content === "{{incvar::count}}" ? "1" : call.content,
-        local: call.content === "{{incvar::count}}" ? { count: 1 } : call.local, global: call.global };
-    }, () => matchLorebookEntries(characterId, entries, "Char", "hit", 1000,
-      { macroSession: session, effectsDraft, dryRun: false, random: () => { draws++; return .1; } }));
-    expect(selected(report)).toEqual([0]); expect(draws).toBe(2); expect(browserCalls).toBe(3);
+    // 原生宏会话直接求值 {{incvar::count}}，不再经过浏览器宏边界回调。
+    const report = await matchLorebookEntries(characterId, entries, "Char", "hit", 1000,
+      { macroSession: session, effectsDraft, dryRun: false, random: () => { draws++; return .1; } });
+    expect(selected(report)).toEqual([0]); expect(draws).toBe(2);
     expect(session.local).toEqual({ count: 1 }); expect(metadata).toEqual({});
     expect(getWorldInfoEffects(report)!.timedWorldInfo.sticky).toEqual({ "test.0": expect.objectContaining({ start: 1, end: 5 }) });
   });

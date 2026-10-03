@@ -22,11 +22,4 @@ describe("GET /api/health", () => {
       version: "0.2.1",
     });
   });
-
-  it("reports the targeted Tavern extension API version as a string", async () => {
-    const app = buildApp(); apps.push(app);
-    const response = await app.inject({ method: "GET", url: "/version" });
-    expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ pkgVersion: "1.19.0" });
-  });
 });

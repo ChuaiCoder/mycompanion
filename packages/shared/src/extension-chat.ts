@@ -1,21 +1,13 @@
-import { z } from "zod";
 import type { ChatMessage, ConversationDetail } from "./runtime.js";
 
-// IDs belong to our data model; extension-owned fields retain their original
-// shape, including helper variables, swipes, media and future unknown keys.
-export const extensionChatMessageSchema = z.object({
-  id: z.string().uuid(), mes: z.string(), is_user: z.boolean(),
-}).catchall(z.unknown());
-export const extensionChatStateSchema = z.object({
-  messages: z.array(extensionChatMessageSchema).refine(messages => new Set(messages.map(message => message.id)).size === messages.length, "消息 ID 不能重复。"),
-  metadata: z.record(z.string(), z.unknown()),
-});
-export const extensionChatSaveSchema = z.object({
-  branchId: z.string().uuid(), base: extensionChatStateSchema, next: extensionChatStateSchema,
-}).strict();
-export type ExtensionChatMessage = z.infer<typeof extensionChatMessageSchema>;
-export type ExtensionChatState = z.infer<typeof extensionChatStateSchema>;
-export type ExtensionChatSave = z.infer<typeof extensionChatSaveSchema>;
+// Tavern-flavored message projection retained for native features (swipe
+// candidates, story export). The extension chat save endpoint and its schemas
+// were removed with the compatibility layer.
+export type ExtensionChatMessage = {
+  id: string;
+  mes: string;
+  is_user: boolean;
+} & Record<string, unknown>;
 
 export function toExtensionMessage(message: ChatMessage, characterName: string): ExtensionChatMessage {
   return {
@@ -27,13 +19,9 @@ export function toExtensionMessage(message: ChatMessage, characterName: string):
     ...(message.generationMetadata ? {generationMetadata: structuredClone(message.generationMetadata)} : {}),
   };
 }
-export function toExtensionChatState(conversation: ConversationDetail): ExtensionChatState {
-  return JSON.parse(JSON.stringify({ metadata: conversation.chatMetadata ?? {}, messages: conversation.messages.map(message => toExtensionMessage(message, conversation.characterName)) })) as ExtensionChatState;
-}
 
 // Apply only fields changed by the caller. Concurrent untouched fields survive;
 // arrays are values (e.g. a swipe's variables array), explicit removal deletes.
-// Self-contained so the exact same implementation can be served to the browser.
 export function mergeJsonChanges(base: unknown, next: unknown, current: unknown): unknown {
   if (JSON.stringify(base) === JSON.stringify(next)) return current;
   const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
@@ -47,7 +35,7 @@ export function mergeJsonChanges(base: unknown, next: unknown, current: unknown)
 }
 
 // Message arrays merge by stable identity, not by numeric JSON paths: a model
-// can append a reply while an extension edits an earlier message's variables.
+// can append a reply while an earlier message's variables are being edited.
 export function mergeChatMessages<T extends { id: string }>(
   base: T[], next: T[], current: T[], merge: (base: unknown, next: unknown, current: unknown) => unknown,
 ): T[] {

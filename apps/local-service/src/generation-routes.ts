@@ -2,16 +2,18 @@ import type { FastifyInstance } from "fastify";
 
 import {
   activateBranchResponseSchema,
+  chatMessageSchema,
   deleteMessageResponseSchema,
   editMessageRequestSchema,
   nativeGenerationRequestSchema,
+  selectMessageSwipeRequestSchema,
   sendMessageRequestSchema,
   stopGenerationResponseSchema,
 } from "@mycompanion/shared";
 
 import type { CharacterRepository } from "./character-repository.js";
 import type { GenerationPipeline } from "./generation-pipeline.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
+import { SwipeSelectionError, type RuntimeRepository } from "./runtime-repository.js";
 import { sendError } from "./http-errors.js";
 import type { IdParams } from "./route-types.js";
 
@@ -44,17 +46,12 @@ export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeR
       reply.raw.on("close", disconnected);
       try {
         const regexContext = createRegexContext(character, conversation.id);
-        if (parsed.data.browserMacros) {
-          await streamGenerationToReply(reply, conversation.id, character, undefined, controller, undefined, undefined, parsed.data.extensionPrompts,
-            { ...parsed.data, regexContext, inputContent: parsed.data.content });
-          return reply;
-        }
         const content = !parsed.data.dryRun && parsed.data.content
           ? await applyRegexStage(character, "input", parsed.data.content, "user", undefined, false, controller.signal, regexContext) : "";
         controller.signal.throwIfAborted();
         const userMessage = content ? runtime.addMessage(conversation.id, "user", content) : undefined;
         const history = runtime.listMessages(conversation.id, 80);
-        await streamGenerationToReply(reply, conversation.id, character, undefined, controller, userMessage, history, parsed.data.extensionPrompts,
+        await streamGenerationToReply(reply, conversation.id, character, undefined, controller, userMessage, history, [],
           { ...parsed.data, regexContext });
       } finally {
         reply.raw.off("close", disconnected);
@@ -110,7 +107,7 @@ export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeR
       inFlightGenerations.set(conversation.id, controller);
       // Do not create a branch or placeholder for a preview/cancelled preflight.
       const history = conversation.messages.slice(0, -1).slice(-80);
-      await streamGenerationToReply(reply, conversation.id, character, undefined, controller, undefined, history, parsed.data.extensionPrompts, {
+      await streamGenerationToReply(reply, conversation.id, character, undefined, controller, undefined, history, [], {
         ...parsed.data,
         prepareAssistant: () => {
           if (!runtime.prepareRegenerateLastAssistant(conversation.id)) throw new Error("没有可重新生成的助手回复。");
@@ -138,7 +135,7 @@ export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeR
       if (existing && !existing.signal.aborted) return sendError(reply, 409, "GENERATION_IN_PROGRESS", "该故事正在生成回复，请稍候或先停止。");
       const controller = new AbortController(); inFlightGenerations.set(conversation.id, controller);
       await streamGenerationToReply(reply, conversation.id, character, undefined, controller, undefined,
-        conversation.messages.slice(-80), parsed.data.extensionPrompts, { ...parsed.data, generationType: mode,
+        conversation.messages.slice(-80), [], { ...parsed.data, generationType: mode,
           ...(mode === "continue" ? { continueFrom: last!, prepareAssistant: () => runtime.prepareContinueMessage(conversation.id, last!) } : { ephemeral: true }) });
       return reply;
     });
@@ -175,6 +172,26 @@ export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeR
         return sendError(reply, 404, "MESSAGE_NOT_FOUND", "要编辑的消息不存在或不在当前分支。");
       }
       return edited;
+    },
+  );
+
+  // 选择候选回复（FR-CHAT）：swipe_id/内容/扩展数据由仓储层原子更新。
+  app.post<{ Params: { id: string; messageId: string }; Body: unknown }>(
+    "/api/conversations/:id/messages/:messageId/swipe",
+    async (request, reply) => {
+      const parsed = selectMessageSwipeRequestSchema.safeParse(request.body);
+      if (!parsed.success) return sendError(reply, 400, "INVALID_REQUEST", "候选回复序号无效。");
+      const conversation = runtime.getConversation(request.params.id);
+      if (!conversation) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
+      const message = conversation.messages.find(item => item.id === request.params.messageId);
+      if (!message) return sendError(reply, 404, "MESSAGE_NOT_FOUND", "要切换的消息不存在或不在当前分支。");
+      inFlightGenerations.get(conversation.id)?.abort();
+      try {
+        return chatMessageSchema.parse(runtime.selectMessageSwipe(conversation.id, message, parsed.data.swipeId));
+      } catch (error) {
+        if (error instanceof SwipeSelectionError) return sendError(reply, 409, "SWIPE_NOT_AVAILABLE", error.message);
+        throw error;
+      }
     },
   );
 

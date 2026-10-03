@@ -20,22 +20,22 @@ it("awaits asynchronous event processing before consuming following events", asy
   const gate = new Promise<void>(resolve => { release = resolve; });
   const events: string[] = [];
   const body = new ReadableStream<Uint8Array>({ start(controller) {
-    controller.enqueue(new TextEncoder().encode('data: bad-json\n\ndata: {"type":"completion_request"}\n\ndata: {"type":"generation_end"}\n\n'));
+    controller.enqueue(new TextEncoder().encode('data: bad-json\n\ndata: {"type":"delta"}\n\ndata: {"type":"generation_end"}\n\n'));
     controller.close();
   } });
   const run = readSseStream(body, async event => {
     events.push(event.type);
-    if (event.type === "completion_request") await gate;
+    if (event.type === "delta") await gate;
   });
-  await vi.waitFor(() => expect(events).toEqual(["completion_request"]));
+  await vi.waitFor(() => expect(events).toEqual(["delta"]));
   release(); await run;
-  expect(events).toEqual(["completion_request", "generation_end"]);
+  expect(events).toEqual(["delta", "generation_end"]);
 });
 
 it("propagates listener errors and cancels the underlying stream", async () => {
   const cancel = vi.fn();
   const body = new ReadableStream<Uint8Array>({ start(controller) {
-    controller.enqueue(new TextEncoder().encode('data: {"type":"completion_request"}\n\n'));
+    controller.enqueue(new TextEncoder().encode('data: {"type":"delta"}\n\n'));
   }, cancel });
   await expect(readSseStream(body, async () => { throw new Error("listener failed"); })).rejects.toThrow("listener failed");
   expect(cancel).toHaveBeenCalledOnce(); expect(body.locked).toBe(false);

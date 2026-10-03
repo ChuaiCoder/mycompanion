@@ -17,7 +17,6 @@ import {
   completionByKind,
   fullV2Card,
   isCompletionRequest,
-  sandboxExtensionZip,
   sseResponse,
   waitFor,
   type TestApp,
@@ -251,7 +250,7 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
     const { app, character, conversation } = await seedConversation();
     await waitForMemories(app, conversation.id);
 
-    // 安装一个声明式插件与一个代码扩展，验证两者都进入备份。
+    // 安装一个声明式插件，验证它进入备份。
     const pluginInstalled = await app.inject({
       method: "POST",
       url: "/api/plugins/install",
@@ -266,17 +265,6 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
       },
     });
     expect(pluginInstalled.statusCode).toBe(201);
-    const codeInstalled = await app.inject({
-      method: "POST",
-      url: "/api/code-plugins/install",
-      headers: {
-        "content-type": "application/zip",
-        "x-plugin-filename": "sandbox-test.zip",
-      },
-      payload: sandboxExtensionZip,
-    });
-    expect(codeInstalled.statusCode).toBe(201);
-
     const backupResponse = await app.inject({ method: "GET", url: "/api/backup" });
     expect(backupResponse.statusCode).toBe(200);
     expect(backupResponse.headers["content-disposition"]).toContain("mycompanion-backup-");
@@ -287,7 +275,6 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
     expect(backup.manifest.messageCount).toBeGreaterThanOrEqual(3);
     expect(backup.manifest.memoryCount).toBeGreaterThanOrEqual(1);
     expect(backup.manifest.pluginCount).toBe(1);
-    expect(backup.manifest.codePluginCount).toBe(1);
     expect(backup.manifest.checksum).toMatch(/^[a-f0-9]{64}$/);
     // 非秘密设置包含在内；API Key 只以 hasApiKey 占位，无密文。
     expect(backup.providerSettings).toMatchObject({ kind: "ollama", model: "test-model" });
@@ -307,7 +294,6 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
         conversations: { new: number };
         memories: { new: number };
         plugins: { new: number };
-        codePlugins: { new: number };
       };
     };
     expect(preview.valid).toBe(true);
@@ -315,19 +301,17 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
     expect(preview.sections.conversations.new).toBe(1);
     expect(preview.sections.memories.new).toBeGreaterThanOrEqual(1);
     expect(preview.sections.plugins.new).toBe(1);
-    expect(preview.sections.codePlugins.new).toBe(1);
 
     // 执行恢复。
     const restored = (await restoreApp.inject({
       method: "POST",
       url: "/api/backup/restore",
       payload: { backup, strategy: "overwrite" },
-    })).json() as { applied: { characters: number; conversations: number; memories: number; plugins: number; codePlugins: number } };
+    })).json() as { applied: { characters: number; conversations: number; memories: number; plugins: number } };
     expect(restored.applied.characters).toBe(1);
     expect(restored.applied.conversations).toBe(1);
     expect(restored.applied.memories).toBeGreaterThanOrEqual(1);
     expect(restored.applied.plugins).toBe(1);
-    expect(restored.applied.codePlugins).toBe(1);
 
     // 恢复后的数据完整：角色、故事（含消息树）、记忆、插件、设置。
     const restoredCharacter = characterDetailSchema.parse((await restoreApp.inject({
@@ -348,8 +332,6 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
     expect(restoredMemories.items.length).toBeGreaterThanOrEqual(1);
     const restoredPlugins = (await restoreApp.inject({ method: "GET", url: "/api/plugins" })).json() as { total: number };
     expect(restoredPlugins.total).toBe(1);
-    const restoredCodePlugins = (await restoreApp.inject({ method: "GET", url: "/api/code-plugins" })).json() as { total: number };
-    expect(restoredCodePlugins.total).toBe(1);
     // 非秘密设置已恢复；密钥未进入备份，恢复后仍是“未配置”。
     expect((await restoreApp.inject({ method: "GET", url: "/api/settings/provider" })).json()).toMatchObject({
       kind: "ollama",
@@ -372,25 +354,6 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
     const secondRestoreJson = secondRestore.json() as { applied: { characters: number }; skipped: { characters: number } };
     expect(secondRestoreJson.applied.characters).toBe(0);
     expect(secondRestoreJson.skipped.characters).toBe(1);
-
-    // Install provenance is part of restore equality even when all assets are
-    // identical. Old backups without provenance must remain valid too.
-    const sourceBackup = structuredClone(backup);
-    const installSource = { sourceUrl: "https://example.invalid/sandbox-test.git", sourceRef: "feature/preserved", sourceRevision: "1234567890abcdef1234567890abcdef12345678" };
-    Object.assign(sourceBackup.codePlugins[0]!, installSource);
-    sourceBackup.manifest.checksum = backupChecksum(sourceBackup);
-    const sourcePreview = await restoreApp.inject({ method: "POST", url: "/api/backup/restore/preview", payload: { backup: sourceBackup, strategy: "overwrite" } });
-    expect(sourcePreview.statusCode).toBe(200);
-    expect(sourcePreview.json().sections.codePlugins.overwrite).toBe(1);
-    const sourceRestore = await restoreApp.inject({ method: "POST", url: "/api/backup/restore", payload: { backup: sourceBackup, strategy: "overwrite" } });
-    expect(sourceRestore.json().applied.codePlugins).toBe(1);
-    const sourceExportResponse = await restoreApp.inject({ method: "GET", url: "/api/backup" });
-    expect(sourceExportResponse.statusCode, sourceExportResponse.body).toBe(200);
-    const sourceExport = backupPayloadSchemaShared.parse(sourceExportResponse.json());
-    expect(sourceExport.codePlugins[0]).toMatchObject(installSource);
-    expect(sourceExport.manifest.checksum).toBe(backupChecksum(sourceExport));
-    const sourceRepeat = await restoreApp.inject({ method: "POST", url: "/api/backup/restore/preview", payload: { backup: sourceBackup, strategy: "overwrite" } });
-    expect(sourceRepeat.json().sections.codePlugins.skip).toBe(1);
 
     // 完整性校验：篡改内容后 checksum 不匹配 → 预览标记无效，恢复返回 422。
     const tampered = structuredClone(backup);

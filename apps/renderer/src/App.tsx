@@ -361,6 +361,10 @@ export function App() {
         onContinue={() => void handleContinue()}
         onImpersonate={() => void handleImpersonate()}
         onActivateBranch={conversationsState.handleActivateBranch}
+        onSwiped={(id) => void (async () => {
+          const updated = await fetchConversation(id);
+          conversationsState.setActiveConversation(current => current?.id === id ? updated : current);
+        })()}
         onSaveEdit={(id) => void saveEditMessage(id)}
         onSendMessage={(input) => void handleSendMessage(input)}
         onStopGeneration={() => { void chat.handleStopGeneration(); }}

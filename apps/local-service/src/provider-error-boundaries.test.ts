@@ -8,6 +8,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import type { ProviderSettings } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
 import { completeText } from "./model-client.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { apps, parseSse, waitFor } from "./test-helpers.js";
 
 const sentinel = "PROVIDER_ECHO_SENTINEL";
@@ -41,8 +42,7 @@ async function fixture(respond: (request: IncomingMessage, response: ServerRespo
   const logs: string[] = [];
   for (const level of ["error", "warn", "info", "debug"] as const) vi.spyOn(app.log, level).mockImplementation((...args: unknown[]) => { logs.push(inspect(args)); });
   await app.inject({ method: "PUT", url: "/api/settings/provider", payload: { ...settings, apiKey: sentinel } });
-  const avatar = (await app.inject({ method: "POST", url: "/api/characters/create", payload: { ch_name: "Provider error boundary", first_mes: "Hello" } })).body;
-  const character = (await app.inject({ method: "POST", url: "/api/characters/get", payload: { avatar_url: avatar } })).json();
+  const character = await createTestCharacter(app, { ch_name: "Provider error boundary", first_mes: "Hello" });
   const story = (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json();
   return { app, story, settings, outgoing, logs, databasePath };
 }
@@ -55,11 +55,9 @@ it("a real provider's HTTP error echo cannot reach native SSE, SQLite messages, 
   const native = await f.app.inject({ method: "POST", url: `/api/conversations/${f.story.id}/messages`, payload: { content: "Speak" } });
   expect(parseSse(native.body).find(event => event.type === "error")).toMatchObject({ message: "服务拒绝了 API Key。" });
   expect(parseSse(native.body).find(event => event.type === "done")).toMatchObject({ message: { status: "failed", content: "服务拒绝了 API Key。" } });
-  const publicResult = await f.app.inject({ method: "POST", url: "/api/backends/chat-completions/generate", payload: { messages: [{ role: "user", content: "Speak" }] } });
-  const raw = await f.app.inject({ method: "POST", url: "/api/extensions/generate-raw", payload: { messages: [{ role: "user", content: "Speak" }] } });
   const connection = await f.app.inject({ method: "POST", url: "/api/settings/provider/test", payload: {} });
   const draft = await f.app.inject({ method: "POST", url: "/api/settings/provider/test", payload: f.settings });
-  for (const response of [publicResult, raw, connection]) { expect(response.statusCode).toBe(401); expect(response.body).toContain("API Key"); }
+  for (const response of [connection]) { expect(response.statusCode).toBe(401); expect(response.body).toContain("API Key"); }
   expect(draft.json()).toMatchObject({ ok: false, issue: { code: "AUTHENTICATION" } });
   const story = await f.app.inject({ method: "GET", url: `/api/conversations/${f.story.id}` });
   const exported = await f.app.inject({ method: "GET", url: `/api/conversations/${f.story.id}/export?format=json` });
@@ -67,28 +65,31 @@ it("a real provider's HTTP error echo cannot reach native SSE, SQLite messages, 
   const db = new DatabaseSync(f.databasePath, { readOnly: true });
   try { expect(JSON.stringify(db.prepare("SELECT content,status FROM messages").all())).not.toContain(sentinel); }
   finally { db.close(); }
-  for (const response of [native, publicResult, raw, connection, draft, story, exported, backup]) expect(response.body).not.toContain(sentinel);
+  for (const response of [native, connection, draft, story, exported, backup]) expect(response.body).not.toContain(sentinel);
   expect(f.logs.join("\n")).not.toContain(sentinel);
-  expect(f.outgoing).toHaveLength(5); expect(f.outgoing.every(request => request.authorization === `Bearer ${sentinel}`)).toBe(true);
+  expect(f.outgoing).toHaveLength(3); expect(f.outgoing.every(request => request.authorization === `Bearer ${sentinel}`)).toBe(true);
 });
 
-it.each(["json", "sse", "event-error"])("sanitizes HTTP 200 %s error envelopes while keeping successful extension data intact", async format => {
-  const successful = 'data: {"choices":[{"index":0,"delta":{"content":"你好","reasoning_content":"想","tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}\r\n\r\n';
+it("native generation fails cleanly on HTTP 200 json and event:error envelopes without exposing provider bodies", async () => {
   const error = JSON.stringify({ error: { code: 429, message: `Quota ${sentinel}` }, leakedHeaders: { authorization: `Bearer ${sentinel}` } });
-  const payload = format === "json" ? error : successful + (format === "event-error" ? `event: error\r\ndata: ${sentinel}\r\n\r\n` : `data: ${error}\r\n\r\n`) + "data: [DONE]\r\n\r\n";
-  const f = await fixture((_request, response) => {
-    response.writeHead(200, { "Content-Type": format === "json" ? "application/json" : "text/event-stream" });
-    response.end(payload);
+  const jsonFixture = await fixture((_request, response) => {
+    response.writeHead(200, { "Content-Type": "application/json" });
+    response.end(error);
   });
-  const publicResult = await f.app.inject({ method: "POST", url: "/api/backends/chat-completions/generate", payload: { messages: [{ role: "user", content: "Speak" }], stream: format !== "json" } });
-  expect(publicResult.body).not.toContain(sentinel);
-  if (format === "json") expect(publicResult.statusCode).toBe(429);
-  else { expect(publicResult.statusCode).toBe(200); expect(publicResult.body.startsWith(successful)).toBe(true); expect(publicResult.body).toContain('"error"'); expect(publicResult.body.endsWith("data: [DONE]\r\n\r\n")).toBe(true); }
-  if (format === "json") {
-    const raw = await f.app.inject({ method: "POST", url: "/api/extensions/generate-raw", payload: { messages: [{ role: "user", content: "Speak" }] } });
-    const probe = await f.app.inject({ method: "POST", url: "/api/settings/provider/test", payload: f.settings });
-    expect(raw.statusCode).toBe(429); expect(raw.body + probe.body).not.toContain(sentinel); expect(probe.json()).toMatchObject({ ok: false, issue: { code: "RATE_LIMIT" } });
-  }
+  const jsonResult = await jsonFixture.app.inject({ method: "POST", url: `/api/conversations/${jsonFixture.story.id}/messages`, payload: { content: "Speak" } });
+  expect(jsonResult.body).not.toContain(sentinel);
+  expect(parseSse(jsonResult.body).some(event => event.type === "error")).toBe(true);
+  expect(parseSse(jsonResult.body).find(event => event.type === "done")).toMatchObject({ message: { status: "failed" } });
+  const probe = await jsonFixture.app.inject({ method: "POST", url: "/api/settings/provider/test", payload: jsonFixture.settings });
+  expect(probe.body).not.toContain(sentinel); expect(probe.json()).toMatchObject({ ok: false, issue: { code: "RATE_LIMIT" } });
+
+  const sseFixture = await fixture((_request, response) => {
+    response.writeHead(200, { "Content-Type": "text/event-stream" });
+    response.end(textFrame("openai", "partial reply", true) + `event: error\r\ndata: ${sentinel}\r\n\r\n` + terminalFrame("openai"));
+  });
+  const sseResult = await sseFixture.app.inject({ method: "POST", url: `/api/conversations/${sseFixture.story.id}/messages`, payload: { content: "Speak" } });
+  expect(sseResult.body).not.toContain(sentinel);
+  expect(parseSse(sseResult.body).find(event => event.type === "done")).toMatchObject({ message: { status: "failed", content: "partial reply" } });
 });
 
 it("native provider error events preserve only received reply text and never save error data", async () => {
@@ -244,10 +245,11 @@ it("background extraction/summary errors cannot become stored memories or logged
 it("unknown transport and response exceptions are replaced before API/log output", async () => {
   const f = await fixture((_request, response) => { response.end("{}"); });
   vi.stubGlobal("fetch", async () => { throw new TypeError(`Transport failure ${sentinel}`); });
-  for (const url of ["/api/backends/chat-completions/generate", "/api/extensions/generate-raw"]) {
-    const response = await f.app.inject({ method: "POST", url, payload: { messages: [{ role: "user", content: "Speak" }] } });
-    expect(response.statusCode).toBe(502); expect(response.body).not.toContain(sentinel);
-  }
+  const native = await f.app.inject({ method: "POST", url: `/api/conversations/${f.story.id}/messages`, payload: { content: "Speak" } });
+  expect(native.statusCode).toBe(200);
+  expect(parseSse(native.body).some(event => event.type === "error")).toBe(true);
+  expect(parseSse(native.body).find(event => event.type === "done")).toMatchObject({ message: { status: "failed" } });
+  expect(native.body).not.toContain(sentinel);
   expect(f.logs.join("\n")).not.toContain(sentinel);
   vi.stubGlobal("fetch", async () => new Response(`not JSON ${sentinel}`, { headers: { "Content-Type": "application/json" } }));
   await expect(completeText({ settings: f.settings, apiKey: sentinel, messages: [{ role: "user", content: "Background" }] }))
@@ -259,6 +261,8 @@ it("filters SSE errors split at every byte without changing successful UTF-8, CR
   const successful = 'id: exact\r\ndata: {"choices":[{"delta":{"content":"你好","tool_calls":[{"function":{"arguments":"{}"}}],"reasoning":"想"}}]}\r\n\r\n';
   const source = new TextEncoder().encode(successful + `event: error\r\ndata: ${sentinel}\r\n\r\ndata: [DONE]\r\n\r\n`);
   vi.stubGlobal("fetch", async () => new Response(new ReadableStream({ start(controller) { for (const byte of source) controller.enqueue(new Uint8Array([byte])); controller.close(); } }), { headers: { "Content-Type": "text/event-stream" } }));
-  const result = await f.app.inject({ method: "POST", url: "/api/backends/chat-completions/generate", payload: { messages: [{ role: "user", content: "Speak" }], stream: true } });
-  expect(result.body.startsWith(successful)).toBe(true); expect(result.body.endsWith("data: [DONE]\r\n\r\n")).toBe(true); expect(result.body).not.toContain(sentinel);
+  const result = await f.app.inject({ method: "POST", url: `/api/conversations/${f.story.id}/messages`, payload: { content: "Speak" } });
+  expect(result.body).not.toContain(sentinel);
+  // 错误帧被剥离：成功文本保留，流正常结束。
+  expect(JSON.stringify(parseSse(result.body).find(event => event.type === "done"))).toContain("你好");
 });

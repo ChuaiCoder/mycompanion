@@ -2,6 +2,7 @@ import { expect, it } from "vitest";
 import type { CharacterMacroFieldSources } from "@mycompanion/shared";
 import { MacroEvaluationSession, resolveMacros } from "./prompt-macros.js";
 import { buildApp } from "./app.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { apps } from "./test-helpers.js";
 
 const order = ["system", "mesExamples", "description", "personality", "persona", "scenario", "jailbreak", "charDepthPrompt", "creatorNotes", "firstMessage", "alternateGreetings"];
@@ -51,17 +52,11 @@ it("resolves native card fields, examples and version through their engine's rea
   expect(resolveMacros("{{charJailbreak}}/{{greeting::1}}", context)).toBe("PHI/{{greeting::1}}");
 });
 
-it("binds actual selected card fields for public assembly without a native first-card stage", async () => {
+it("binds actual selected card fields for native prompt preview", async () => {
   const app = buildApp(); apps.push(app);
-  const avatar = (await app.inject({ method: "POST", url: "/api/characters/create", payload: {
-    ch_name: "Actual actor", description: "ACTUAL_CARD {{user}}", first_mes: "Hello",
-  } })).body;
-  const character = (await app.inject({ method: "POST", url: "/api/characters/get", payload: { avatar_url: avatar } })).json();
+  const character = await createTestCharacter(app, { ch_name: "Actual actor", description: "ACTUAL_CARD {{user}}", first_mes: "Hello" });
   const story = (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json();
-  const response = await app.inject({ method: "POST", url: `/api/conversations/${story.id}/extension-prompt-assembly`, payload: {
-    charDescription: "{{description}}", charPersonality: "", scenario: "", systemPromptOverride: "", jailbreakPromptOverride: "",
-    personaDescription: "", messages: [{ role: "user", content: "input" }],
-  } });
+  const response = await app.inject({ method: "POST", url: `/api/conversations/${story.id}/prompt-preview`, payload: { draft: "input" } });
   expect(response.statusCode, response.body).toBe(200);
   const text = response.json().messages.map((message: { content: string }) => message.content).join("\n");
   expect(text).toContain("ACTUAL_CARD User");

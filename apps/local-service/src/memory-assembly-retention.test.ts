@@ -1,15 +1,14 @@
 import { expect, it, vi } from "vitest";
-import type { CharacterDetail, MemoryRetrievalResult } from "@mycompanion/shared";
+import type { MemoryRetrievalResult } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
 import { apps } from "./test-helpers.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { assembleModelPrompt, streamReply, type PromptAssemblyOptions } from "./model-client.js";
 import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
 
 async function fixture(managed: boolean): Promise<PromptAssemblyOptions> {
   const app = buildApp(); apps.push(app);
-  const avatar = (await app.inject({ method: "POST", url: "/api/characters/create", payload: { ch_name: "Memory actor", first_mes: "Hello" } })).body;
-  const wire = (await app.inject({ method: "POST", url: "/api/characters/get", payload: { avatar_url: avatar } })).json<{ id: string }>();
-  const character = (await app.inject({ method: "GET", url: `/api/characters/${wire.id}` })).json<CharacterDetail>();
+  const character = await createTestCharacter(app, { ch_name: "Memory actor", first_mes: "Hello" });
   return { character, settings: { kind: "ollama", baseUrl: "http://provider.test/v1", model: "gpt-4o", maxTokens: 128,
     contextLimitTokens: 4096, temperature: 0.7, hasApiKey: false }, plugins: [], history: [{ id: crypto.randomUUID(), conversationId: crypto.randomUUID(),
     branchId: crypto.randomUUID(), parentMessageId: null, role: "user", status: "complete", content: "CURRENT_INPUT", createdAt: new Date().toISOString() }],

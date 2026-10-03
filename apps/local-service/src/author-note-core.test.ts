@@ -1,14 +1,9 @@
 import { expect, it } from "vitest";
 import { buildAuthorNotePrompt } from "./author-note-core.js";
-import { authorNoteCoreSource } from "./plugin-runtime-authors-note.js";
 
-it("uses the same Author's Note interval, defaults and placement in native and browser paths", () => {
+it("uses the Author's Note interval, defaults and placement", () => {
   const metadata = { note_prompt: "Remember the map", note_interval: 2, note_position: 1, note_depth: 3, note_role: 1 };
   const settings = { note: { allowWIScan: true } };
-  const browser = new Function(`${authorNoteCoreSource.replace(/^export /, "")}; return buildAuthorNotePrompt;`)() as typeof buildAuthorNotePrompt;
-  for (const turns of [0, 1, 2, 3, 4]) {
-    expect(browser(metadata, settings, turns)).toEqual(buildAuthorNotePrompt(metadata, settings, turns));
-  }
   expect(buildAuthorNotePrompt(metadata, settings, 2)).toEqual({ active: true, prompt: {
     key: "2_floating_prompt", value: "Remember the map", position: 1, depth: 3, role: 1, scan: true,
   } });

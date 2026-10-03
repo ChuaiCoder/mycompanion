@@ -5,7 +5,6 @@ import {
   conversationDetailSchema,
   conversationListResponseSchema,
   createConversationRequestSchema,
-  extensionChatSaveSchema,
   memoryListQuerySchema,
   memoryRecordSchema,
   memoryRestoreRequestSchema,
@@ -254,16 +253,5 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
       characterId: character.id, branchId: latest.activeBranchId,
       tainted: Boolean(latest.chatMetadata?.tainted), message,
     });
-  });
-
-  app.put<{ Params: IdParams; Body: unknown }>("/api/conversations/:id/extension-state", { bodyLimit: 500 * 1024 * 1024 }, async (request, reply) => {
-    const parsed = extensionChatSaveSchema.safeParse(request.body);
-    if (!parsed.success) return reply.status(400).send({ error: { code: "INVALID_EXTENSION_CHAT", message: "扩展聊天数据无效。", details: parsed.error.issues.map(issue => issue.message) } });
-    const conversation = runtime.getConversation(request.params.id);
-    if (!conversation) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
-    if (parsed.data.branchId !== conversation.activeBranchId && !runtime.listAllBranchMessages(conversation.id).some(message => message.branchId === parsed.data.branchId)) {
-      return sendError(reply, 409, "BRANCH_NOT_FOUND", "要保存的故事分支不存在，请重新载入故事。");
-    }
-    return conversationDetailSchema.parse(runtime.saveExtensionChatState(request.params.id, parsed.data));
   });
 }

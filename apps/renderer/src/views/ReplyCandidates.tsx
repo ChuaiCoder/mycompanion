@@ -5,9 +5,10 @@ import { fetchStoryExport } from "../api";
 import { replyBranches, type ReplyBranch } from "../branch-candidates";
 import { selectMessageSwipe } from "../swipe-runtime";
 
-export function ReplyCandidates({ message, conversation, disabled, onActivateBranch }: {
+export function ReplyCandidates({ message, conversation, disabled, onActivateBranch, onSwiped }: {
   message: ChatMessage; conversation: ConversationDetail; disabled: boolean;
   onActivateBranch?: ((conversationId: string, branchId: string) => Promise<void>) | undefined;
+  onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
 }) {
   const { i18n } = useTranslation(), en = i18n.language.startsWith("en"), locale = en ? "en-US" : "zh-CN";
   const scope = `${conversation.id}/${conversation.activeBranchId}/${message.id}`;
@@ -32,7 +33,10 @@ export function ReplyCandidates({ message, conversation, disabled, onActivateBra
     catch (error) { if (current.current === captured) setError(error instanceof Error ? error.message : String(error)); }
     finally { operation.current = false; if (current.current === captured) setBusy(false); }
   }
-  const select = (index: number) => run(() => selectMessageSwipe({ conversationId: conversation.id, branchId: conversation.activeBranchId, messageId: message.id }, index));
+  const select = (index: number) => run(async () => {
+    await selectMessageSwipe({ conversationId: conversation.id, messageId: message.id }, index);
+    await onSwiped?.(conversation.id);
+  });
   return <>
     {valid.length > 1 ? <div className="message-actions swipe-controls" role="group" aria-label={en ? "Reply candidates" : "候选回复"}>
       <button type="button" className="message-action swipe_left" aria-label={en ? "Previous reply candidate" : "上一条候选回复"} disabled={disabled || busy || position <= 0} onClick={() => void select(valid[position - 1]!)}>{en ? "Previous" : "上一条"}</button>

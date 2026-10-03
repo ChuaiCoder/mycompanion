@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
 import { buildApp } from "./app.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { apps } from "./test-helpers.js";
 import { MacroEvaluationSession } from "./prompt-macros.js";
 import { TavernRegexExecutor } from "./tavern-regex-service.js";
@@ -19,8 +20,7 @@ it.each([false, true])("escapes macro values without escaping authored regex syn
 
 async function fixture(experimental: boolean, entries: Record<string, unknown>, regex: unknown[]) {
   const app = buildApp(); apps.push(app);
-  const avatar = (await app.inject({ method: "POST", url: "/api/characters/create", payload: { ch_name: "WI regex", first_mes: "Hello" } })).body;
-  const character = (await app.inject({ method: "POST", url: "/api/characters/get", payload: { avatar_url: avatar } })).json();
+  const character = await createTestCharacter(app, { ch_name: "WI regex", first_mes: "Hello" });
   const story = (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json();
   await app.inject({ method: "PUT", url: "/api/extensions/settings", payload: { extensionSettings: { regex,
     __mycompanion_power_user: { experimental_macro_engine: experimental } } } });

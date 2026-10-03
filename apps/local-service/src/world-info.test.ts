@@ -3,7 +3,7 @@ import { rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { conversationDetailSchema, toExtensionChatState, type ConversationDetail } from "@mycompanion/shared";
+import { conversationDetailSchema, type ConversationDetail } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
 import { backupChecksum } from "./backup.js";
 import reference from "./fixtures/prompt-persona-examples-upstream-reference.json" with { type: "json" };
@@ -36,10 +36,16 @@ async function setup(instance: App, extensions: Record<string, unknown> = {}): P
   return conversationDetailSchema.parse((await instance.inject({ method: "POST", url: "/api/conversations", payload: { characterId: imported.json().id } })).json());
 }
 async function bindChat(instance: App, conversation: ConversationDetail, name: string) {
-  const next = toExtensionChatState(conversation); next.metadata.world_info = name;
-  const response = await instance.inject({ method: "PUT", url: `/api/conversations/${conversation.id}/extension-state`, payload: {
-    branchId: conversation.activeBranchId, base: toExtensionChatState(conversation), next,
-  } });
+  const current = (await instance.inject({ method: "GET", url: "/api/worldinfo/settings" })).json();
+  const charLore = [...(current.world_info.charLore ?? [])];
+  const binding = charLore.find(item => item.name === conversation.characterId);
+  if (binding) binding.extraBooks = [...new Set([...binding.extraBooks, name])];
+  else charLore.push({ name: conversation.characterId, extraBooks: [name] });
+  await settings(instance, { world_info: { ...current.world_info, charLore } });
+}
+async function extensionSettings(instance: App, patch: Record<string, unknown>) {
+  const current = (await instance.inject({ method: "GET", url: "/api/extensions/settings" })).json().extensionSettings;
+  const response = await instance.inject({ method: "PUT", url: "/api/extensions/settings", payload: { extensionSettings: { ...current, ...patch } } });
   expect(response.statusCode, response.body).toBe(200);
 }
 async function preview(instance: App, id: string, draft = "observatory") {
@@ -60,9 +66,6 @@ describe("named world info in the independent application", () => {
     expect((await instance.inject({ method: "GET", url: "/api/worldinfo/settings" })).json()).toEqual(base);
     expect((await instance.inject({ method: "POST", url: "/api/worldinfo/prompt", payload: { ...input, chat: [{}] } })).statusCode).toBe(400);
     expect((await instance.inject({ method: "POST", url: "/api/worldinfo/prompt", payload: { ...input, characterId: "missing" } })).statusCode).toBe(404);
-    const legacy = (await instance.inject({ method: "POST", url: "/api/settings/get", payload: {} })).json();
-    expect(legacy.world_names).toEqual(["live"]);
-    expect(JSON.parse(legacy.settings).world_info.globalSelect).toEqual([]);
   });
   it("expands browser world-info budget macros with the requested response reserve", async () => {
     const instance = app();
@@ -103,22 +106,20 @@ describe("named world info in the independent application", () => {
     expect(saved.statusCode, saved.body).toBe(200);
     expect(saved.json().report.block).toBe("SAVED");
   });
-  it("does not re-expand a browser-resolved scan snapshot", async () => {
+  it("scans supplied global scan data as literal prepared text in a single pass", async () => {
     const instance = app();
-    await save(instance, "one-pass", book("INJECTED", { key: ["SECOND"] }));
+    await save(instance, "one-pass", book("INJECTED", { key: ["inner"], matchCharacterDescription: true }));
     const base = (await instance.inject({ method: "GET", url: "/api/worldinfo/settings" })).json();
-    const payload = { chat: ["unrelated"], maxContext: 4096,
-      metadata: { variables: { inner: "SECOND" } },
-      extensionScanText: "{{getvar::inner}}",
-      settings: { ...base, world_info: { globalSelect: ["one-pass"], charLore: [] } } };
-    const unresolved = await instance.inject({ method: "POST", url: "/api/worldinfo/prompt", payload });
-    const resolved = await instance.inject({ method: "POST", url: "/api/worldinfo/prompt", payload: {
-      ...payload, extensionScanTextResolved: true,
+    const response = await instance.inject({ method: "POST", url: "/api/worldinfo/prompt", payload: {
+      chat: ["unrelated"], maxContext: 4096,
+      // Macro-looking scan text is caller-prepared: if the engine re-expanded
+      // it, `{{getvar::inner}}` would vanish (no such variable) and the key
+      // `inner` would stop matching; a literal pass keeps the substring.
+      globalScanData: { characterDescription: "{{getvar::inner}}" },
+      settings: { ...base, world_info: { globalSelect: ["one-pass"], charLore: [] } },
     } });
-    expect(unresolved.statusCode, unresolved.body).toBe(200);
-    expect(resolved.statusCode, resolved.body).toBe(200);
-    expect(unresolved.json().report.block).toBe("INJECTED");
-    expect(resolved.json().report.block).toBe("");
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json().report.block).toBe("INJECTED");
   });
   it("preserves arbitrary documents and selection settings after SQLite reopen", async () => {
     const path = join(tmpdir(), `mycompanion-world-info-${randomUUID()}.sqlite`);
@@ -232,23 +233,14 @@ describe("named world info in the independent application", () => {
     } });
     await bindChat(instance, conversation, "author-note-worlds");
     const setNote = async (prompt: string, interval: number) => {
-      const current = conversationDetailSchema.parse((await instance.inject({ method: "GET", url: `/api/conversations/${conversation.id}` })).json());
-      const base = toExtensionChatState(current), next = toExtensionChatState(current);
-      Object.assign(next.metadata, { note_prompt: prompt, note_interval: interval, note_position: 1, note_depth: 0, note_role: 0 });
-      const response = await instance.inject({ method: "PUT", url: `/api/conversations/${conversation.id}/extension-state`, payload: {
-        branchId: current.activeBranchId, base, next,
-      } });
-      expect(response.statusCode, response.body).toBe(200);
+      await extensionSettings(instance, { note: { default: prompt, defaultInterval: interval, defaultPosition: 1, defaultDepth: 0, defaultRole: 0 } });
     };
     await setNote("AUTHOR_NOTE", 1);
     const active = await preview(instance, conversation.id);
     expect(active.messages.at(-1)).toEqual({ role: "system", content: "AN_TOP\nAUTHOR_NOTE\nAN_BOTTOM" });
     expect(active.diagnostics.join(" ")).not.toContain("作者注释宿主接口尚未接入");
     const setPersona = async (position: number) => {
-      const response = await instance.inject({ method: "PUT", url: "/api/extensions/settings", payload: { extensionSettings: {
-        __mycompanion_power_user: { persona_description: "PERSONA_TEXT", persona_description_position: position },
-      } } });
-      expect(response.statusCode, response.body).toBe(200);
+      await extensionSettings(instance, { __mycompanion_power_user: { persona_description: "PERSONA_TEXT", persona_description_position: position } });
     };
     await setPersona(2);
     expect((await preview(instance, conversation.id)).messages.at(-1)?.content).toBe("AN_TOP\nPERSONA_TEXT\nAUTHOR_NOTE\nAN_BOTTOM");

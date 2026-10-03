@@ -4,7 +4,6 @@ import {
   characterDetailSchema,
   conversationDetailSchema,
   promptPreviewResponseSchema,
-  toExtensionChatState,
 } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
@@ -167,39 +166,36 @@ describe("提示词预览 (FR-PROMPT-004)", () => {
     expect(tooLong.statusCode).toBe(400);
   });
 
-  it("assembles identical native and extension messages for the same text turn without exposing redacted preview text to generation", async () => {
+  it("redacts the draft in preview while the identical redacted prompt goes to generation", async () => {
     const { app, conversation } = await setupPreview();
     const draft = "带上地图。";
     const previewResponse = await app.inject({ method: "POST",
       url: `/api/conversations/${conversation.id}/prompt-preview`, payload: { draft } });
     expect(previewResponse.statusCode).toBe(200);
     const preview = promptPreviewResponseSchema.parse(previewResponse.json());
-    const extensionResponse = await app.inject({ method: "POST",
-      url: `/api/conversations/${conversation.id}/extension-prompt-assembly`,
-      payload: { messages: [{ role: "user", content: draft },
-        ...conversation.messages.toReversed().map(message => ({ role: message.role, content: message.content }))],
-        messageExamples: [[]], extensionPrompts: [], type: "normal" },
-    });
-    expect(extensionResponse.statusCode).toBe(200);
-    const extension = extensionResponse.json() as { messages: typeof preview.messages; totalTokens: number };
-    expect(extension.messages).toEqual(preview.messages);
-    expect(extension.totalTokens).toBe(preview.totalTokens);
 
     const secret = "sk-abcdefgh1234567890";
-    const privatePrompt = await app.inject({ method: "POST",
-      url: `/api/conversations/${conversation.id}/extension-prompt-assembly`,
-      payload: { messages: [{ role: "user", content: `密钥是 ${secret}` }],
-        messageExamples: [], extensionPrompts: [], type: "normal" },
-    });
-    expect(privatePrompt.statusCode).toBe(200);
-    expect(JSON.stringify(privatePrompt.json())).toContain(secret);
-    const redacted = promptPreviewResponseSchema.parse((await app.inject({ method: "POST",
-      url: `/api/conversations/${conversation.id}/prompt-preview`, payload: { draft: `密钥是 ${secret}` },
-    })).json());
-    expect(JSON.stringify(redacted.messages)).not.toContain(secret);
+    const privatePreview = promptPreviewResponseSchema.parse((await app.inject({ method: "POST",
+      url: `/api/conversations/${conversation.id}/prompt-preview`, payload: { draft: `密钥是 ${secret}` } })).json());
+    expect(JSON.stringify(privatePreview.messages)).not.toContain(secret);
+    // 预览本身不写入故事：预览之后、发送之前的状态与预览前一致。
+    const previewOnly = (await app.inject({ method: "GET", url: `/api/conversations/${conversation.id}` })).json();
+    expect(previewOnly.messages).toEqual(conversation.messages);
+
+    // 真实生成收到与预览完全一致的消息。
+    const providerRequests: unknown[][] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url: URL, init?: RequestInit) => {
+      if (isCompletionRequest(init)) return completionResponse("[]");
+      providerRequests.push((JSON.parse(String(init?.body)) as { messages: unknown[] }).messages);
+      return sseResponse(["好的。"]);
+    }));
+    const sent = await app.inject({ method: "POST",
+      url: `/api/conversations/${conversation.id}/messages`, payload: { content: draft } });
+    expect(sent.statusCode, sent.body).toBe(200);
+    expect(providerRequests.at(-1)).toEqual(preview.messages);
   });
 
-  it("uses extension request token limits in both card and worldbook macros", async () => {
+  it("uses provider token limits in both card and worldbook macros", async () => {
     const { app, conversation } = await setupPreview();
     const book = await app.inject({ method: "POST", url: "/api/worldinfo/edit", payload: {
       name: "request-budget-book", data: { entries: {
@@ -213,6 +209,10 @@ describe("提示词预览 (FR-PROMPT-004)", () => {
       ...current, world_info: { globalSelect: ["request-budget-book"], charLore: [] },
     } });
     expect(selected.statusCode, selected.body).toBe(200);
+    await app.inject({ method: "PUT", url: "/api/settings/provider", payload: {
+      kind: "ollama", baseUrl: "http://127.0.0.1:11434/v1", model: "test-model",
+      contextLimitTokens: 2048, maxTokens: 128,
+    } });
 
     const scan = await app.inject({ method: "POST", url: "/api/worldinfo/prompt", payload: {
       chat: ["budget=1920"], characterId: conversation.characterId, conversationId: conversation.id,
@@ -221,159 +221,42 @@ describe("提示词预览 (FR-PROMPT-004)", () => {
     expect(scan.statusCode, scan.body).toBe(200);
     expect(scan.json().report.block).toBe("WORLD=1920/2048/128");
     const response = await app.inject({ method: "POST",
-      url: `/api/conversations/${conversation.id}/extension-prompt-assembly`, payload: {
-        messages: [{ role: "user", content: "budget=1920" }], messageExamples: [],
-        extensionPrompts: [], charDescription: "CARD={{maxPrompt}}/{{maxContext}}/{{maxResponse}}",
-        contextLimitTokens: 2048, maxTokens: 128, type: "normal",
-        worldInfoAfter: scan.json().report.block,
-      } });
+      url: `/api/conversations/${conversation.id}/prompt-preview`, payload: { draft: "budget=1920" } });
     expect(response.statusCode, response.body).toBe(200);
-    const assembled = response.json() as { messages: Array<{ content: string }>; contextLimitTokens: number };
-    const text = assembled.messages.map(message => message.content).join("\n");
-    expect(text).toContain("CARD=1920/2048/128");
+    const text = response.json().messages.map((message: { content: string }) => message.content).join("\n");
     expect(text).toContain("WORLD=1920/2048/128");
-    expect(assembled.contextLimitTokens).toBe(2048);
   });
 
-  it("preserves the independent PromptManager pass after earlier browser resolution", async () => {
+  it("keeps prompt preview read-only and deterministic across repeated calls", async () => {
     const { app, conversation } = await setupPreview();
-    const base = toExtensionChatState(conversation);
-    const next = structuredClone(base);
-    next.metadata = { variables: { inner: "SECOND" } };
-    const saved = await app.inject({ method: "PUT",
-      url: `/api/conversations/${conversation.id}/extension-state`,
-      payload: { branchId: conversation.activeBranchId, base, next } });
-    expect(saved.statusCode, saved.body).toBe(200);
-    const prompt = { key: "one-pass", value: "{{getvar::inner}}", position: 0,
+    const prompt = { key: "outlet", value: "OUTLET_ANCHOR", position: 0,
       depth: 0, scan: true, role: 0 };
-    const call = (extensionPrompts: unknown[]) => app.inject({ method: "POST",
+    const call = () => app.inject({ method: "POST",
       url: `/api/conversations/${conversation.id}/prompt-preview`,
-      payload: { draft: "继续。", extensionPrompts } });
-    const resolved = await call([{ ...prompt, macrosResolved: true }]);
-    const raw = await call([prompt]);
-    expect(resolved.statusCode, resolved.body).toBe(200);
-    expect(raw.statusCode, raw.body).toBe(200);
-    // The executed upstream population oracle's extension-residual fixture
-    // proves preparePrompt still substitutes residual syntax in a later pass.
-    expect(resolved.json().messages.some((message: { content: string }) => message.content === "SECOND")).toBe(true);
-    expect(raw.json().messages.some((message: { content: string }) => message.content === "SECOND")).toBe(true);
+      payload: { draft: "继续。", extensionPrompts: [prompt] } });
+    const first = await call(), second = await call();
+    expect(first.statusCode, first.body).toBe(200);
+    expect(second.statusCode, second.body).toBe(200);
+    // 预览不提交宏副作用：两次预览输出一致，已保存变量不变。
+    expect(second.json().messages).toEqual(first.json().messages);
+    const chat = (await app.inject({ method: "GET", url: `/api/conversations/${conversation.id}` })).json();
+    expect(chat.chatMetadata.variables ?? {}).toEqual(conversation.chatMetadata?.variables ?? {});
   });
 
-  it("keeps card examples when extension conversion produces empty blocks, but honors an explicit empty example list", async () => {
+  it("keeps card examples from the character card and drops them when the card empties mes_example", async () => {
     const { app, conversation } = await setupPreview();
     const draft = "带上地图。";
     const preview = promptPreviewResponseSchema.parse((await app.inject({ method: "POST",
       url: `/api/conversations/${conversation.id}/prompt-preview`, payload: { draft } })).json());
-    const assemble = async (messageExamples: unknown[]) => {
-      const response = await app.inject({ method: "POST",
-        url: `/api/conversations/${conversation.id}/extension-prompt-assembly`, payload: {
-          messages: [{ role: "user", content: draft },
-            ...conversation.messages.toReversed().map(message => ({ role: message.role, content: message.content }))],
-          messageExamples, extensionPrompts: [], type: "normal",
-        } });
-      expect(response.statusCode).toBe(200);
-      return response.json() as { messages: typeof preview.messages; totalTokens: number };
-    };
-    const unparsed = await assemble([[]]);
-    expect(unparsed.messages).toEqual(preview.messages);
-    expect(unparsed.totalTokens).toBe(preview.totalTokens);
-    const parsed = await assemble([[{ role: "system", name: "example_assistant",
-      content: "小心纸张边缘，那里比看起来更远。" }]]);
-    expect(parsed.messages).toEqual(preview.messages);
-    expect(parsed.totalTokens).toBe(preview.totalTokens);
-    const filtered = await assemble([]);
-    expect(filtered.messages.some(message => message.content.includes("小心纸张边缘"))).toBe(false);
-    const changed = await assemble([[{ role: "system", name: "example_assistant", content: "改写后的示例。" }]]);
-    expect(changed.messages.some(message => message.content.includes("改写后的示例。"))).toBe(true);
-    expect(changed.messages.some(message => message.content.includes("小心纸张边缘"))).toBe(false);
-  });
-
-  it("uses saved chat-level card overrides in native preview and extension assembly", async () => {
-    const { app, conversation } = await setupPreview();
-    const base = toExtensionChatState(conversation);
-    const next = structuredClone(base);
-    next.metadata = { scenario: "聊天级场景：{{char}} {{getvar::route}}",
-      system_prompt: "聊天级系统规则 {{getglobalvar::weather}}。",
-      mes_example: "<START>\n{{char}}: 聊天级示例。", variables: { route: "北方" } };
-    const saved = await app.inject({ method: "PUT",
-      url: `/api/conversations/${conversation.id}/extension-state`,
-      payload: { branchId: conversation.activeBranchId, base, next } });
-    expect(saved.statusCode, saved.body).toBe(200);
-    const settings = await app.inject({ method: "PUT", url: "/api/extensions/settings",
-      payload: { extensionSettings: { variables: { global: { weather: "雨" } } } } });
-    expect(settings.statusCode, settings.body).toBe(200);
-    const draft = "带上地图。";
-    const native = promptPreviewResponseSchema.parse((await app.inject({ method: "POST",
+    expect(preview.messages.some(message => message.content.includes("小心纸张边缘"))).toBe(true);
+    // 角色卡显式清空示例后，预览不再包含示例。
+    const exported = await app.inject({ method: "GET", url: `/api/characters/${conversation.characterId}/export?format=json` });
+    const card = exported.json() as { data: Record<string, unknown> };
+    card.data.mes_example = "";
+    const updated = await app.inject({ method: "PUT", url: `/api/characters/${conversation.characterId}`, payload: { card } });
+    expect(updated.statusCode, updated.body).toBe(200);
+    const filtered = promptPreviewResponseSchema.parse((await app.inject({ method: "POST",
       url: `/api/conversations/${conversation.id}/prompt-preview`, payload: { draft } })).json());
-    const extensionResponse = await app.inject({ method: "POST",
-      url: `/api/conversations/${conversation.id}/extension-prompt-assembly`, payload: {
-        messages: [{ role: "user", content: draft },
-          ...conversation.messages.toReversed().map(message => ({ role: message.role, content: message.content }))],
-        messageExamples: [[{ role: "system", name: "example_assistant", content: "聊天级示例。" }]],
-        Scenario: "聊天级场景：阿斯特 北方", systemPromptOverride: "聊天级系统规则 雨。",
-        extensionPrompts: [], type: "normal",
-      } });
-    expect(extensionResponse.statusCode, extensionResponse.body).toBe(200);
-    const extension = extensionResponse.json() as { messages: typeof native.messages; totalTokens: number };
-    const nativeText = native.messages.map(message => message.content).join("\n");
-    expect(nativeText).toContain("聊天级场景：阿斯特 北方");
-    expect(nativeText).toContain("聊天级系统规则 雨。");
-    expect(nativeText).toContain("聊天级示例。");
-    expect(nativeText).not.toContain("旧天文台");
-    expect(extension.messages).toEqual(native.messages);
-    expect(extension.totalTokens).toBe(native.totalTokens);
-    const providerRequests: Array<typeof native.messages> = [];
-    vi.stubGlobal("fetch", vi.fn(async (_url: URL, init?: RequestInit) => {
-      if (isCompletionRequest(init)) return completionResponse("[]");
-      providerRequests.push((JSON.parse(String(init?.body)) as { messages: typeof native.messages }).messages);
-      return sseResponse(["好的。"]);
-    }));
-    const sent = await app.inject({ method: "POST", url: `/api/conversations/${conversation.id}/messages`,
-      payload: { content: draft } });
-    expect(sent.statusCode, sent.body).toBe(200);
-    expect(providerRequests.at(-1)).toEqual(native.messages);
-    const requestsBeforeQuiet = providerRequests.length;
-    const quiet = await app.inject({ method: "POST",
-      url: `/api/conversations/${conversation.id}/quiet-generation`, payload: { quietPrompt: "" } });
-    expect(quiet.statusCode, quiet.body).toBe(200);
-    expect(providerRequests.length).toBeGreaterThan(requestsBeforeQuiet);
-    const quietText = providerRequests.at(-1)?.map(message => message.content).join("\n");
-    expect(quietText).toContain("聊天级场景：阿斯特 北方");
-    expect(quietText).toContain("聊天级示例。");
-  });
-
-  it("preserves extension overrides and pictures while rejecting unimplemented tool history before model transport", async () => {
-    const { app, conversation } = await setupPreview();
-    const url = `/api/conversations/${conversation.id}/extension-prompt-assembly`;
-    const response = await app.inject({ method: "POST", url, payload: {
-      messages: [{ role: "user", content: "请继续" }, { role: "system", content: "旁白提示" }],
-      messageExamples: [], extensionPrompts: [], charDescription: "临时角色描述", Scenario: "临时场景",
-      worldInfoBefore: "临时世界书", worldInfoAfter: "", systemPromptOverride: "临时系统提示",
-      type: "normal",
-    } });
-    expect(response.statusCode).toBe(200);
-    const result = response.json() as { messages: Array<{ role: string; content: string }> };
-    expect(result.messages.some(message => message.content.includes("临时角色描述"))).toBe(true);
-    expect(result.messages.some(message => message.content.includes("临时世界书"))).toBe(true);
-    expect(result.messages.some(message => message.role === "system" && message.content === "旁白提示")).toBe(true);
-    const emptyReasoning = await app.inject({ method: "POST", url, payload: {
-      messages: [{ role: "user", content: "请继续", reasoning: "", signature: null }],
-      messageExamples: [], extensionPrompts: [], type: "normal",
-    } });
-    expect(emptyReasoning.statusCode).toBe(200);
-    const picture = await app.inject({ method: "POST", url, payload: {
-      messages: [{ role: "user", content: "看看图片", image: "data:image/png;base64,AAAA" }],
-      messageExamples: [], extensionPrompts: [], type: "normal",
-    } });
-    expect(picture.statusCode,picture.body).toBe(200);
-    expect(picture.json().messages.find((message:{role:string})=>message.role==="user").content).toEqual([
-      {type:"text",text:"看看图片"},{type:"image_url",image_url:{url:"data:image/png;base64,AAAA",detail:"auto"}},
-    ]);
-    const unsupported = await app.inject({ method: "POST", url, payload: {
-      messages: [{ role: "assistant", content: "Tool history", tool_calls:[] }],
-      messageExamples: [], extensionPrompts: [], type: "normal",
-    } });
-    expect(unsupported.statusCode).toBe(422);
-    expect(unsupported.json()).toMatchObject({ error: { code: "UNSUPPORTED_PROMPT_MEDIA" } });
+    expect(filtered.messages.some(message => message.content.includes("小心纸张边缘"))).toBe(false);
   });
 });

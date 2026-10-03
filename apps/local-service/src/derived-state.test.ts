@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { parseCharacterCardDocument } from "@mycompanion/character-card";
-import { toExtensionChatState, type BackupPayload, type ChatMessage, type ConversationDetail, type MemoryRecord } from "@mycompanion/shared";
+import { type BackupPayload, type ChatMessage, type ConversationDetail, type MemoryRecord } from "@mycompanion/shared";
 import { applyRestore, assembleBackupPayload, backupChecksum, verifyBackupPayload } from "./backup.js";
 import { buildApp } from "./app.js";
 import { CharacterRepository } from "./character-repository.js";
@@ -28,7 +28,7 @@ function setup() {
   const runtime = new RuntimeRepository(database), characters = new CharacterRepository(database);
   const card = parseCharacterCardDocument({ spec: "chara_card_v2", spec_version: "2.0", data: {
     name: "Derived fixture", description: "Original MyCompanion regression fixture", first_mes: "Opening source", personality: "",
-    scenario: "", mes_example: "", creator_notes: "", system_prompt: "", post_history_instructions: "", alternate_greetings: [],
+    scenario: "", mes_example: "", creator_notes: "", system_prompt: "", post_history_instructions: "", alternate_greetings: ["Alternate greeting"],
     tags: [], creator: "MyCompanion", character_version: "1", extensions: {},
   } });
   const character = characters.import(card, "derived.json").character;
@@ -56,19 +56,20 @@ function setup() {
     const response = await resource.app.inject({ method: "DELETE", url: `/api/conversations/${original.id}/messages/${message.id}` });
     expect(response.statusCode, response.body).toBe(200); return response.json().conversation as ConversationDetail;
   };
-  const extensionEdit = async (messageId: string, content: string) => {
-    const current = runtime.getConversation(original.id)!, base = toExtensionChatState(current), next = structuredClone(base);
-    next.messages.find(message => message.id === messageId)!.mes = content;
-    const response = await resource.app.inject({ method: "PUT", url: `/api/conversations/${original.id}/extension-state`,
-      payload: { branchId: current.activeBranchId, base, next } });
-    expect(response.statusCode, response.body).toBe(200); return response.json() as ConversationDetail;
+  // Swipe selection is the live native path that changes a message's text
+  // while retaining its ID and branch (candidate reply selection).
+  const swipeGreeting = async (swipeId: number): Promise<ChatMessage> => {
+    const current = runtime.getConversation(original.id)!;
+    const response = await resource.app.inject({ method: "POST", url: `/api/conversations/${original.id}/messages/${current.messages[0]!.id}/swipe`,
+      payload: { swipeId } });
+    expect(response.statusCode, response.body).toBe(200); return response.json() as unknown as ChatMessage;
   };
   const restart = async () => {
     await resource.app.close(); resource.database.close();
     resource.app = buildApp({ databasePath: path }); resource.database = new DatabaseSync(path);
     return { runtime: new RuntimeRepository(resource.database), characters: new CharacterRepository(resource.database) };
   };
-  return { resource, runtime, characters, character, original, memory, edit, activate, remove, extensionEdit, restart };
+  return { resource, runtime, characters, character, original, memory, edit, activate, remove, swipeGreeting, restart };
 }
 const resign = (backup: BackupPayload) => { backup.manifest.checksum = backupChecksum(backup); return backup; };
 
@@ -149,35 +150,35 @@ it("invalidates a summary and source memory immediately after deleting a covered
   expect(prompt).not.toContain("STALE_SUMMARY_MARKER"); expect(prompt).not.toContain("SECRET_MEMORY_FROM_SOURCE");
 });
 
-it("checks the source revision when an extension changes text while retaining the message ID", async () => {
-  const fixture = setup(), source = fixture.original.messages[2]!, memory = fixture.memory([source]);
-  const summary = fixture.runtime.saveSummary(fixture.original.id, "Original source summary", 3, "fixture");
-  const edited = await fixture.extensionEdit(source.id, "Extension changed the source text");
-  expect(edited.activeBranchId).toBe(fixture.original.activeBranchId); expect(edited.messages[2]!.id).toBe(source.id);
+it("checks the source revision when a swipe changes text while retaining the message ID", async () => {
+  const fixture = setup(), greeting = fixture.original.messages[0]!, memory = fixture.memory([greeting]);
+  const summary = fixture.runtime.saveSummary(fixture.original.id, "Original source summary", 1, "fixture");
+  const swapped = await fixture.swipeGreeting(1);
+  expect(swapped.branchId).toBe(fixture.original.activeBranchId); expect(swapped.id).toBe(greeting.id);
+  expect(swapped.content).toBe("Alternate greeting");
   expect(fixture.runtime.getMemory(memory.id)?.status).toBe("orphaned");
   expect(fixture.runtime.getSummary(fixture.original.id)).toMatchObject({ valid: false });
-  expect(fixture.runtime.isMessageSnapshotCurrent(fixture.original.id, fixture.original.activeBranchId, [source])).toBe(false);
-  expect(fixture.runtime.isMessageSnapshotCurrent(fixture.original.id, fixture.original.activeBranchId, fixture.original.messages.slice(0, 3), true)).toBe(false);
-  await fixture.extensionEdit(source.id, source.content);
+  expect(fixture.runtime.isMessageSnapshotCurrent(fixture.original.id, fixture.original.activeBranchId, [greeting])).toBe(false);
+  expect(fixture.runtime.isMessageSnapshotCurrent(fixture.original.id, fixture.original.activeBranchId, fixture.original.messages.slice(0, 1), true)).toBe(false);
+  await fixture.swipeGreeting(0);
   expect(fixture.runtime.getMemory(memory.id)?.status).toBe("active");
   expect(fixture.runtime.getSummary(fixture.original.id)).toEqual(summary);
 });
 
-it("does not invalidate sources for extension metadata-only saves", async () => {
-  const fixture = setup(), source = fixture.original.messages[2]!, memory = fixture.memory([source]);
-  const summary = fixture.runtime.saveSummary(fixture.original.id, "Verified source summary", 3, "fixture");
-  const base = toExtensionChatState(fixture.original), next = structuredClone(base);
-  next.metadata.variables = { progress: 4 }; next.messages[2]!.extra = { image: "fixture.png" };
-  const saved = await fixture.resource.app.inject({ method: "PUT", url: `/api/conversations/${fixture.original.id}/extension-state`,
-    payload: { branchId: fixture.original.activeBranchId, base, next } });
-  expect(saved.statusCode, saved.body).toBe(200);
+it("does not invalidate sources for a metadata-only variable commit", async () => {
+  const fixture = setup(), source = fixture.original.messages[0]!, memory = fixture.memory([source]);
+  const summary = fixture.runtime.saveSummary(fixture.original.id, "Verified source summary", 1, "fixture");
+  const committed = await fixture.resource.app.inject({ method: "POST", url: "/api/worldinfo/prompt", payload: {
+    chat: [], maxContext: 4096, conversationId: fixture.original.id, commitVariables: true,
+  } });
+  expect(committed.statusCode, committed.body).toBe(200);
   expect(fixture.runtime.getMemory(memory.id)?.status).toBe("active"); expect(fixture.runtime.getSummary(fixture.original.id)).toEqual(summary);
   expect(fixture.runtime.isMessageSnapshotCurrent(fixture.original.id, fixture.original.activeBranchId, [source])).toBe(true);
 });
 
 it("restores a summary's previous source revision without marking stale previous text valid", async () => {
-  const fixture = setup(); fixture.runtime.saveSummary(fixture.original.id, "Old summary", 3, "fixture");
-  await fixture.extensionEdit(fixture.original.messages[2]!.id, "Edited source on same branch");
+  const fixture = setup(); fixture.runtime.saveSummary(fixture.original.id, "Old summary", 1, "fixture");
+  await fixture.swipeGreeting(1);
   expect(fixture.runtime.getSummary(fixture.original.id)?.valid).toBe(false);
   expect(fixture.runtime.editSummary(fixture.original.id, "Reviewed new source summary")).toMatchObject({ valid: true, previousContent: "Old summary" });
   expect(fixture.runtime.restoreSummary(fixture.original.id)).toMatchObject({ content: "Old summary", valid: false, previousContent: null });

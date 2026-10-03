@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { ProviderProfile, ProviderProfiles } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { apps, parseSse, waitFor } from "./test-helpers.js";
 
 const cleanups: Array<() => Promise<void>> = [];
@@ -14,8 +15,7 @@ const codec = { seal: (value: string) => Buffer.from(value).toString("base64"), 
 const settings = { kind: "openai-compatible" as const, baseUrl: "http://profile.example/v1", model: "gpt-4o", temperature: 0.8, maxTokens: 128, contextLimitTokens: 4096 };
 async function folder() { const path = await mkdtemp(join(tmpdir(), "mycompanion-task-routing-")); cleanups.push(() => rm(path, { recursive: true, force: true })); return path; }
 async function story(app: ReturnType<typeof buildApp>) {
-  const avatar = (await app.inject({ method: "POST", url: "/api/characters/create", payload: { ch_name: "Task routing", first_mes: "Hello" } })).body;
-  const character = (await app.inject({ method: "POST", url: "/api/characters/get", payload: { avatar_url: avatar } })).json();
+  const character = await createTestCharacter(app, { ch_name: "Task routing", first_mes: "Hello" });
   return (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json();
 }
 async function add(app: ReturnType<typeof buildApp>, name: string, overrides: Record<string, unknown> = {}): Promise<ProviderProfile> {
@@ -73,9 +73,9 @@ it("selected-chat extension saves preserve other profiles, duplicate display nam
   const app = buildApp({ secretCodec: codec }); apps.push(app);
   const a = await add(app, "Same name", { model: "A", apiKey: "a-key" }), b = await add(app, "Same name", { model: "B", apiKey: "b-key" });
   await app.inject({ method: "PATCH", url: "/api/settings/provider-tasks", payload: { chat: b.id, summary: b.id, extraction: b.id, embedding: b.id } });
-  const baseline = (await app.inject({ method: "GET", url: "/api/settings/provider" })).json();
-  const patched = await app.inject({ method: "PATCH", url: "/api/settings/provider/extension-patch", payload: { values: { model: "B changed" }, baseline } });
-  expect(patched.json().provider).toMatchObject({ model: "B changed", hasApiKey: true });
+  const patched = await app.inject({ method: "PUT", url: `/api/settings/providers/${b.id}`, payload: { name: b.name, settings: { ...b.settings, model: "B changed" } } });
+  expect(patched.statusCode, patched.body).toBe(200);
+  expect(patched.json().settings).toMatchObject({ model: "B changed", hasApiKey: true });
   const listed = (await app.inject({ method: "GET", url: "/api/settings/providers" })).json() as ProviderProfiles;
   expect(listed.profiles.find(profile => profile.id === a.id)!.settings).toMatchObject({ model: "A", hasApiKey: true });
   expect((await app.inject({ method: "PATCH", url: "/api/settings/provider-tasks", payload: { chat: "missing", summary: a.id } })).statusCode).toBe(400);
@@ -150,24 +150,15 @@ it("unassigned extraction/summary use the selected chat connection and unassigne
   expect(provider.requests.some(request => /embeddings|embed$/.test(request.path))).toBe(false);
 });
 
-it("profile changes during real native browser preflight keep the accepted invocation's original endpoint/model/key", async () => {
+it("switching the selected chat profile mid-session sends later generations to the new endpoint/model/key", async () => {
   const provider = await remote(), app = buildApp({ secretCodec: codec }); apps.push(app);
   const a = await add(app, "A", { baseUrl: provider.base + "/a/v1", model: "A-model", apiKey: "A-secret" });
   const b = await add(app, "B", { baseUrl: provider.base + "/b/v1", model: "B-model", apiKey: "B-secret" });
   await app.inject({ method: "PATCH", url: "/api/settings/provider-tasks", payload: { chat: a.id } });
-  const conversation = await story(app), origin = await app.listen({ host: "127.0.0.1", port: 0 });
-  const response = await fetch(`${origin}/api/conversations/${conversation.id}/messages`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content: "Speak", browserPreflight: true }), signal: AbortSignal.timeout(10000) });
-  const reader = response.body!.getReader(), decoder = new TextDecoder(); let text = "", answered = false;
-  for (;;) {
-    const chunk = await reader.read(); if (chunk.done) break; text += decoder.decode(chunk.value, { stream: true });
-    const completion = parseSse(text).find(event => event.type === "completion_request") as any;
-    if (completion && !answered) {
-      answered = true;
-      await app.inject({ method: "PATCH", url: "/api/settings/provider-tasks", payload: { chat: b.id } });
-      await app.inject({ method: "POST", url: `/api/generation/preflight/${completion.requestId}`, payload: { request: completion.request } });
-    }
-  }
-  reader.releaseLock(); expect(answered).toBe(true); expect(text).toContain("Reply A-model");
+  const conversation = await story(app);
+  const first = await app.inject({ method: "POST", url: `/api/conversations/${conversation.id}/messages`, payload: { content: "Speak" } });
+  expect(first.body).toContain("Reply A-model");
+  await app.inject({ method: "PATCH", url: "/api/settings/provider-tasks", payload: { chat: b.id } });
   const next = await app.inject({ method: "POST", url: `/api/conversations/${conversation.id}/messages`, payload: { content: "Next" } });
   expect(next.body).toContain("Reply B-model");
   const chats = provider.requests.filter(request => request.body.stream);
@@ -184,7 +175,8 @@ it("profile draft tests and profile edits never inherit a saved key after changi
   const saved = await app.inject({ method: "PUT", url: `/api/settings/providers/${profile.id}`, payload: { name: profile.name, settings: { ...profile.settings, baseUrl: provider.base + "/new/v1" } } });
   expect(saved.json().settings.hasApiKey).toBe(false);
   await app.inject({ method: "PATCH", url: "/api/settings/provider-tasks", payload: { chat: profile.id } });
-  const result = await app.inject({ method: "POST", url: "/api/extensions/generate-raw", payload: { messages: [{ role: "user", content: "Speak" }] } });
+  const conversation = await story(app);
+  const result = await app.inject({ method: "POST", url: `/api/conversations/${conversation.id}/messages`, payload: { content: "Speak" } });
   expect(result.statusCode).toBe(200); expect(provider.requests.at(-1)!.authorization).toBeUndefined();
 });
 

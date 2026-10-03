@@ -7,7 +7,9 @@ import { afterEach,expect,it,vi } from "vitest";
 import type { MemoryRecord, MemoryRetrievalReport } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
 import { RuntimeRepository } from "./runtime-repository.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { parseSse,sseResponse,completionResponse } from "./test-helpers.js";
+import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
 
 const resources:Array<{app:ReturnType<typeof buildApp>;database:DatabaseSync;path:string}>=[];
 afterEach(async()=>{for(const {app,database,path}of resources.splice(0)){await app.close();database.close();for(const suffix of["","-wal","-shm"])rmSync(path+suffix,{force:true});}});
@@ -15,8 +17,7 @@ afterEach(async()=>{for(const {app,database,path}of resources.splice(0)){await a
 it.each([false,true])("reports and marks only memories retained by the actual native request (new=%s)",async newEngine=>{
   const path=join(tmpdir(),`memory-retained-${randomUUID()}.sqlite`),app=buildApp({databasePath:path}),database=new DatabaseSync(path),runtime=new RuntimeRepository(database);
   resources.push({app,database,path});
-  const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Memory actor",first_mes:""}})).body;
-  const character=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();
+  const character=await createTestCharacter(app,{ch_name:"Memory actor",first_mes:""});
   const story=(await app.inject({method:"POST",url:"/api/conversations",payload:{characterId:character.id}})).json();
   await app.inject({method:"PUT",url:"/api/extensions/settings",payload:{extensionSettings:{__mycompanion_power_user:{experimental_macro_engine:newEngine}}}});
   const provider={kind:"ollama",baseUrl:"http://provider.test/v1",model:"gpt-4o",contextLimitTokens:4096,maxTokens:128};
@@ -39,7 +40,7 @@ it.each([false,true])("reports and marks only memories retained by the actual na
   expect(report.results.find(item=>item.memoryId===low.id)?.diagnostics.join(" ")).toContain("预算");
   expect(JSON.stringify(requests[0]!.messages)).toContain("HIGH_RELEVANCE");expect(JSON.stringify(requests[0]!.messages)).not.toContain("LOW_RELEVANCE");
   expect(runtime.getMemory(high.id)!.lastUsedAt).not.toBeNull();expect(runtime.getMemory(low.id)!.lastUsedAt).toBeNull();
-  const exact=(await app.inject({method:"POST",url:"/api/extensions/token-count",payload:{messages:requests[0]!.messages,model:"gpt-4o",full:true}})).json();
+  const exact={token_count:countCompatibilityMessagesSync(requests[0]!.messages as never,"gpt-4o",true)};
   const budget=events.find(event=>event.type==="prompt_budget")!.report as {totalTokens:number;reserveTokens:number};
   expect(budget.totalTokens).toBe(exact.token_count+budget.reserveTokens);
 });

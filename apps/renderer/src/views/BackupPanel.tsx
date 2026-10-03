@@ -9,7 +9,7 @@ import { uiLocale } from "../i18n";
 import { backupText, backupTotals } from "../backup-translations";
 
 const labels: Record<keyof BackupRestorePreviewResponse["sections"], string> = {
-  characters: "角色", conversations: "故事", memories: "记忆", plugins: "已有提示词插件", codePlugins: "代码扩展",
+  characters: "角色", conversations: "故事", memories: "记忆", plugins: "已有提示词插件",
   extensionSettings: "扩展设置", userAvatars: "用户头像", worldbooks: "世界书", worldInfoSettings: "世界书设置", retainedCharacterChats: "已归档角色的故事",
   providerProfiles: "模型连接与任务",
 };

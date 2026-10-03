@@ -2,7 +2,7 @@ import { expect, it } from "vitest";
 import { parseCompletionExample, parseCompatibleCompletionExample } from "./prompt-manager-core.js";
 import { assembleModelPrompt, type PromptAssemblyOptions } from "./model-client.js";
 import { MacroEvaluationSession } from "./prompt-macros.js";
-import { productCardForTests } from "./macro-boundary-test-helper.js";
+import { productCardForTests } from "./native-fixtures.js";
 import reference from "./fixtures/prompt-persona-examples-upstream-reference.json" with { type: "json" };
 import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
 

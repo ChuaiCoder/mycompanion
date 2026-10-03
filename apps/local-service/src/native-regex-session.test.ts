@@ -150,24 +150,3 @@ it("cancels pathological input matching without persisting its staged find-macro
   expect(stopped.statusCode, stopped.body).toBe(200); await pending;
   expect(snapshot(fixture.database)).toEqual(before); expect(fixture.requests).toHaveLength(0);
 });
-
-it("discards regex session effects when browser preflight is cancelled before a provider request", async () => {
-  const fixture = await setup([rule({ placement: [2], promptOnly: true, findRegex: "/Opening/g", replaceString: "{{incvar::pending}}/{{incglobalvar::pendingGlobal}}/Draft" })]);
-  const base = await fixture.app.listen({ host: "127.0.0.1", port: 0 });
-  vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => String(url).startsWith(base)
-    ? nativeFetch(url, init) : (fixture.requests.push(JSON.parse(String(init?.body))), stream()));
-  const before = snapshot(fixture.database);
-  const response = await nativeFetch(`${base}/api/conversations/${fixture.story.id}/messages`, { method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content: "", allowEmpty: true, browserPreflight: true }) });
-  const reader = response.body!.getReader(), decoder = new TextDecoder(); let received = "", requestId = "";
-  while (!requestId) {
-    const result = await reader.read(); if (result.done) throw new Error("Missing completion_request"); received += decoder.decode(result.value);
-    for (const line of received.split("\n")) if (line.startsWith("data: ") && line.endsWith("}")) {
-      const event = JSON.parse(line.slice(6)) as GenerationSseEvent; if (event.type === "completion_request") requestId = event.requestId;
-    }
-  }
-  const cancelled = await fixture.app.inject({ method: "POST", url: `/api/generation/preflight/${requestId}`, payload: { error: "cancelled" } });
-  expect(cancelled.statusCode, cancelled.body).toBe(200);
-  while (!(await reader.read()).done) { /* drain the final SSE events */ }
-  expect(snapshot(fixture.database)).toEqual(before); expect(fixture.requests).toHaveLength(0);
-});

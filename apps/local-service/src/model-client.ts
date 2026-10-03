@@ -17,7 +17,6 @@ import type {
 import type { PromptBudgetReport } from "./prompt-budget.js";
 import { getPersonaUserName } from "./power-user-core.js";
 import { macroVariableStores, MacroEvaluationSession } from "./prompt-macros.js";
-import type { RawChatRequest } from "./raw-generation.js";
 import { readPromptManagerSettings } from "./prompt-manager-core.js";
 import { assembleManagedModelPrompt } from "./managed-prompt-assembly.js";
 import { providerHttpError, providerPayloadError } from "./provider-errors.js";
@@ -25,7 +24,6 @@ import { accountCompletionTokens } from "./token-accounting.js";
 import { replayProviderResponseMessages, requestProviderCompletion } from "./provider-transport.js";
 import { decodeProviderReply, readProviderJson, readProviderStream, tavernProviderReply } from "./provider-response.js";
 import type { ModelCandidateSnapshot, ModelResponseState, ModelToolRound } from "@mycompanion/shared";
-import { createToolContinuation } from "./tool-generation.js";
 import { isModelImageInliningSupported, materializePromptImage } from "./model-prompt-image.js";
 import { readProviderTokenUsage } from "./provider-usage.js";
 
@@ -180,34 +178,6 @@ export async function completeText(options: {
     if(timeout.aborted)throw new ModelRequestError("模型请求超时。",504);
     if(error instanceof ModelRequestError)throw error;
     throw new ModelRequestError("无法连接或读取模型服务。",502);
-  }
-}
-
-// Unlike memory extraction, raw generation uses the configured sampling and
-// token limit. The timeout covers the response body as well as response headers.
-export async function completeRawChat(options: RawChatRequest & {
-  settings: ProviderSettings; apiKey?: string; signal: AbortSignal;
-}): Promise<Record<string, unknown>> {
-  const timeout = AbortSignal.timeout(120_000);
-  const signal = AbortSignal.any([options.signal, timeout]);
-  try {
-    const schema = options.jsonSchema;
-    const transport=normalizeChatCompletionRequest({ model: options.settings.model, messages: options.messages,
-        temperature: options.settings.temperature, max_tokens: options.responseLength ?? options.settings.maxTokens, stream: false,
-        ...(schema ? { response_format: { type: "json_schema", json_schema: {
-          name: schema.name, schema: schema.value,
-          ...(schema.description !== undefined ? { description: schema.description } : {}),
-          ...(schema.strict !== undefined ? { strict: schema.strict } : {}),
-        } } } : {}),
-      },options.settings,options.apiKey);
-    const response = await requestProviderCompletion(transport,signal);
-    if (!response.ok) { void response.body?.cancel().catch(() => {}); throw providerHttpError(response.status); }
-    return tavernProviderReply(transport.protocol,await readProviderJson(response),transport.body);
-  } catch (error) {
-    if (options.signal.aborted) throw options.signal.reason;
-    if (timeout.aborted) throw new ModelRequestError("模型请求超时。", 504);
-    if (error instanceof ModelRequestError) throw error;
-    throw new ModelRequestError("无法读取模型响应，请检查服务地址和响应格式。", 502);
   }
 }
 
@@ -410,8 +380,6 @@ export async function streamReply(options: {
   onUsage?: (usage: ProviderTokenUsage) => void;
   onResponseState?: (state: ModelResponseState) => void;
   onCandidates?: (candidates:ModelCandidateSnapshot[])=>void;
-  onToolCalls?: (state:ModelResponseState,signal:AbortSignal,assistantText:string)=>Promise<unknown>;
-  onToolRound?: (rounds:ModelToolRound[])=>void;
   // 预算诊断的接收方（FR-PROMPT-003）：调用方据此下发 prompt_budget 事件。
   onBudget?: (budget: PromptBudgetReport) => void;
 }): Promise<string> {
@@ -437,7 +405,6 @@ export async function streamReply(options: {
     let request: NativeCompletionRequest = { model: options.settings.model, messages: messages.map(replayModelResponse),
       temperature: options.settings.temperature, max_tokens: options.settings.maxTokens, stream: true,
       ...(new URL(options.settings.baseUrl).hostname === "api.openai.com" ? {stream_options:{include_usage:true}} : {}) };
-    const toolRounds:ModelToolRound[]=[];
     for(let depth=0;;depth++) {
     if (options.onRequest) request = await options.onRequest(request, controller.signal);
     controller.signal.throwIfAborted();
@@ -485,45 +452,14 @@ export async function streamReply(options: {
     if (!finalRequest.stream && result.candidates) options.onCandidates?.(structuredClone(result.candidates));
     if (!finalRequest.stream) { full+=result.text;if(result.text)options.onDelta(result.text);options.onResponseState?.(result.state); }
     if(result.finishReason==="missing_choice") throw new ModelRequestError("模型未返回序号为 0 的候选回复。",502);
-    const schema=request.json_schema??(request.response_format as {type?:unknown}|undefined)?.type==="json_schema";
-    if(result.state.toolCalls.length&&!schema){
-      // A partial argument stream must never dispatch a real callback. Validate
-      // every call before any tool in this response is allowed to execute.
-      if(!["tool_calls","stop","done","response"].includes(result.finishReason))
-        throw new ModelRequestError("模型工具调用未正常完成，已停止执行。",502);
-      for(const call of result.state.toolCalls){
-        try{JSON.parse(call.function.arguments||"{}");}
-        catch{throw new ModelRequestError("模型返回了无效的工具参数，已停止执行。",502);}
-      }
-      if(!options.onToolCalls||["quiet","continue","impersonate"].includes(options.generationType??"normal"))
-        throw new ModelRequestError("本次生成没有可执行的工具运行环境。",502);
-      if(depth>=5)throw new ModelRequestError("工具调用达到酒馆的 5 轮上限，已停止后续执行。",502);
-      controller.signal.throwIfAborted();
-      const executed=await options.onToolCalls(result.state,controller.signal,result.text);
-      controller.signal.throwIfAborted();
-      const continuation=createToolContinuation(result.state,result.text,executed);
-      if(continuation.invocations.length){
-        toolRounds.push({content:result.text,responseState:result.state,...(result.usage?{usage:result.usage}:{}),
-          tokenAccounting:measured.tokenAccounting,invocations:continuation.invocations});
-        options.onToolRound?.(structuredClone(toolRounds));
-      }
-      if(continuation.shouldContinue){
-        const followup=continuation.messages.map(message=>({...message,provider_response_model:finalRequest.model,provider_response_protocol:transport.protocol}));
-        request={...request,...finalRequest,messages:[...(transport.body.messages as NativeCompletionRequest["messages"]),...followup] as NativeCompletionRequest["messages"]};
-        continue;
-      }
-      // Stealth callbacks run, but Tavern does not request a visible follow-up.
-      result.finishReason="stop";
-    }
     const finish = completionEnd(result.finishReason);
     if(result.candidates)finish.candidates=result.candidates;
-    if(toolRounds.length)finish.toolRounds=toolRounds;
     if(result.state.protocol!=="openai"||result.state.reasoning||result.state.signature||result.state.toolCalls.length||result.state.media.length||result.state.providerContent.length)
       finish.responseState=result.state;
     if (result.usage) finish.usage=result.usage;
     options.onFinish?.(finish);
     if (!stopped && finish.completionOutcome === "incomplete") throw new ModelRequestError("模型流在正常结束前中断，已保留接收的文本。", 502);
-    const visible=toolRounds.length?result.text:full;
+    const visible=full;
     if (!options.preserveOutput && !visible.trim() && !result.state.media.length && !result.state.toolCalls.length) {
       throw new ModelRequestError("模型返回了空内容或不兼容的响应格式。", 502);
     }

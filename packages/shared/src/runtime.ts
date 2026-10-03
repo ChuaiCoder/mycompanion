@@ -1,8 +1,5 @@
 import { z } from "zod";
 import { toolInvocationSchema } from "./tools.js";
-export const browserMacroResultSchema = z.object({
-  content: z.string(), local: z.record(z.string(), z.unknown()), global: z.record(z.string(), z.unknown()),
-});
 
 import { memoryRetrievalReportSchema } from "./memory.js";
 import { lorebookReportSchema } from "./worldbook.js";
@@ -16,7 +13,6 @@ export const extensionPromptSchema = z.object({
   // Raw snapshots remain false; only explicitly pre-evaluated callers set true.
   macrosResolved: z.boolean().optional(),
 }).strict();
-export const extensionPromptRequestSchema = z.object({ extensionPrompts: z.array(extensionPromptSchema).optional() }).strict();
 export type ExtensionPrompt = z.infer<typeof extensionPromptSchema>;
 
 // 提示词预算报告（FR-PROMPT-003）：每轮生成计算一次，
@@ -54,7 +50,6 @@ export const promptBudgetReportSchema = z.object({
 // 发送前的提示词预览（FR-PROMPT-004）：与真实请求相同的组装与预算，
 // 凭据与内部敏感字段已脱敏；每个区域给出 token 估算与总计数。
 export const promptPreviewRequestSchema = z.object({
-  browserMacros: z.boolean().default(false),
   // 即将发送的草稿；为空则只预览当前分支已有上下文。
   draft: z.string().max(100_000).optional(),
   extensionPrompts: z.array(extensionPromptSchema).optional(),
@@ -83,63 +78,6 @@ export const promptPreviewResponseSchema = z.object({
 
 export type PromptPreviewRequest = z.infer<typeof promptPreviewRequestSchema>;
 export type PromptPreviewResponse = z.infer<typeof promptPreviewResponseSchema>;
-
-// Browser extensions send their already transformed, newest-first chat here.
-// Keep this separate from the redacted user-facing preview contract.
-const extensionAssemblyMessageSchema = z.object({
-  role: z.enum(["system", "user", "assistant"]),
-  content: z.string().max(200_000),
-  name: z.string().max(200).optional(),
-  image: z.string().max(8 * 1024 * 1024).nullable().optional(),
-  tool_calls: z.unknown().optional(),
-  reasoning: z.unknown().optional(),
-  signature: z.unknown().optional(),
-}).passthrough();
-
-export const extensionPromptAssemblyRequestSchema = z.object({
-  browserMacros: z.boolean().default(false),
-  commitVariables: z.boolean().default(false),
-  messages: z.array(extensionAssemblyMessageSchema).max(80),
-  messageExamples: z.array(z.array(extensionAssemblyMessageSchema).max(50)).max(50).default([]),
-  imageQuality:z.enum(["low","high","auto","original"]).default("auto"),
-  extensionPrompts: z.array(extensionPromptSchema).max(200).default([]),
-  name2: z.string().max(200).optional(),
-  charDescription: z.string().max(200_000).optional(),
-  charPersonality: z.string().max(200_000).optional(),
-  scenario: z.string().max(200_000).optional(),
-  Scenario: z.string().max(200_000).optional(),
-  worldInfoBefore: z.string().max(200_000).nullable().optional(),
-  worldInfoAfter: z.string().max(200_000).nullable().optional(),
-  systemPromptOverride: z.string().max(200_000).optional(),
-  jailbreakPromptOverride: z.string().max(200_000).optional(),
-  personaDescription: z.string().max(200_000).optional(),
-  bias: z.string().max(100_000).optional(),
-  quietPrompt: z.string().max(100_000).optional(),
-  quietImage: z.string().max(8 * 1024 * 1024).nullable().optional(),
-  cyclePrompt: z.string().max(100_000).optional(),
-  type: z.string().max(40).default("normal"),
-  contextLimitTokens: z.number().int().min(1).max(MAX_CONTEXT_TOKENS).optional(),
-  maxTokens: z.number().int().min(1).max(131_072).optional(),
-}).strict();
-export type ExtensionPromptAssemblyRequest = z.infer<typeof extensionPromptAssemblyRequestSchema>;
-
-/** Background generation against the selected story without writing a turn. */
-export const quietGenerationRequestSchema = z.object({
-  browserMacros: z.boolean().default(false),
-  quietPrompt: z.string().max(100_000).default(""),
-  quietPromptMacrosResolved: z.boolean().default(false),
-  browserPreflight: z.boolean().default(false),
-  dryRun: z.boolean().default(false),
-  quietToLoud: z.boolean().default(false),
-  skipWIAN: z.boolean().default(false),
-  quietName: z.string().max(200).nullable().default(null),
-  responseLength: z.number().int().min(1).max(131_072).nullable().default(null),
-  quietImage: z.string().max(8 * 1024 * 1024).nullable().default(null),
-  forceChId: z.number().int().nonnegative().nullable().default(null),
-  jsonSchema: z.record(z.string(), z.unknown()).nullable().default(null),
-  extensionPrompts: z.array(extensionPromptSchema).default([]),
-}).strict();
-export type QuietGenerationRequest = z.infer<typeof quietGenerationRequestSchema>;
 
 export const providerKindSchema = z.enum(["openai-compatible", "ollama", "anthropic", "gemini"]);
 
@@ -266,11 +204,8 @@ export const createConversationRequestSchema = z.object({
 });
 
 export const sendMessageRequestSchema = z.object({
-  browserMacros: z.boolean().default(false),
   content: z.string().trim().max(100_000),
-  extensionPrompts: z.array(extensionPromptSchema).optional(),
   allowEmpty: z.boolean().default(false),
-  browserPreflight: z.boolean().default(false),
   dryRun: z.boolean().default(false),
 }).refine(value => value.content.length > 0 || value.allowEmpty || value.dryRun, "消息不能为空。");
 
@@ -287,9 +222,8 @@ export const nativeCompletionRequestSchema = z.object({
 }).passthrough();
 export type NativeCompletionRequest = z.infer<typeof nativeCompletionRequestSchema>;
 
-export const nativeGenerationRequestSchema = extensionPromptRequestSchema.extend({
-  browserMacros: z.boolean().default(false),
-  browserPreflight: z.boolean().default(false), dryRun: z.boolean().default(false),
+export const nativeGenerationRequestSchema = z.object({
+  dryRun: z.boolean().default(false),
 });
 
 export const sendMessageResponseSchema = z.object({
@@ -300,20 +234,11 @@ export const sendMessageResponseSchema = z.object({
 // SSE 生成流事件。服务端以 text/event-stream 逐事件发送，
 // 客户端按 type 分发；delta 是增量文本，done 携带最终消息（complete 或 stopped）。
 export const generationSseEventSchema = z.discriminatedUnion("type", [
-  z.object({ type: z.literal("macro_request"), requestId: z.string().uuid(), conversationId: z.string().uuid().nullable(),
-    branchId: z.string().uuid().nullable(), evaluation: z.record(z.string(), z.unknown()) }),
-  z.object({ type: z.literal("effect_request"), requestId: z.string().uuid(), conversationId: z.string().uuid().nullable(),
-    branchId: z.string().uuid().nullable(), evaluation: z.object({ invocationId: z.string().uuid(),
-      ordinal: z.number().int().nonnegative(), kind: z.string(), payload: z.unknown() }).passthrough() }),
-  z.object({ type: z.literal("effect_end"), invocationId: z.string().uuid() }),
-  z.object({ type: z.literal("macro_result"), result: z.record(z.string(), z.unknown()) }),
   z.object({type:z.literal("macro_variables"),conversationId:z.string().uuid(),branchId:z.string().uuid().optional(),
     worldInfoState:z.record(z.string(),z.unknown()).optional(),changes:z.array(z.object({
     scope:z.enum(["local","global"]),key:z.string(),beforeExists:z.boolean(),afterExists:z.boolean(),before:z.unknown().optional(),after:z.unknown().optional(),
   }))}),
-  z.object({ type: z.literal("quiet_result"), text: z.string() }),
   z.object({ type: z.literal("impersonate_result"), text: z.string() }),
-  z.object({ type: z.literal("completion_request"), requestId: z.string().uuid(), request: nativeCompletionRequestSchema, dryRun: z.boolean(), provider: providerSettingsSchema.optional() }),
   z.object({ type: z.literal("generation_end"), reason: z.enum(["stopped", "preview"]) }),
   z.object({ type: z.literal("user_message"), message: chatMessageSchema }),
   z.object({ type: z.literal("assistant_start"), message: chatMessageSchema }),
@@ -344,6 +269,11 @@ export const editMessageRequestSchema = z.object({
   content: z.string().trim().min(1).max(100_000),
 });
 
+// 选择候选回复（FR-CHAT）：swipe_id/内容/扩展数据由服务端原子更新。
+export const selectMessageSwipeRequestSchema = z.object({
+  swipeId: z.number().int().nonnegative(),
+}).strict();
+
 export const stopGenerationResponseSchema = z.object({
   message: chatMessageSchema,
 });
@@ -358,6 +288,7 @@ export type GenerationSseEvent = z.infer<typeof generationSseEventSchema>;
 export type RegenerateMessageResponse = z.infer<typeof regenerateMessageResponseSchema>;
 export type ActivateBranchResponse = z.infer<typeof activateBranchResponseSchema>;
 export type EditMessageRequest = z.infer<typeof editMessageRequestSchema>;
+export type SelectMessageSwipeRequest = z.infer<typeof selectMessageSwipeRequestSchema>;
 export type StopGenerationResponse = z.infer<typeof stopGenerationResponseSchema>;
 export type DeleteMessageResponse = z.infer<typeof deleteMessageResponseSchema>;
 
@@ -397,69 +328,6 @@ export const setPluginEnabledRequestSchema = z.object({
   enabled: z.boolean(),
 });
 
-export const codePluginSchema = z.object({
-  kind: z.literal("sillytavern-js"),
-  id: z.string().regex(/^[a-z0-9][a-z0-9._-]{1,63}$/),
-  displayName: z.string().min(1).max(200),
-  version: z.string().max(100),
-  author: z.string().max(300),
-  license: z.string().max(100),
-  homepage: z.string().url().optional(),
-  sourceUrl: z.string().url().optional(),
-  sourceRef: z.string().max(200).optional(),
-  sourceRevision: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
-  extensionName: z.string().min(1).max(255).regex(/^[^/\\\u0000]+$/).optional(),
-  installationScope: z.enum(["local", "global"]).optional(),
-  js: z.string().max(500).nullable(),
-  css: z.string().max(500).nullable(),
-  enabled: z.boolean(),
-  installedAt: z.string().datetime(),
-  fileCount: z.number().int().nonnegative(),
-  totalBytes: z.number().int().nonnegative(),
-  warnings: z.array(z.string()).max(50),
-});
-
-export const installCodePluginRequestSchema = z.object({
-  url: z.string().trim().min(1).max(2_048),
-  branch: z.string().trim().max(200).default(""),
-}).strict();
-
-export const updateCodePluginRequestSchema = z.object({
-  expectedRevision: z.string().regex(/^[a-f0-9]{40}$/i),
-  branch: z.string().trim().min(1).max(200).optional(),
-}).strict();
-
-export const codePluginUpdateCheckSchema = z.object({
-  sourceUrl: z.string().url(),
-  sourceRef: z.string().max(200),
-  installedRevision: z.string().regex(/^[a-f0-9]{40}$/i),
-  remoteRevision: z.string().regex(/^[a-f0-9]{40}$/i).nullable(),
-  state: z.enum(["up_to_date", "update_available", "ref_missing"]),
-  defaultRef: z.string().nullable(),
-  refs: z.array(z.object({
-    ref: z.string(),
-    name: z.string(),
-    kind: z.enum(["branch", "tag"]),
-    revision: z.string().regex(/^[a-f0-9]{40}$/i),
-  })),
-  checkedAt: z.string().datetime(),
-});
-
-export type CodePluginUpdateCheck = z.infer<typeof codePluginUpdateCheckSchema>;
-
-export const codePluginListResponseSchema = z.object({
-  items: z.array(codePluginSchema),
-  total: z.number().int().nonnegative(),
-});
-
-export const codePluginContributionSchema = z.object({
-  systemPrompt: z.string().max(20_000).default(""),
-  // Tavern slash-command help can contain full usage guides and examples.
-  commands: z.array(pluginCommandSchema.extend({
-    description: z.string().max(20_000).default(""),
-  })).max(50).default([]),
-});
-
 export type ProviderKind = z.infer<typeof providerKindSchema>;
 export type ProviderSettings = z.infer<typeof providerSettingsSchema>;
 export type PromptBudgetReport = z.infer<typeof promptBudgetReportSchema>;
@@ -473,6 +341,3 @@ export type SendMessageResponse = z.infer<typeof sendMessageResponseSchema>;
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type InstalledPlugin = z.infer<typeof installedPluginSchema>;
 export type PluginListResponse = z.infer<typeof pluginListResponseSchema>;
-export type CodePlugin = z.infer<typeof codePluginSchema>;
-export type CodePluginListResponse = z.infer<typeof codePluginListResponseSchema>;
-export type CodePluginContribution = z.infer<typeof codePluginContributionSchema>;

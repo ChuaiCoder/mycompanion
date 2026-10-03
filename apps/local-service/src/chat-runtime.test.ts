@@ -7,6 +7,7 @@ import {
 } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
+import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
 import {
   apps,
   completionResponse,
@@ -486,10 +487,8 @@ describe("desktop chat runtime", () => {
     expect(commandPreviewResponse.statusCode, commandPreviewResponse.body).toBe(200);
     const commandPreview = commandPreviewResponse.json();
     expect(commandPreview.messages.findLast((message: {role:string}) => message.role === "user")?.content).toBe("Scene request: 月色下的海港");
-    const commandCount = (await app.inject({ method: "POST", url: "/api/extensions/token-count", payload: {
-      messages: commandPreview.messages, model: "test-model", full: true,
-    } })).json();
-    expect(commandPreview.totalTokens).toBe(commandCount.token_count + 200 + 512);
+    const commandCount = countCompatibilityMessagesSync(commandPreview.messages, "test-model", true);
+    expect(commandPreview.totalTokens).toBe(commandCount + 200 + 512);
     const sent = await app.inject({
       method: "POST",
       url: `/api/conversations/${created.id}/messages`,

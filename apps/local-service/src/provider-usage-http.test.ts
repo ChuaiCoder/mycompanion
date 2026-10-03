@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { expect,it } from "vitest";
 import { buildApp } from "./app.js";
 import { parseSse } from "./test-helpers.js";
+import { createTestCharacter } from "./native-fixtures.js";
 import { streamReply } from "./model-client.js";
 import { promptBudgetReportSchema,chatMessageSchema,characterDetailSchema,lorebookReportSchema,memoryRetrievalReportSchema,type ProviderTokenUsage } from "@mycompanion/shared";
 
@@ -23,8 +24,7 @@ it("records a usage-only final HTTP SSE frame separately from local budget and p
   let app=buildApp({databasePath});
   try {
     await app.inject({method:"PUT",url:"/api/settings/provider",payload:{kind:"openai-compatible",baseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}/v1`,model:"gpt-4o",maxTokens:128,contextLimitTokens:4096}});
-    const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Usage protocol fixture",first_mes:"Hello"}})).body;
-    const role=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();
+    const role=await createTestCharacter(app,{ch_name:"Usage protocol fixture",first_mes:"Hello"});
     const story=(await app.inject({method:"POST",url:"/api/conversations",payload:{characterId:role.id}})).json();
     const response=await app.inject({method:"POST",url:`/api/conversations/${story.id}/messages`,payload:{content:"请回答"}});
     const events=parseSse(response.body),budget=promptBudgetReportSchema.parse(events.find(event=>event.type==="prompt_budget")?.report);
@@ -51,9 +51,7 @@ it("captures non-stream JSON usage and does not invent counters when a provider 
   const app=buildApp();
   try {
     const settings={kind:"openai-compatible" as const,baseUrl:`http://127.0.0.1:${(provider.address() as {port:number}).port}/v1`,model:"gpt-4o",hasApiKey:false,temperature:1,maxTokens:128,contextLimitTokens:4096};
-    const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Nonstream usage fixture",first_mes:"Hello"}})).body;
-    const imported=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();
-    const character=characterDetailSchema.parse((await app.inject({method:"GET",url:`/api/characters/${imported.id}`})).json());
+    const character=characterDetailSchema.parse(await createTestCharacter(app,{ch_name:"Nonstream usage fixture",first_mes:"Hello"}));
     const usage:ProviderTokenUsage[]=[];
     const options={settings,character,history:[],plugins:[],lorebook:lorebookReportSchema.parse({characterId:character.id,budgetTokens:128,results:[],block:"",position:"after_character_core",injectedCount:0,durationMs:0}),
       memory:memoryRetrievalReportSchema.parse({conversationId:crypto.randomUUID(),budgetTokens:300,pinnedBudgetTokens:300,results:[],block:"",position:"before_recent_messages",injectedCount:0,durationMs:0}),

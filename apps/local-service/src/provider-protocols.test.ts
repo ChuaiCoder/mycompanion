@@ -6,7 +6,8 @@ import { afterEach, expect, it } from "vitest";
 import type { ModelResponseState, ProviderSettings } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
 import { parseSse } from "./test-helpers.js";
-import { readProviderStream } from "./provider-response.js";
+import { createTestCharacter } from "./native-fixtures.js";
+import { readProviderStream, decodeProviderReply, readProviderJson } from "./provider-response.js";
 import { normalizeChatCompletionRequest } from "./chat-completion-request.js";
 import { providerRequestBody, requestProviderCompletion } from "./provider-transport.js";
 
@@ -46,10 +47,9 @@ async function remote(handler:(capture:Captured,response:ServerResponse)=>void){
 function json(response:ServerResponse,value:unknown,status=200){response.writeHead(status,{"Content-Type":"application/json"});response.end(JSON.stringify(value));}
 async function setup(kind:ProviderSettings["kind"],base:string,databasePath?:string){
   const app=buildApp({secretCodec:codec,...(databasePath?{databasePath}:{})});apps.push(app);
-  const settings={kind,baseUrl:base+"/proxy/"+(kind==="gemini"?"v1beta":"v1"),model:kind==="anthropic"?"claude-sonnet-4-6":"gemini-2.5-flash",apiKey:"P01_PROFILE_KEY",maxTokens:2048,contextLimitTokens:8192};
+  const settings={kind,baseUrl:base+"/proxy/"+(kind==="gemini"?"v1beta":"v1"),model:kind==="anthropic"?"claude-sonnet-4-6":"gemini-2.5-flash",apiKey:"P01_PROFILE_KEY",hasApiKey:true,temperature:1,maxTokens:2048,contextLimitTokens:8192} as ProviderSettings&{apiKey:string};
   expect((await app.inject({method:"PUT",url:"/api/settings/provider",payload:settings})).statusCode).toBe(200);
-  const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Protocol",first_mes:"Hello"}})).body;
-  const character=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();
+  const character = await createTestCharacter(app, { ch_name: "Protocol", first_mes: "Hello" });
   const story=(await app.inject({method:"POST",url:"/api/conversations",payload:{characterId:character.id}})).json();
   return {app,story,settings};
 }
@@ -94,18 +94,20 @@ it.each(["anthropic","gemini"]as const)("uses actual %s wire, preserves signed r
   }
 });
 
-it.each(["anthropic","gemini"]as const)("wraps public %s non-stream output and sends actual tool/result/media/schema wire without mutating inputs",async kind=>{
+it.each(["anthropic","gemini"]as const)("wraps %s non-stream output and sends actual tool/result/media/schema wire without mutating inputs",async kind=>{
   const provider=await remote((_capture,response)=>kind==="anthropic"?json(response,{content:[{type:"thinking",thinking:"r",signature:"s"},{type:"text",text:"answer"}],stop_reason:"end_turn",usage:{input_tokens:1,output_tokens:2}})
     :json(response,{candidates:[{content:{role:"model",parts:[{text:"answer",thoughtSignature:"s"}]},finishReason:"STOP"}]}));
-  const {app}=await setup(kind,provider.base);
+  const {app,settings}=await setup(kind,provider.base);
   const input={model:kind==="anthropic"?"claude-sonnet-4-6":"gemini-2.5-flash",messages:[{role:"system",content:"Rules"},
     {role:"user",content:[{type:"text",text:"look"},{type:"image_url",image_url:{url:"data:image/png;base64,"+image}}]},
     {role:"assistant",content:null,tool_calls:[{id:"call_a",type:"function",function:{name:"lookup",arguments:'{"id":1}'},signature:"TOOL_SIGNATURE"}]},
     {role:"tool",content:"tool result",tool_call_id:"call_a"}],
     tools:[{type:"function",function:{name:"lookup",parameters:{type:"object",properties:{id:{type:"integer"}},required:["id"]}}}],tool_choice:"required",stream:false,max_tokens:2048};
   const original=structuredClone(input);
-  const reply=await app.inject({method:"POST",url:"/api/backends/chat-completions/generate",payload:input});
-  expect(reply.statusCode,reply.body).toBe(200);expect(reply.json().choices[0].message).toMatchObject({content:"answer",signature:"s"});expect(input).toEqual(original);
+  const transport=normalizeChatCompletionRequest({chat_completion_source:kind==="anthropic"?"claude":"makersuite",...input},settings,"P01_PROFILE_KEY");
+  const http=await requestProviderCompletion(transport,AbortSignal.timeout(5000));
+  const decoded=decodeProviderReply(kind==="anthropic"?"claude":"gemini",await readProviderJson(http));
+  expect(decoded.text).toBe("answer");expect(decoded.state.signature).toBe("s");expect(input).toEqual(original);
   const wire=provider.requests.at(-1)!.body;
   if(kind==="anthropic"){
     expect(wire.tool_choice).toEqual({type:"any"});expect(wire.tools[0].input_schema).toEqual(input.tools[0]!.function.parameters);
@@ -117,9 +119,11 @@ it.each(["anthropic","gemini"]as const)("wraps public %s non-stream output and s
     expect(wire.contents.flatMap((message:any)=>message.parts)).toContainEqual({functionResponse:{name:"lookup",response:{name:"lookup",content:"tool result"}}});
   }
   const schema={name:"answer",value:{type:"object",properties:{ok:{type:"boolean"}}}};
-  await app.inject({method:"POST",url:"/api/extensions/generate-raw",payload:{messages:[{role:"user",content:"JSON"}],jsonSchema:schema}});
+  const schemaTransport=normalizeChatCompletionRequest({chat_completion_source:kind==="anthropic"?"claude":"makersuite",model:input.model,messages:[{role:"user",content:"JSON"}],json_schema:schema,stream:false},settings,"P01_PROFILE_KEY");
+  await requestProviderCompletion(schemaTransport,AbortSignal.timeout(5000));
   const schemaWire=provider.requests.at(-1)!.body;
   expect(kind==="anthropic"?schemaWire.tools[0].input_schema:schemaWire.generationConfig.responseJsonSchema).toEqual(schema.value);
+  await app.close();
 });
 
 it("accumulates fragmented Claude JSON and identical tool names by real content block ordinal",async()=>{
@@ -154,8 +158,6 @@ it.each(["anthropic","gemini"]as const)("uses %s draft probes and rejects errors
   const {app,settings}=await setup(kind,provider.base);
   const probe=await app.inject({method:"POST",url:"/api/settings/provider/test",payload:settings});
   expect(probe.body).not.toContain("P01_PROFILE_KEY");expect(probe.body).toContain("AUTHENTICATION");
-  const raw=await app.inject({method:"POST",url:"/api/extensions/generate-raw",payload:{messages:[{role:"user",content:"test"}]}});
-  expect(raw.statusCode).toBe(401);expect(raw.body).not.toContain("P01_PROFILE_KEY");
   expect(provider.requests.every(request=>request.headers.authorization===undefined)).toBe(true);
 });
 
@@ -173,7 +175,7 @@ it("preserves Gemini audio input and rejects unsupported media before fetch with
   expect(()=>providerRequestBody("gemini",{model:"gemini",messages:[{role:"user",content:[{type:"image_url",image_url:{url:"https://example.com/image.png"}}]}]})).toThrow("内嵌图片");
 });
 
-it.each(["anthropic","gemini"]as const)("scopes %s replay signatures to the actual model after settings and preflight changes",async kind=>{
+it.each(["anthropic","gemini"]as const)("scopes %s replay signatures to the actual model after settings changes",async kind=>{
   const provider=await remote(({body,path},response)=>{
     if(body.stream||path.includes("streamGenerateContent")){
       response.writeHead(200,{"Content-Type":"text/event-stream"});
@@ -188,36 +190,15 @@ it.each(["anthropic","gemini"]as const)("scopes %s replay signatures to the actu
   expect((await app.inject({method:"PUT",url:"/api/settings/provider",payload:{...settings,model:changedModel}})).statusCode).toBe(200);
   const second=await app.inject({method:"POST",url:`/api/conversations/${story.id}/messages`,payload:{content:"更换同协议模型"}});
   expect(second.body).toContain('"status":"complete"');
-  const base=await app.listen({host:"127.0.0.1",port:0});
-  const response=await fetch(`${base}/api/conversations/${story.id}/messages`,{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({content:"扩展在预检中恢复旧模型",browserPreflight:true})});
-  const reader=response.body!.getReader(),decoder=new TextDecoder();let buffer="",answered=false;
-  while(true){
-    const {done,value}=await reader.read();if(done)break;
-    buffer+=decoder.decode(value,{stream:true});let split:number;
-    while((split=buffer.indexOf("\n\n"))>=0){
-      const frame=buffer.slice(0,split);buffer=buffer.slice(split+2);
-      if(!frame.startsWith("data: "))continue;const event=JSON.parse(frame.slice(6));
-      if(event.type==="completion_request"){
-        answered=true;expect((await app.inject({method:"POST",url:`/api/generation/preflight/${event.requestId}`,
-          payload:{request:{...event.request,model:settings.model}}})).statusCode).toBe(200);
-      }
-      expect(event.type).not.toBe("error");
-    }
-  }
-  reader.releaseLock();expect(answered).toBe(true);
   const chats=provider.requests.filter(request=>request.body.stream||request.path.includes("streamGenerateContent"));
-  expect(chats).toHaveLength(3);
+  expect(chats).toHaveLength(2);
   for(const request of chats){expect(JSON.stringify(request.body)).not.toContain("responseState");expect(JSON.stringify(request.body)).not.toContain("provider_response_");}
-  const switched=chats[1]!.body,preflight=chats[2]!.body;
+  const switched=chats[1]!.body;
   if(kind==="anthropic"){
     expect(switched.model).toBe(changedModel);expect(switched.messages.flatMap((message:any)=>message.content).some((part:any)=>part.type==="thinking")).toBe(false);
-    expect(preflight.model).toBe(settings.model);expect(preflight.messages.flatMap((message:any)=>message.content).filter((part:any)=>part.type==="thinking")).toHaveLength(1);
   }else{
     const parts=switched.contents.flatMap((message:any)=>message.parts);
     expect(parts.some((part:any)=>part.thought||part.thoughtSignature)).toBe(false);
     expect(parts).toContainEqual({inlineData:geminiParts[3]!.inlineData});
-    const signed=preflight.contents.flatMap((message:any)=>message.parts).filter((part:any)=>part.thoughtSignature);
-    expect(signed).toHaveLength(2); // First response matches; the second was generated by the changed model.
   }
 });

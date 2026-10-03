@@ -50,17 +50,6 @@ it.each(["continue", "impersonate"])("preview %s sends no provider request and l
   expect(f.requests).toEqual([]); expect((await f.read()).messages).toEqual(before.messages);
 });
 
-it.each(["continue", "impersonate"])("cancelled %s preflight creates no phantom row or branch", async mode => {
-  const f = await fixture(), before = await f.read();
-  const response = await nativeFetch(`${f.base}/api/conversations/${f.story.id}/messages/${mode}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ browserPreflight: true }) });
-  const reader = response.body!.getReader(); let text = "", requestId;
-  while (!requestId) { const part = await reader.read(); if (part.done) throw new Error("No preflight"); text += new TextDecoder().decode(part.value); requestId = f.events(text).find((event): event is Extract<GenerationSseEvent, { type: "completion_request" }> => event.type === "completion_request")?.requestId; }
-  expect((await f.read()).messages).toEqual(before.messages); expect(f.requests).toEqual([]);
-  await f.app.inject({ method: "POST", url: "/api/generation/preflight/" + requestId, payload: { error: "Stopped preflight" } });
-  while (!(await reader.read()).done) { /* drain */ }
-  expect((await f.read()).messages).toEqual(before.messages); expect((await f.read()).activeBranchId).toBe(before.activeBranchId);
-});
-
 it("stopping a continuation preserves both original prefix and accepted partial text", async () => {
   const f = await fixture(), before = await f.read();
   vi.stubGlobal("fetch", async (url: string | URL | Request, init?: RequestInit) => String(url).startsWith(f.base) ? nativeFetch(url, init) : stoppableSseResponse(init?.signal));

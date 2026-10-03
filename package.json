@@ -10,7 +10,6 @@
     "npm": ">=11.0.0"
   },
   "workspaces": [
-    "packages/macro-engine",
     "packages/shared",
     "packages/character-card",
     "apps/local-service",
@@ -18,7 +17,7 @@
     "apps/desktop"
   ],
   "scripts": {
-    "build:shared": "npm run build -w @mycompanion/macro-engine && npm run build -w @mycompanion/shared",
+    "build:shared": "npm run build -w @mycompanion/shared",
     "build:character-card": "npm run build:shared && npm run build -w @mycompanion/character-card",
     "build": "npm run build:character-card && npm run build -w @mycompanion/local-service && npm run build -w @mycompanion/renderer",
     "build:desktop": "npm run build && npm run build -w @mycompanion/desktop",
