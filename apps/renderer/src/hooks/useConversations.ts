@@ -38,12 +38,14 @@ export function useConversations(deps: {
     // 仅在挂载时执行一次：resumeConversationId 来自挂载快照。
   }, []);
 
-  const handleStartConversation = async (): Promise<void> => {
-    if (!selectedCharacterId) return;
+  // 可选 characterId 覆盖：对话页空态直接点角色开聊时，选中角色尚未落入 state。
+  const handleStartConversation = async (characterId?: string): Promise<void> => {
+    const targetCharacterId = characterId ?? selectedCharacterId;
+    if (!targetCharacterId) return;
     const revision = ++navigationRevision.current;
     setRuntimeError(null);
     try {
-      const conversation = await createConversation(selectedCharacterId);
+      const conversation = await createConversation(targetCharacterId);
       if (revision !== navigationRevision.current) return;
       setActiveConversation(conversation);
       setConversations((current) => [conversation, ...current]);

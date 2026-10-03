@@ -13,6 +13,7 @@ import type {
 
 import {
   fetchHealth,
+  fetchCharacter,
   fetchConversation,
   activateBranch,
   getProviderSettings,
@@ -52,7 +53,7 @@ export function App() {
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(resume.current.view ?? "library");
+  const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(resume.current.view ?? "chat");
   const [regexPanelOpen, setRegexPanelOpen] = useState(false);
   const [lorebookPanelOpen, setLorebookPanelOpen] = useState(false);
   const [characterPanelOpen, setCharacterPanelOpen] = useState(false);
@@ -110,6 +111,7 @@ export function App() {
   } = characterSelection;
 
   const characterImport = useCharacterImport({
+    onPreviewStart: () => setWorkspaceView("library"),
     onCommitted: (character) => {
       const summary = toSummary(character);
       characterSelection.setCharacters((current) => [
@@ -234,6 +236,22 @@ export function App() {
     }
   };
 
+  // 对话页空态点角色直接开聊：先取详情保持角色库选中态，再为该角色建故事。
+  const handleChatWithCharacter = async (id: string): Promise<void> => {
+    const revision = ++navigationRevision.current;
+    setRuntimeError(null);
+    try {
+      const character = await fetchCharacter(id);
+      if (revision !== navigationRevision.current) return;
+      characterSelection.setSelectedCharacter(character);
+      await conversationsState.handleStartConversation(id);
+    } catch (error) {
+      if (revision === navigationRevision.current) {
+        setRuntimeError(error instanceof Error ? error.message : "暂时无法读取角色详情。");
+      }
+    }
+  };
+
   useEffect(() => {
     if (workspaceView === "chat") {
       void listConversations()
@@ -259,15 +277,15 @@ export function App() {
     <div className={`desktop-shell ${isSidebarCollapsed ? "desktop-shell--sidebar-collapsed" : ""}`}>
       <aside className="sidebar">
         <div className="brand-row">
-          <button className="brand-button" onClick={() => setWorkspaceView("library")} type="button"><span aria-hidden="true" className="brand-mark">M</span><span className="brand-name">MyCompanion</span></button>
+          <button className="brand-button" onClick={() => setWorkspaceView("chat")} type="button"><span aria-hidden="true" className="brand-mark">M</span><span className="brand-name">MyCompanion</span></button>
           <button aria-expanded={!isSidebarCollapsed} aria-label={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"} className="sidebar-collapse" onClick={() => setIsSidebarCollapsed((value) => !value)} type="button">{isSidebarCollapsed ? "▣" : "◫"}</button>
         </div>
         <nav aria-label="主导航" className="primary-nav">
           <button className="nav-row nav-row--new" disabled={isImporting || isSaving} onClick={openFilePicker} type="button"><Icon name="plus" /><span>{t(isImporting ? "nav.reading" : "nav.import")}</span><kbd>Ctrl I</kbd></button>
           <button aria-current={workspaceView === "library" ? "page" : undefined} className={`nav-row ${workspaceView === "library" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("library")} type="button"><Icon name="character" /><span>{t("nav.library")}</span></button>
-          <button aria-current={workspaceView === "chat" ? "page" : undefined} className={`nav-row ${workspaceView === "chat" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("chat")} type="button"><Icon name="book" /><span>{t("nav.chat")}</span><small>{conversations.length || ""}</small></button>
+          <button aria-current={workspaceView === "chat" && !memoryPanelOpen ? "page" : undefined} className={`nav-row ${workspaceView === "chat" && !memoryPanelOpen ? "nav-row--active" : ""}`} onClick={() => { setMemoryPanelOpen(false); setWorkspaceView("chat"); }} type="button"><Icon name="book" /><span>{t("nav.chat")}</span><small>{conversations.length || ""}</small></button>
           <button aria-current={workspaceView === "plugins" ? "page" : undefined} className={`nav-row ${workspaceView === "plugins" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("plugins")} type="button"><Icon name="sparkles" /><span>{t("nav.plugins")}</span><small>{plugins.length || ""}</small></button>
-          <button aria-current={workspaceView === "chat" ? "page" : undefined} className={`nav-row ${workspaceView === "chat" ? "nav-row--active" : ""}`} onClick={() => { setMemoryPanelOpen(true); setWorkspaceView("chat"); }} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{lastMemoryReport?.injectedCount ?? ""}</small></button>
+          <button aria-current={workspaceView === "chat" && memoryPanelOpen ? "page" : undefined} className={`nav-row ${workspaceView === "chat" && memoryPanelOpen ? "nav-row--active" : ""}`} onClick={() => { setMemoryPanelOpen(true); setWorkspaceView("chat"); }} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{lastMemoryReport?.injectedCount ?? ""}</small></button>
         </nav>
         <section aria-labelledby="recent-characters-title" className="sidebar-library">
           <div className="tree-heading"><div><Icon name="character" size={16} /><h2 id="recent-characters-title">我的角色</h2></div><button aria-label="导入新的角色卡" disabled={isImporting || isSaving} onClick={openFilePicker} type="button"><Icon name="plus" size={16} /></button></div>
@@ -325,7 +343,11 @@ export function App() {
         activeCommands={activeCommands}
         activeConversation={activeConversation}
         chatInput={chatInput}
+        characters={characters}
+        connectionLabel={isConnectionReady ? (provider?.model || "默认模型") : "未连接模型"}
         conversations={conversations}
+        onChatWithCharacter={(id) => void handleChatWithCharacter(id)}
+        onOpenImport={openFilePicker}
         editingDraft={editingDraft}
         editingMessageId={editingMessageId}
         isGenerating={isGenerating}
@@ -383,7 +405,7 @@ export function App() {
         providerIssue={providerIssue}
         isConnectionReady={isConnectionReady}
         selectedCharacterName={selectedCharacter?.name}
-        onContinue={() => { if (activeConversation) setWorkspaceView("chat"); else if (selectedCharacter) void handleStartConversation(); else setWorkspaceView("library"); }}
+        onContinue={() => { if (activeConversation) setWorkspaceView("chat"); else if (selectedCharacter) void handleStartConversation(); else setWorkspaceView("chat"); }}
         runtimeError={runtimeError}
       /></div>
       {workspaceView === "plugins" ? <PluginsView

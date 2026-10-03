@@ -6,6 +6,7 @@ import { MessageSurface } from "../message-surface";
 
 import type {
   ChatMessage,
+  CharacterSummary,
   ConversationDetail,
   ConversationSummary,
   LorebookReport,
@@ -17,6 +18,7 @@ import type {
 
 import { promptPreview, storyExportUrl } from "../api";
 import {
+  CharacterAvatar,
   characterInitial,
   Icon,
   Notice,
@@ -33,6 +35,8 @@ export interface ChatViewProps {
   generationControlsBusy: boolean;
   conversations: ConversationSummary[];
   activeConversation: ConversationDetail | null;
+  characters?: CharacterSummary[];
+  connectionLabel?: string;
   chatInput: string;
   isGenerating: boolean;
   runtimeError: string | null;
@@ -45,6 +49,8 @@ export interface ChatViewProps {
   memoryPanelOpen: boolean;
   messageListRef: MessageListRef;
   onChatInput: (value: string) => void;
+  onChatWithCharacter?: (id: string) => void;
+  onOpenImport?: () => void;
   onOpenConversation: (id: string) => void;
   onSendMessage: (input: string) => void;
   onStopGeneration: () => void;
@@ -252,6 +258,8 @@ export function ChatView({
   generationControlsBusy,
   conversations,
   activeConversation,
+  characters = [],
+  connectionLabel = "未连接模型",
   chatInput,
   isGenerating,
   runtimeError,
@@ -264,6 +272,8 @@ export function ChatView({
   memoryPanelOpen,
   messageListRef,
   onChatInput,
+  onChatWithCharacter,
+  onOpenImport,
   onOpenConversation,
   onSendMessage,
   onStopGeneration,
@@ -394,7 +404,36 @@ export function ChatView({
         {createPortal(<>
           {runtimeError ? <Notice tone="error">{runtimeError}</Notice> : null}
           {!activeConversation ? (
-            <section className="empty-workspace"><span aria-hidden="true" className="empty-workspace__mark"><Icon name="book" size={29} /></span><h1>先从角色库开始</h1><p>载入一个角色并点击“开始对话”；开场白、人物设定和最近消息会自动组成模型上下文。</p><button className="button button--primary" onClick={onGoToLibrary} type="button">前往角色库</button></section>
+            <section className="empty-workspace chat-onboarding" aria-labelledby="chat-welcome-title">
+              <span aria-hidden="true" className="empty-workspace__mark"><Icon name="book" size={29} /></span>
+              <h1 id="chat-welcome-title">开始一段故事</h1>
+              <p>选择角色直接开聊；新故事从开场白开始，聊天记录只保存在本机。</p>
+              {characters.length > 0 ? (
+                <ul className="chat-onboarding__grid" aria-label="选择角色">
+                  {characters.map((character) => (
+                    <li key={character.id}>
+                      <button type="button" onClick={() => onChatWithCharacter?.(character.id)}>
+                        <CharacterAvatar character={character} />
+                        <strong>{character.name}</strong>
+                        <small>世界书 {character.lorebookEntryCount} · 正则 {character.regexScriptCount}</small>
+                      </button>
+                    </li>
+                  ))}
+                  <li>
+                    <button className="chat-onboarding__import" type="button" onClick={onOpenImport}>
+                      <span aria-hidden="true" className="chat-onboarding__plus"><Icon name="plus" size={19} /></span>
+                      <strong>导入角色卡</strong>
+                      <small>PNG / JSON / YAML / CHARX / BYAF</small>
+                    </button>
+                  </li>
+                </ul>
+              ) : (
+                <div className="chat-onboarding__empty">
+                  <button className="button button--primary" onClick={onOpenImport} type="button">导入第一张角色卡</button>
+                  <small>支持 PNG、JSON、YAML、CHARX 或 BYAF，导入前会先显示完整预览。</small>
+                </div>
+              )}
+            </section>
           ) : activeConversation.messages.length === 0 && surface.rows.length === 0 ? <p className="panel-empty">输入第一句话，开始故事。</p> : null}
           {isGenerating ? <div className="generating-indicator" role="status"><span /><span /><span />正在等待模型回复</div> : null}
           {lastLorebookReport && lastLorebookReport.results.length > 0 ? (
@@ -484,16 +523,34 @@ export function ChatView({
           />
         ) : null}
         <form id="send_form" className="chat-composer" onSubmit={(event) => { event.preventDefault(); send(); }}>
-          <div className="chat-composer__actions">
-            <button id="option_continue" className="button button--quiet" disabled={!onContinue || !activeConversation || activeConversation.messages.at(-1)?.role !== "assistant" || generationControlsBusy || Boolean(editingMessageId)} onClick={onContinue} type="button">{en ? "Continue reply" : "续写回复"}</button>
-            <button id="option_impersonate" className="button button--quiet" disabled={!onImpersonate || !activeConversation || generationControlsBusy || Boolean(editingMessageId)} onClick={onImpersonate} type="button">{en ? "Draft my message" : "代写我的消息"}</button>
+          <textarea id="send_textarea" ref={composer} aria-label="输入消息" disabled={!activeConversation || isGenerating} onInput={(event) => onChatInput(event.currentTarget.value)} onKeyDown={handleKeyDown} placeholder={activeConversation ? "输入消息，Enter 发送，Shift+Enter 换行" : "先选择或导入一个角色，开始一段故事"} rows={3} defaultValue={chatInput} />
+          <div className="chat-composer__bar">
+            <div className="chat-composer__side">
+              <details className="composer-menu">
+                <summary aria-label="更多操作" title="更多操作"><Icon name="plus" size={17} /></summary>
+                <div className="composer-menu__popup" role="menu">
+                  <button type="button" onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onOpenImport?.(); }}><Icon name="character" size={15} />添加角色卡</button>
+                  <button id="option_continue" type="button" disabled={!onContinue || !activeConversation || activeConversation.messages.at(-1)?.role !== "assistant" || generationControlsBusy || Boolean(editingMessageId)} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onContinue?.(); }}><Icon name="book" size={15} />{en ? "Continue reply" : "续写回复"}</button>
+                  <button id="option_impersonate" type="button" disabled={!onImpersonate || !activeConversation || generationControlsBusy || Boolean(editingMessageId)} onClick={(event) => { event.currentTarget.closest("details")?.removeAttribute("open"); onImpersonate?.(); }}><Icon name="character" size={15} />{en ? "Draft my message" : "代写我的消息"}</button>
+                </div>
+              </details>
+            </div>
+            <div className="chat-composer__side chat-composer__side--right">
+              <button className="composer-connection" onClick={onOpenSettings} title="模型设置" type="button">
+                <span aria-hidden="true" className="status-dot" />
+                <span>{connectionLabel}</span>
+              </button>
+              {generationControlsBusy ? (
+                <button id="mes_stop" aria-label="停止生成" className="composer-send composer-send--stop" onClick={onStopGeneration} type="button">
+                  <Icon name="stop" size={16} />
+                </button>
+              ) : (
+                <button id="send_but" aria-label="发送消息" className="composer-send" disabled={!activeConversation} type="submit">
+                  <span aria-hidden="true">↑</span>
+                </button>
+              )}
+            </div>
           </div>
-          <textarea id="send_textarea" ref={composer} aria-label="输入消息" disabled={!activeConversation || isGenerating} onInput={(event) => onChatInput(event.currentTarget.value)} onKeyDown={handleKeyDown} placeholder={activeConversation ? "输入消息，Enter 发送，Shift+Enter 换行" : "请先选择故事"} rows={3} defaultValue={chatInput} />
-            <button id="mes_stop" aria-label="停止生成" className="button button--quiet" onClick={onStopGeneration} style={{ display: generationControlsBusy ? undefined : "none" }} type="button">
-              <Icon name="stop" size={16} />
-              停止
-            </button>
-            <button id="send_but" aria-label="发送消息" className="button button--primary" disabled={!activeConversation} style={{ display: generationControlsBusy ? "none" : undefined }} type="submit">发送</button>
           {activeCommands.length > 0 ? <small className="chat-command-hint">可用插件命令：{activeCommands.map((command) => `/${command.name}`).join("、")}</small> : null}
         </form>
       </section>

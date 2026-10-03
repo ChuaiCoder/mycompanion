@@ -65,6 +65,9 @@ describe("App", () => {
 
     render(<App />);
 
+    // 默认落地是对话页；新手引导位于角色库视图。
+    fireEvent.click(screen.getByRole("button", { name: "角色库" }));
+
     expect(
       screen.getByRole("heading", {
         name: "导入喜欢的角色，直接开始故事。",
@@ -81,6 +84,8 @@ describe("App", () => {
     vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline")));
 
     render(<App />);
+
+    fireEvent.click(screen.getByRole("button", { name: "角色库" }));
 
     await waitFor(() => {
       expect(screen.getByText("服务未连接")).toBeInTheDocument();

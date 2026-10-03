@@ -92,8 +92,7 @@ export function LibraryView({
       <section className="conversation-pane" aria-label={text("角色导入助手")}>
         <header className="pane-header">
           <div className="pane-heading"><strong>{text("角色导入助手")}</strong><span>{text("上下文：")}{currentTitle}</span></div>
-          <button type="button" id="world_button" onClick={onLorebookPanelToggle}>{text("世界书")}</button>
-          <div className="pane-header-actions"><button disabled type="button"><Icon name="history" size={17} />{text("历史记录")}</button><button disabled={isImporting || isSaving} onClick={onOpenFilePicker} type="button"><Icon name="plus" size={17} />{text("新建导入")}</button></div>
+          <div className="pane-header-actions"><button type="button" id="world_button" onClick={onLorebookPanelToggle}>{text("世界书")}</button><button disabled type="button"><Icon name="history" size={17} />{text("历史记录")}</button><button disabled={isImporting || isSaving} onClick={onOpenFilePicker} type="button"><Icon name="plus" size={17} />{text("新建导入")}</button></div>
         </header>
         <div className="conversation-scroll">
           <div aria-live="polite" className="notice-stack">

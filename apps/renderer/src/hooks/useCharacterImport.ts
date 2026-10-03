@@ -8,10 +8,13 @@ export interface ImportQueueItem { id: string; fileName: string; status: "waitin
 interface QueuedFile extends ImportQueueItem { file: File; keys: Map<string, string> }
 
 // 角色卡导入：文件选择 → 预览 → 幂等提交，以及导入相关的提示状态。
+// onPreviewStart：首个文件开始读取预览时回调。预览 UI 位于角色库视图，
+// 对话优先的布局下需要借此把用户带过去看检查结果。
 export function useCharacterImport(deps: {
   onCommitted: (character: CharacterDetail) => void;
+  onPreviewStart?: () => void;
 }) {
-  const { onCommitted } = deps;
+  const { onCommitted, onPreviewStart } = deps;
   const fileInputRef = useRef<HTMLInputElement>(null);
   const previewHeadingRef = useRef<HTMLHeadingElement>(null);
   const [preview, setPreview] = useState<CharacterCardPreviewResponse | null>(null);
@@ -61,6 +64,7 @@ export function useCharacterImport(deps: {
   async function loadItem(item: QueuedFile): Promise<void> {
     const token = ++revision.current; active.current = item; item.status = "previewing"; item.error = ""; publish();
     setIsImporting(true); setImportError(null); setImportErrorDetails([]); clearPreview();
+    onPreviewStart?.();
     try {
       const nextPreview = await previewCharacterCard(item.file);
       if (token !== revision.current) return;

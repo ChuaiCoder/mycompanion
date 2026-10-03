@@ -65,7 +65,8 @@ it("keeps the three-step route and character content while English actions invok
   cleanup(); vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline"))); render(<App />);
   await screen.findByText("Service unavailable");
   const input = screen.getByLabelText("Choose character card files"), click = vi.spyOn(input, "click").mockImplementation(() => {});
-  fireEvent.click(screen.getByRole("button", { name: /Choose a character card/ })); expect(click).toHaveBeenCalledOnce();
+  // 默认落地为对话页，导入入口在侧边导航。
+  fireEvent.click(screen.getByRole("button", { name: /Import character/ })); expect(click).toHaveBeenCalledOnce();
   await act(() => i18n.changeLanguage("zh"));
   expect(screen.getByLabelText("选择角色卡文件")).toBe(input); expect(click).toHaveBeenCalledOnce();
 });
