@@ -33,16 +33,13 @@ module.exports = async function verifyPackage({ appOutDir }) {
     archiveSha256: process.env.MYCOMPANION_CANDIDATE_SOURCE_SHA256,
     manifestSha256: process.env.MYCOMPANION_CANDIDATE_SOURCE_MANIFEST_SHA256,
   });
-  for (const dependencyFile of ['handlebars/LICENSE', 'handlebars/dist/handlebars.min.js', 'cropperjs/LICENSE', 'cropperjs/dist/cropper.min.js', 'cropperjs/dist/cropper.min.css', 'yazl/LICENSE']) {
+  for (const dependencyFile of ['yazl/LICENSE']) {
     assert(files.some(file => file.replaceAll('\\', '/').endsWith('/node_modules/' + dependencyFile)), 'Missing dialog/template dependency or license: ' + dependencyFile);
   }
   const notices = readFileSync(join(resources, 'THIRD_PARTY_NOTICES.md'), 'utf8');
   const rendererLicenses = readFileSync(join(resources, 'renderer/THIRD_PARTY_LICENSES.md'), 'utf8');
   for (const name of ['markdown-it', 'dompurify', 'entities', 'linkify-it', 'mdurl', 'punycode.js', 'uc.micro', 'i18next', 'react-i18next']) {
     assert(rendererLicenses.includes('## ' + name + ' - '), 'Missing bundled renderer dependency license: ' + name);
-  }
-  if (files.some(file => /[\\/]node_modules[\\/]toastr[\\/]/.test(file))) {
-    assert(notices.includes('MIT License — Toastr 2.1.4') && notices.includes('Permission is hereby granted, free of charge'), 'Full Toastr license notice must accompany this dependency');
   }
   assert(notices.includes('Copyright (c) 2025 Ahoy Labs, Inc.') && notices.includes('BYAF'), 'Missing full official BYAF schema license notice');
   assert(notices.includes('Copyright (c) 2023-2026 Steven Ickman') && notices.includes('MIT License — Vectra'), 'Missing full Vectra metric license notice');

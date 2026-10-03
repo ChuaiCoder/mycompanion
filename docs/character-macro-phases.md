@@ -3,7 +3,7 @@
 本次统一原生生成的首次角色字段读取与世界书扫描顺序，并区分浏览器 legacy 的完整字段读取
 和新引擎的惰性读取。这是明确阶段的兼容修复，不代表完整 SillyTavern 生成流程已经等价。
 公开 API 的变量提交、CAS、迟到响应和 dryRun 契约沿用
-[macro-api-lifecycle.md](macro-api-lifecycle.md)。
+macro-api-lifecycle.md。
 
 ## 核查依据与复用
 
@@ -17,7 +17,7 @@
 原版助手的 `prepareAndOverrideData` 也会先读取角色字段再扫描世界书，并存在独立的 depth、
 creator notes 等求值调用。本次保留这些公开调用的效果，不通过原文相同或全局缓存将它们消除。
 继续采用既有 Agnai adapter 比较结论：复用当前组装器，不另建模型生成通道。许可、维护状态
-和适配评估见 [macro-engine-reuse.md](macro-engine-reuse.md)；本次不声称检查了更新的上游版本。
+和适配评估见 macro-engine-reuse.md；本次不声称检查了更新的上游版本。
 
 `packages/shared/src/character-macro-fields.ts` 提供项目实现的统一字段读取规则，由浏览器和服务端共用。
 `packages/macro-engine` 已合法复用固定酒馆的解析器、环境构建器、utility/control-flow 和

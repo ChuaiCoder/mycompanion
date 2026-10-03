@@ -54,7 +54,7 @@ Claude/Gemini 图片预算仍按现有未知媒体规则估算并公开 `complet
 
 output 正则沿用现有阶段和宏草稿：选中 0 处理一次，其余实际候选按提供商序号逐个处理一次；没有为其他候选另造只读宏权限。候选输出效果与最后消息写入同一事务；后续候选处理或最终 SQLite 写入失败时，零提交本轮 output 宏，保存原提供商 partial。生成期间扩展写入的最新 extra.variables 和未知键保留，旧 swipe_info 中的变量不能覆盖它们。此处没有复制 ST JSON/stream cleanup 次数不一致的行为，完整 power_user cleanup 等同另有范围。
 
-公开 `/api/backends/chat-completions/generate` 继续原始 JSON/SSE 字节保真，不使用原生候选序号校验限制扩展自有数据；真实 HTTP 验证乱序、无 index、重复 index、未知字段、usage 和分块 UTF-8 原样返回。`toExtensionMessage` 保持自包含，仅在 extensionData 展开后显式克隆宿主 generationMetadata；实际 GET 得到的 `/plugin-runtime/chat-merge.js` 直接以完整 ESM 动态导入，真实调用投影与两种合并函数，无注入宿主 helper 或剥离 imports，以覆盖字符串化函数的闭包边界。
+`/api/backends/chat-completions/generate` 已随扩展兼容层移除；原生候选路径的字节保真与边界行为由本地服务内部测试覆盖。
 
 有效旧运行时 before 见 `.cache/reports/native-n-before-dist-http-20261003-r2.json`：真实宿主/提供商 HTTP、GET 和 SQLite 都复现 JSON B、SSE B1A2、无 swipes；public 返回原始数据，189 个 runtime dist JS 与旧 candidate3 ASAR 逐文件一致。源码有效 before 为 `p01-native-candidates-before-20261003-r2.log`，初始 8 项全部失败。最终 `p01-native-candidates-after-20261003-r7.log` 12 文件 166 项全通过，其中原生候选 26 项；覆盖真实 native preflight/SSE、JSON、SQLite/backup/restart、两候选 reasoning/media/tools、停止/EOF/坏 JSON/重复序号、两种宏引擎、最新 extra 合并、受控落库失败回滚和删除全部候选 info 的边界。JSON 失败保留用量的独立 before 为 `p01-native-candidates-json-failure-usage-before-20261003-r1.log`，先复现 usage 丢失再修复；shared/service direct noEmit 日志 r4 均通过。r4 的公开 Claude 请求单次 502 在隔离及完整 r5/r6/r7 回归通过；r5 唯一失败是新增 ESM 测试的 new Function 动态 import 缺少 Vitest VM callback，改为正常动态 import 后完整 r6/r7 通过，保留所有中间失败证据。
 

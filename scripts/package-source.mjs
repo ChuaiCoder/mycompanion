@@ -19,10 +19,10 @@ async function include(path) {
 }
 for (const path of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'SECURITY.md', 'CONTRIBUTING.md', '.gitignore', '.gitattributes', '.editorconfig', 'spec.md', 'test.md', 'package.json', 'package-lock.json', 'tsconfig.base.json', 'examples/plugins/scene-director.mycompanion-plugin.json']) files.push(path);
 for (const path of ['scripts', 'docs', '.github']) await include(path);
-for (const workspace of ['apps/desktop', 'apps/local-service', 'apps/renderer', 'packages/character-card', 'packages/shared', 'packages/macro-engine']) {
+for (const workspace of ['apps/desktop', 'apps/local-service', 'apps/renderer', 'packages/character-card', 'packages/shared']) {
     for (const entry of await readdir(join(project, workspace), { withFileTypes: true })) {
-        if (entry.isFile() && (/^(?:package(?:-lock)?\.json|tsconfig.*\.json|vite.*|vitest.*|index\.html|README\.md|LICENSE|(?:(?:slash|prompt-manager|character-assets|world-info|world-info-vector|provider-converters|byaf|vector|tool-calling|quick-reply|image-headers)-)?upstream\.json)$/.test(entry.name))) files.push(workspace + '/' + entry.name);
-        if (entry.isDirectory() && ['src', 'scripts', 'public', ...(workspace === 'apps/local-service' ? ['upstream-slash'] : [])].includes(entry.name)) await include(workspace + '/' + entry.name);
+        if (entry.isFile() && (/^(?:package(?:-lock)?\.json|tsconfig.*\.json|vite.*|vitest.*|index\.html|README\.md|LICENSE|(?:(?:prompt-manager|character-assets|world-info|world-info-vector|provider-converters|byaf|vector|image-headers)-)?upstream\.json)$/.test(entry.name))) files.push(workspace + '/' + entry.name);
+        if (entry.isDirectory() && ['src', 'scripts', 'public'].includes(entry.name)) await include(workspace + '/' + entry.name);
     }
 }
 // These small, project-authored regression inputs are required by included tests.
