@@ -27,15 +27,12 @@ for (const workspace of ['apps/desktop', 'apps/local-service', 'apps/renderer', 
 }
 // These small, project-authored regression inputs are required by included tests.
 // This is an exact allowlist, never an inclusion of user cards or installed extensions.
-const ownFixtures = ['packages/character-card/fixtures/ccv2-full.json',
-  'apps/local-service/fixtures/extensions/generate.py',
-  ...['root', 'wrapper', 'missing-root', 'invalid-entry', 'duplicate', 'symlink',
-    'oversized-file', 'oversized-total', 'too-many-entries'].map(name => `apps/local-service/fixtures/extensions/${name}.zip`)];
+const ownFixtures = ['packages/character-card/fixtures/ccv2-full.json'];
 files.push(...ownFixtures);
 // Fixed-upstream execution outputs are public regression references, not user
 // content. Keep their provenance distinct from our authored fixture inputs.
 const upstreamReferences = [
-  'prompt-population', 'prompt-remaining', 'prompt-persona-examples', 'prompt-lifecycle', 'character-import',
+  'prompt-population', 'prompt-persona-examples', 'prompt-lifecycle', 'character-import',
 ].map(name => `apps/local-service/src/fixtures/${name}-upstream-reference.json`);
 const allowedFixtures = new Set([...ownFixtures, ...upstreamReferences]);
 if (files.some(file => !allowedFixtures.has(file) && (/\.(sqlite\w*|db|exe|zip|png)$/i.test(file) || /(?:^|\/)(node_modules|fixtures|data|js-slash-runner)(?:\/|$)/i.test(file)))) throw new Error('Unexpected data or third-party extension in source inputs');
@@ -55,8 +52,12 @@ for (const file of inputs) {
 }
 const listPath = join(project, '.cache/packaging/source-files.txt');
 await writeFile(listPath, files.sort().join('\n') + '\n');
+await copyFile(listPath, join(staging, 'source-files.txt'));
+// Run tar inside the staging directory and give it a relative output path:
+// absolute "E:\..." arguments break GNU tar (drive letter reads as a remote
+// host) while bsdtar accepts them; relative paths work under both.
 await new Promise((resolveDone, reject) => {
-    const child = spawn('tar', ['-czf', join(destination, 'MyCompanion-source.tmp.tar.gz'), '-T', listPath], { cwd: staging, windowsHide: true, stdio: 'inherit' });
+    const child = spawn('tar', ['-czf', '../independent-source/MyCompanion-source.tmp.tar.gz', '-T', 'source-files.txt'], { cwd: staging, windowsHide: true, stdio: 'inherit' });
     child.once('error', reject);
     child.once('exit', code => code === 0 ? resolveDone() : reject(new Error('Source archiving failed: ' + code)));
 });
