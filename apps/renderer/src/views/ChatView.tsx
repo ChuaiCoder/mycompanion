@@ -335,7 +335,7 @@ export function ChatView({
     }
   };
   return (
-    <main className={`runtime-shell ${memoryPanelOpen ? "runtime-shell--memory" : ""}`}>
+    <main className={`runtime-shell ${memoryPanelOpen && activeConversation ? "runtime-shell--memory" : ""}`}>
       <aside className="story-list-pane" aria-label="故事列表">
         <header><div><p className="eyebrow">本地故事</p><h1>故事</h1></div></header>
         {conversations.length === 0 ? <p className="panel-empty">选择角色并点击“开始对话”，这里会保存每一段故事。</p> : (
@@ -344,7 +344,7 @@ export function ChatView({
       </aside>
       <section className="chat-pane" aria-label="角色对话">
         <header className="pane-header">
-          <div className="pane-heading"><strong>{activeConversation?.characterName ?? "开始一段故事"}</strong><span>{activeConversation?.title ?? "聊天记录只保存在本机"}</span>{memoryPanelOpen ? " · 记忆面板已打开" : ""}</div>
+          <div className="pane-heading"><strong>{activeConversation?.characterName ?? "开始一段故事"}</strong><span>{activeConversation?.title ?? "聊天记录只保存在本机"}</span>{memoryPanelOpen && activeConversation ? <span className="pane-heading__flag">记忆面板已打开</span> : null}</div>
           <div className="pane-header-actions">
             {activeConversation ? <details className="story-export"><summary>导出故事</summary><a download href={storyExportUrl(activeConversation.id, "markdown")}>Markdown</a><a download href={storyExportUrl(activeConversation.id, "json")}>JSON（全部分支）</a></details> : null}
             <button aria-expanded={memoryPanelOpen} className="button button--quiet" disabled={!activeConversation} onClick={onMemoryPanelToggle} type="button">
