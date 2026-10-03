@@ -5,7 +5,6 @@ import {
 } from "react";
 
 import type {
-  CharacterDetail,
   LorebookReport,
   MemoryRetrievalReport,
   PromptBudgetReport,
@@ -13,9 +12,7 @@ import type {
 
 import {
   fetchHealth,
-  fetchCharacter,
   fetchConversation,
-  activateBranch,
   getProviderSettings,
   listConversations,
   listPlugins,
@@ -34,16 +31,11 @@ import { useConversations } from "./hooks/useConversations";
 import { readExtensionResume, useExtensionResume, type WorkspaceView } from "./hooks/useExtensionResume";
 import { usePlugins } from "./hooks/usePlugins";
 import { useProviderSettings } from "./hooks/useProviderSettings";
-import { LibraryView } from "./views/LibraryView";
-import { ChatView } from "./views/ChatView";
-import { SettingsView } from "./views/SettingsView";
-import { PluginsView } from "./views/PluginsView";
-import { WorldInfoPanel } from "./views/WorldInfoPanel";
-import { CharacterPanel } from "./views/CharacterPanel";
-import { AppSidebar } from "./views/AppSidebar";
+import { AppLayout } from "./views/AppLayout";
 import "./styles.css";
 import { initializeUiLanguage } from "./i18n";
 
+// 应用根组件：只做钩子编排与跨域数据流，视图装配在 views/AppLayout.tsx。
 export function App() {
   const resume = useRef(readExtensionResume());
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
@@ -99,13 +91,7 @@ export function App() {
     setSuccessMessage: (message) => characterImport.setSuccessMessage(message),
   });
   useEffect(() => { if (serviceState === "online") void initializeUiLanguage().catch(() => {}); }, [serviceState]);
-  const {
-    characters,
-    selectedCharacter,
-    isLoadingCharacter,
-    listError,
-    handleSelectCharacter,
-  } = characterSelection;
+  const { selectedCharacter } = characterSelection;
 
   const characterImport = useCharacterImport({
     onPreviewStart: () => setWorkspaceView("library"),
@@ -134,21 +120,6 @@ export function App() {
       setLorebookPanelOpen(false);
     },
   });
-  const {
-    fileInputRef,
-    previewHeadingRef,
-    preview,
-    draftFile,
-    importError,
-    importErrorDetails,
-    successMessage,
-    isImporting,
-    isSaving,
-    openFilePicker,
-    clearImportState,
-    handleCardFile,
-    handleCommit,
-  } = characterImport;
 
   const conversationsState = useConversations({
     navigationRevision,
@@ -157,24 +128,12 @@ export function App() {
     setWorkspaceView,
     setRuntimeError,
   });
-  const {
-    conversations,
-    activeConversation,
-    handleStartConversation,
-    handleOpenConversation,
-  } = conversationsState;
+  const { activeConversation } = conversationsState;
 
   const providerSettings = useProviderSettings({ setRuntimeError });
   const {
     provider,
     setProvider,
-    apiKeyDraft,
-    setApiKeyDraft,
-    isSavingProvider,
-    providerNotice,
-    providerIssue,
-    isConnectionReady,
-    handleSaveProvider,
   } = providerSettings;
 
   const chat = useChatGeneration({
@@ -188,34 +147,11 @@ export function App() {
     setLastPromptBudget,
     setLastMemoryReport,
   });
-  const {
-    messageListRef,
-    chatInput,
-    setChatInput,
-    isGenerating,
-    generationControlsBusy,
-    editingMessageId,
-    editingDraft,
-    setEditingDraft,
-    handleSendMessage,
-    handleRegenerate,
-    handleContinue,
-    handleImpersonate,
-    beginEditMessage,
-    cancelEditMessage,
-    saveEditMessage,
-    handleDeleteMessage,
-  } = chat;
+  const { chatInput } = chat;
 
   const pluginsState = usePlugins({
     setRuntimeError,
   });
-  const {
-    plugins,
-    activeCommands,
-    handlePluginToggle,
-    handlePluginUninstall,
-  } = pluginsState;
 
   useExtensionResume({
     workspaceView,
@@ -223,31 +159,6 @@ export function App() {
     characterId: selectedCharacter?.id,
     chatInput,
   });
-
-  const handleCharacterSaved = (updated: CharacterDetail): void => {
-    const summary = toSummary(updated);
-    characterSelection.setCharacters(current => current.map(item => item.id === summary.id ? summary : item));
-    characterSelection.setSelectedCharacter(current => current?.id === updated.id ? updated : current);
-    if (activeConversation?.characterId === updated.id) {
-      conversationsState.setActiveConversation(current => current?.characterId === updated.id ? { ...current, characterName: updated.name } : current);
-    }
-  };
-
-  // 对话页空态点角色直接开聊：先取详情保持角色库选中态，再为该角色建故事。
-  const handleChatWithCharacter = async (id: string): Promise<void> => {
-    const revision = ++navigationRevision.current;
-    setRuntimeError(null);
-    try {
-      const character = await fetchCharacter(id);
-      if (revision !== navigationRevision.current) return;
-      characterSelection.setSelectedCharacter(character);
-      await conversationsState.handleStartConversation(id);
-    } catch (error) {
-      if (revision === navigationRevision.current) {
-        setRuntimeError(error instanceof Error ? error.message : "暂时无法读取角色详情。");
-      }
-    }
-  };
 
   useEffect(() => {
     if (workspaceView === "chat") {
@@ -271,143 +182,36 @@ export function App() {
   }, [workspaceView, provider]);
 
   return (
-    <div className={`desktop-shell ${isSidebarCollapsed ? "desktop-shell--sidebar-collapsed" : ""}`}>
-      <AppSidebar
-        busy={isImporting || isSaving}
-        collapsed={isSidebarCollapsed}
-        conversationCount={conversations.length}
-        characters={characters}
-        fileInputRef={fileInputRef}
-        isImporting={isImporting}
-        isLoadingCharacter={isLoadingCharacter}
-        listError={listError}
-        memoryInjectedCount={lastMemoryReport?.injectedCount ?? ""}
-        memoryPanelOpen={memoryPanelOpen}
-        onCollapseToggle={() => setIsSidebarCollapsed((value) => !value)}
-        onCardFile={(event) => void handleCardFile(event)}
-        onChatNav={() => { setMemoryPanelOpen(false); setWorkspaceView("chat"); }}
-        onMemoryNav={() => { if (workspaceView === "chat" && memoryPanelOpen) { setMemoryPanelOpen(false); } else { setMemoryPanelOpen(true); setWorkspaceView("chat"); } }}
-        onNavigate={setWorkspaceView}
-        onOpenFilePicker={openFilePicker}
-        onSelectCharacter={(id) => void handleSelectCharacter(id)}
-        pluginCount={plugins.length}
-        selectedCharacterId={selectedCharacter?.id}
-        serviceState={serviceState}
-        view={workspaceView}
-      />
-
-      {workspaceView === "library" ? <LibraryView
-        batchItems={characterImport.batchItems}
-        onSkipFile={() => void characterImport.handleSkipFile()}
-        onRetryFile={id => void characterImport.handleRetryFile(id)}
-        onOpenDuplicate={id => void characterImport.handleOpenDuplicate(id)}
-        onReplaceDuplicate={(id, updatedAt) => void handleCommit("replace", id, updatedAt)}
-        onRefreshPreview={() => void characterImport.handleRefreshPreview()}
-        onOpenSettings={() => setWorkspaceView("settings")}
-        connectionReady={isConnectionReady}
-        onEditCharacter={() => { if (selectedCharacter) setCharacterPanelOpen(true); }}
-        draftFileName={draftFile?.name ?? null}
-        importError={importError}
-        importErrorDetails={importErrorDetails}
-        isLoadingCharacter={isLoadingCharacter}
-        isImporting={isImporting}
-        isSaving={isSaving}
-        listError={listError}
-        onCancelImport={clearImportState}
-        onCommit={() => void handleCommit()}
-        onOpenFilePicker={openFilePicker}
-        onSelectCharacter={(id) => void handleSelectCharacter(id)}
-        onStartConversation={() => void handleStartConversation()}
-        preview={preview}
-        previewHeadingRef={previewHeadingRef}
-        regexPanelOpen={regexPanelOpen}
-        onRegexPanelToggle={() => setRegexPanelOpen((value) => !value)}
-        lorebookPanelOpen={lorebookPanelOpen}
-        onLorebookPanelToggle={() => setLorebookPanelOpen((value) => !value)}
-        worldEditorOpen={worldEditorOpen}
-        onWorldEditorToggle={() => setWorldEditorOpen((value) => !value)}
-        selectedCharacter={selectedCharacter}
-        successMessage={successMessage}
-        characters={characters}
-      /> : null}
-      <div className="workspace-view" hidden={workspaceView !== "chat"}><ChatView
-        generationControlsBusy={generationControlsBusy || conversationsState.branchBusy}
-        activeCommands={activeCommands}
-        activeConversation={activeConversation}
-        chatInput={chatInput}
-        characters={characters}
-        connectionLabel={isConnectionReady ? (provider?.model || "默认模型") : "未连接模型"}
-        conversations={conversations}
-        onChatWithCharacter={(id) => void handleChatWithCharacter(id)}
-        onOpenImport={openFilePicker}
-        editingDraft={editingDraft}
-        editingMessageId={editingMessageId}
-        isGenerating={isGenerating}
-        messageListRef={messageListRef}
-        lastLorebookReport={lastLorebookReport}
-        lastMemoryReport={lastMemoryReport}
-        lastPromptBudget={lastPromptBudget}
-        memoryPanelOpen={memoryPanelOpen}
-        sourceFocus={sourceFocus}
-        onOpenMemorySource={(id, message) => void (async () => {
-          if (generationControlsBusy) return;
-          const revision = ++navigationRevision.current; setRuntimeError(null);
-          try {
-            let conversation = await fetchConversation(id);
-            if (revision !== navigationRevision.current) return;
-            if (!conversation.messages.some(item => item.id === message.id)) conversation = await activateBranch(id, message.branchId);
-            if (revision !== navigationRevision.current) return;
-            if (!conversation.messages.some(item => item.id === message.id)) throw new Error("来源消息已删除或不可访问。");
-            conversationsState.setActiveConversation(conversation); setWorkspaceView("chat");
-            setSourceFocus({ conversationId: id, messageId: message.id, revision });
-          } catch (cause) { if (revision === navigationRevision.current) setRuntimeError(cause instanceof Error ? cause.message : "无法打开来源消息。"); }
-        })()}
-        onCancelEdit={cancelEditMessage}
-        onMemoryPanelToggle={() => setMemoryPanelOpen((value) => !value)}
-        onChatInput={setChatInput}
-        onDeleteMessage={(id) => void handleDeleteMessage(id)}
-        onEditMessage={beginEditMessage}
-        onEditingDraft={setEditingDraft}
-        onGoToLibrary={() => setWorkspaceView("library")}
-        onOpenConversation={(id) => void handleOpenConversation(id)}
-        onOpenSettings={() => setWorkspaceView("settings")}
-        onRegenerate={() => void handleRegenerate()}
-        onContinue={() => void handleContinue()}
-        onImpersonate={() => void handleImpersonate()}
-        onActivateBranch={conversationsState.handleActivateBranch}
-        onSwiped={(id) => void (async () => {
-          const updated = await fetchConversation(id);
-          conversationsState.setActiveConversation(current => current?.id === id ? updated : current);
-        })()}
-        onSaveEdit={(id) => void saveEditMessage(id)}
-        onSendMessage={(input) => void handleSendMessage(input)}
-        onStopGeneration={() => { void chat.handleStopGeneration(); }}
-        runtimeError={runtimeError}
-      /></div>
-      <div hidden={workspaceView !== "settings"}><SettingsView
-        applicationBusy={generationControlsBusy}
-        apiKeyDraft={apiKeyDraft}
-        isSavingProvider={isSavingProvider}
-        onApiKeyDraft={setApiKeyDraft}
-        onProviderField={(patch) => setProvider((current) => current ? { ...current, ...patch } : current)}
-        onSave={() => void handleSaveProvider(false)}
-        onSaveAndTest={() => void handleSaveProvider(true)}
-        provider={provider}
-        providerNotice={providerNotice}
-        providerIssue={providerIssue}
-        isConnectionReady={isConnectionReady}
-        selectedCharacterName={selectedCharacter?.name}
-        onContinue={() => { if (activeConversation) setWorkspaceView("chat"); else if (selectedCharacter) void handleStartConversation(); else setWorkspaceView("chat"); }}
-        runtimeError={runtimeError}
-      /></div>
-      {workspaceView === "plugins" ? <PluginsView
-        onPluginToggle={(plugin) => void handlePluginToggle(plugin)}
-        onPluginUninstall={(id) => void handlePluginUninstall(id)}
-        plugins={plugins}
-        runtimeError={runtimeError}
-      /> : null}
-      <WorldInfoPanel open={worldEditorOpen} online={serviceState === "online"} character={selectedCharacter} onClose={() => setWorldEditorOpen(false)} />
-      <CharacterPanel open={characterPanelOpen} online={serviceState === "online"} character={selectedCharacter} onSaved={handleCharacterSaved} onClose={() => setCharacterPanelOpen(false)} />
-    </div>
+    <AppLayout
+      serviceState={serviceState}
+      runtimeError={runtimeError}
+      setRuntimeError={setRuntimeError}
+      isSidebarCollapsed={isSidebarCollapsed}
+      setIsSidebarCollapsed={setIsSidebarCollapsed}
+      workspaceView={workspaceView}
+      setWorkspaceView={setWorkspaceView}
+      regexPanelOpen={regexPanelOpen}
+      setRegexPanelOpen={setRegexPanelOpen}
+      lorebookPanelOpen={lorebookPanelOpen}
+      setLorebookPanelOpen={setLorebookPanelOpen}
+      worldEditorOpen={worldEditorOpen}
+      setWorldEditorOpen={setWorldEditorOpen}
+      characterPanelOpen={characterPanelOpen}
+      setCharacterPanelOpen={setCharacterPanelOpen}
+      lastLorebookReport={lastLorebookReport}
+      lastPromptBudget={lastPromptBudget}
+      lastMemoryReport={lastMemoryReport}
+      memoryPanelOpen={memoryPanelOpen}
+      setMemoryPanelOpen={setMemoryPanelOpen}
+      sourceFocus={sourceFocus}
+      setSourceFocus={setSourceFocus}
+      navigationRevision={navigationRevision}
+      characterSelection={characterSelection}
+      characterImport={characterImport}
+      conversationsState={conversationsState}
+      providerSettings={providerSettings}
+      chat={chat}
+      pluginsState={pluginsState}
+    />
   );
 }
