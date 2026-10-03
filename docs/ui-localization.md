@@ -22,7 +22,7 @@
 
 ## 角色库与导入界面子集
 
-实现位于 `LibraryView.tsx` 与 `library-translations.ts`；App 中原有角色卡 file input 的 accessible name 也调用同一字典，保留原 input、ref、文件类型、禁用条件和选择回调。共享 `Metric`、`ExpandableDescription`、`RichTextPreview` 和 `ImportedContentDetails` 只增加可选 locale/translate 参数。本轮字典是项目自编应用文案，没有复制第三方产品的字典或样式，也没有新增运行依赖。
+实现位于 `LibraryView.tsx` 与 `library-translations.ts`；侧边栏（`AppSidebar.tsx`）中角色卡 file input 的 accessible name 也调用同一字典，保留原 input、ref、文件类型、禁用条件和选择回调。共享 `Metric`、`ExpandableDescription`、`RichTextPreview` 和 `ImportedContentDetails` 只增加可选 locale/translate 参数。本轮字典是项目自编应用文案，没有复制第三方产品的字典或样式，也没有新增运行依赖。
 
 | 入口 | 已接通的文案与格式 | 保留的行为 |
 | --- | --- | --- |
