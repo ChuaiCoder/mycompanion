@@ -6,7 +6,7 @@ const messages = {
   "nav.import": ["导入角色卡", "Import character"], "nav.reading": ["正在读取角色卡…", "Reading character…"],
   "nav.library": ["角色库", "Characters"], "nav.chat": ["故事", "Stories"], "nav.plugins": ["插件", "Extensions"], "nav.memory": ["记忆", "Memory"], "nav.settings": ["设置", "Settings"],
   "service.checking": ["检查服务中", "Checking service"], "service.online": ["服务已连接", "Service connected"], "service.offline": ["服务未连接", "Service unavailable"],
-  "language.label": ["界面语言", "Interface language"], "language.failed": ["语言偏好保存失败，请重试切换语言。", "Could not save the language preference. Please try switching again."],
+  "language.label": ["界面语言", "Interface language"], "language.intro": ["切换后立即生效，并记住你的选择。", "Applies immediately and is remembered."], "language.failed": ["语言偏好保存失败，请重试切换语言。", "Could not save the language preference. Please try switching again."],
   "settings.step": ["第 2 步 · 连接模型", "Step 2 · Connect a model"], "settings.title": ["让角色可以回复", "Let your character reply"],
   "settings.roleReady": ["角色“{{name}}”已准备好。", "Your character “{{name}}” is ready."], "settings.importFirst": ["导入角色后可以回到这里连接模型。", "After importing a character, come here to connect a model."],
   "settings.intro": ["填写服务地址、模型名称和密钥；其余参数已有推荐值。", "Enter the service address, model name and key. Recommended values are ready for the other settings."],
@@ -20,6 +20,7 @@ const messages = {
   "settings.recommended": ["使用推荐参数", "Use recommended values"], "settings.save": ["直接保存设置", "Save settings"], "settings.test": ["测试成功后保存", "Test, then save"], "settings.testing": ["正在测试连接…", "Testing connection…"],
   "settings.next": ["第 3 步：开始对话", "Step 3: Start chatting"], "settings.back": ["返回角色库", "Back to characters"], "settings.loading": ["正在读取模型设置…", "Loading model settings…"], "settings.presets": ["聊天预设与提示词设置", "Chat presets and prompts"],
   "settings.fixKey": ["修改密钥", "Edit key"], "settings.fixModel": ["修改模型", "Edit model"], "settings.fixAddress": ["检查服务地址", "Check service address"],
+  "settings.pageIntro": ["连接模型、管理生成参数与应用数据。日常聊天只需完成“连接模型”一张卡片。", "Connect a model, manage generation settings and app data. Everyday chat only needs the connection card."],
 } as const;
 const resources = Object.fromEntries(["zh", "en"].map((language, index) => [language, { translation: Object.fromEntries(Object.entries(messages).map(([key, value]) => [key, value[index]])) }]));
 void i18next.use(initReactI18next).init({ lng: "zh", fallbackLng: "zh", resources, initAsync: false, keySeparator: false, interpolation: { escapeValue: false } });

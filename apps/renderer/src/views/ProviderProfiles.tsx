@@ -68,10 +68,11 @@ export function ProviderProfiles({ disabled = false }: { disabled?: boolean }) {
   function field(patch: Partial<ProviderSettings>) { revision.current++; setNotice(""); setDraft(current => current ? { ...current, ...patch } : current); }
   if (!state) return <p>{error || copy.loading}</p>;
   return <section className="settings-card" aria-label={copy.connections}>
-    <label>{copy.current}<select aria-label={copy.current} disabled={inactive} value={state.tasks.chat} onChange={event => void assign("chat", event.target.value)}>
+    <header><h2>{copy.connections}</h2><p>{copy.intro}</p></header>
+    <div className="settings-form"><label><span>{copy.current}</span><select aria-label={copy.current} disabled={inactive} value={state.tasks.chat} onChange={event => void assign("chat", event.target.value)}>
       {state.profiles.map(profile => <option key={profile.id} value={profile.id}>{profile.name} · {profile.settings.model}</option>)}
-    </select></label>
-    <details><summary>{copy.advanced}</summary><p>{copy.intro}</p>
+    </select></label></div>
+    <details><summary>{copy.advanced}</summary>
       {error ? <p role="alert">{error}</p> : null}{notice ? <p role="status">{notice}</p> : null}
       <div className="settings-form">
         <label>{copy.edit}<select aria-label={copy.edit} disabled={inactive} value={editingId ?? ""} onChange={event => { const profile = state.profiles.find(item => item.id === event.target.value); if (profile) edit(profile); }}>

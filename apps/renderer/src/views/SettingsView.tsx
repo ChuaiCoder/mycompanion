@@ -57,12 +57,9 @@ export function SettingsView({
   };
   return (
     <main className="settings-workspace">
-      <section className="settings-card"><label>{t("language.label")}<select aria-label={t("language.label")} value={i18n.language === "en" ? "en" : "zh"} onChange={event => {
-        setLanguageError(""); void changeUiLanguage(event.target.value as UiLanguage).catch(() => setLanguageError(t("language.failed")));
-      }}><option value="zh">简体中文</option><option value="en">English</option></select></label>{languageError ? <p role="alert">{languageError}</p> : null}</section>
-      <ProviderProfiles disabled={Boolean(applicationBusy || isSavingProvider)} />
+      <header className="settings-page-head"><h1>{t("nav.settings")}</h1><p>{t("settings.pageIntro")}</p></header>
       <section className="settings-card" aria-labelledby="provider-title">
-        <header><p className="eyebrow">{t("settings.step")}</p><h1 id="provider-title">{t("settings.title")}</h1><p>{selectedCharacterName ? t("settings.roleReady", { name: selectedCharacterName }) : t("settings.importFirst")}{t("settings.intro")}</p></header>
+        <header><p className="eyebrow">{t("settings.step")}</p><h2 id="provider-title">{t("settings.title")}</h2><p>{selectedCharacterName ? t("settings.roleReady", { name: selectedCharacterName }) : t("settings.importFirst")}{t("settings.intro")}</p></header>
         {runtimeError ? <Notice tone="error">{runtimeError}</Notice> : null}
         {providerNotice ? <Notice tone="success">{providerNotice}</Notice> : null}
         {providerIssue ? <div className="provider-correction"><p>{providerIssue.suggestion}</p><button type="button" className="button button--quiet" onClick={() => {
@@ -84,6 +81,16 @@ export function SettingsView({
             <div className="settings-actions"><button className="button button--primary" disabled={isSavingProvider || applicationBusy} type="submit">{t(isSavingProvider ? "settings.testing" : "settings.test")}</button>{isConnectionReady && onContinue ? <button className="button button--primary" type="button" onClick={onContinue}>{t(selectedCharacterName ? "settings.next" : "settings.back")}</button> : null}</div>
           </form>
         ) : <p className="panel-empty">{t("settings.loading")}</p>}
+      </section>
+      <ProviderProfiles disabled={Boolean(applicationBusy || isSavingProvider)} />
+      <section className="settings-card" aria-labelledby="language-title">
+        <header><h2 id="language-title">{t("language.label")}</h2><p>{t("language.intro")}</p></header>
+        <div className="settings-form">
+          <select aria-label={t("language.label")} value={i18n.language === "en" ? "en" : "zh"} onChange={event => {
+            setLanguageError(""); void changeUiLanguage(event.target.value as UiLanguage).catch(() => setLanguageError(t("language.failed")));
+          }}><option value="zh">简体中文</option><option value="en">English</option></select>
+        </div>
+        {languageError ? <p role="alert">{languageError}</p> : null}
       </section>
       <details className="settings-card"><summary>{t("settings.presets")}</summary><PresetSettings /></details>
       <BackupPanel busy={Boolean(applicationBusy)} />

@@ -488,7 +488,7 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .story-list-pane { min-width: 0; overflow-x: hidden; overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface-raised); }
 .story-list-pane > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 20px 16px 10px; }
 .story-list-pane h1 { margin: 0; font-size: 15px; font-weight: 680; letter-spacing: -.02em; }
-.settings-card h1 { margin: 3px 0 0; font-size: 24px; letter-spacing: -.035em; }
+.settings-card h1, .settings-card h2 { margin: 3px 0 0; font-size: 20px; letter-spacing: -.03em; }
 .story-list-pane > header small { color: var(--text-faint); font-size: 10px; }
 .story-list-pane ul { display: grid; gap: 2px; margin: 0; padding: 6px 8px; list-style: none; }
 .story-list-pane li button { display: grid; width: 100%; gap: 4px; padding: 9px 11px; border: 0; border-radius: 9px; text-align: left; background: transparent; }
@@ -584,7 +584,13 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .model-media-item audio { display: block; max-width: 100%; }
 .model-media-item figcaption { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .settings-workspace { min-width: 0; height: 100vh; overflow-y: auto; padding: clamp(32px,6vw,76px); background: var(--surface-muted); }
+.settings-page-head { width: min(720px,100%); margin: 0 auto 24px; }
+.settings-page-head h1 { margin: 0; font-size: 26px; letter-spacing: -.035em; }
+.settings-page-head p { max-width: 580px; margin: 8px 0 0; color: var(--text-soft); font-size: 12px; line-height: 1.7; }
 .settings-card { width: min(720px,100%); margin: 0 auto; padding: clamp(24px,4vw,42px); border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 14px 40px rgba(35,38,42,.06); }
+/* 预设编辑器嵌在折叠卡片里：去掉内层卡片边框，避免卡中卡。 */
+.settings-card > .settings-card { margin-top: 16px; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+.settings-card > details { margin-top: 18px; }
 .settings-card > header { margin-bottom: 28px; }
 .settings-card > header > p:last-child { max-width: 580px; margin: 10px 0 0; color: var(--text-soft); font-size: 11px; line-height: 1.7; }
 .settings-card .notice { margin-bottom: 14px; }
@@ -592,6 +598,9 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .settings-form label { display: grid; gap: 7px; color: var(--text-soft); font-size: 10px; font-weight: 650; }
 .settings-form input, .settings-form select { width: 100%; height: 39px; padding: 0 11px; border: 1px solid var(--line); border-radius: 7px; outline: none; color: var(--text); background: var(--surface); font: 11px inherit; }
 .settings-form input:focus, .settings-form select:focus { border-color: #7ca6d2; box-shadow: 0 0 0 3px var(--accent-soft); }
+/* 复选框不参与文本输入的全宽 39px 规则；所在标签改为横向排列。 */
+.settings-form input[type="checkbox"] { width: 14px; height: 14px; margin: 0; accent-color: #292c30; }
+.settings-form label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; font-weight: 500; }
 .settings-form__row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .settings-actions { display: flex; gap: 8px; padding-top: 8px; }
 .plugin-install-actions { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -672,6 +681,9 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .backup-panel caption { text-align: left; font-weight: 600; }
 .provider-advanced, .world-info-advanced { margin-block: 12px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; }
 .provider-advanced > summary, .world-info-advanced > summary, .settings-card > summary { cursor: pointer; font-weight: 600; }
+details.settings-card > summary { margin: -6px -8px; padding: 6px 8px; border-radius: 8px; }
+details.settings-card > summary:hover { background: var(--surface-hover); }
+details.settings-card[open] > summary { margin-bottom: 14px; }
 .provider-correction { padding: 12px; margin-block: 12px; border: 1px solid var(--line); border-radius: 8px; }
 .settings-card + .settings-card { margin-top: 18px; }
 .import-batch { padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
