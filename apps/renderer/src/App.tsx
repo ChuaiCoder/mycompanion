@@ -21,8 +21,6 @@ import {
   listPlugins,
 } from "./api";
 import {
-  CharacterAvatar,
-  Icon,
   toSummary,
   type ServiceState,
 } from "./components";
@@ -42,13 +40,11 @@ import { SettingsView } from "./views/SettingsView";
 import { PluginsView } from "./views/PluginsView";
 import { WorldInfoPanel } from "./views/WorldInfoPanel";
 import { CharacterPanel } from "./views/CharacterPanel";
+import { AppSidebar } from "./views/AppSidebar";
 import "./styles.css";
-import { useTranslation } from "react-i18next";
 import { initializeUiLanguage } from "./i18n";
-import { libraryText } from "./library-translations";
 
 export function App() {
-  const { t, i18n } = useTranslation();
   const resume = useRef(readExtensionResume());
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -276,36 +272,29 @@ export function App() {
 
   return (
     <div className={`desktop-shell ${isSidebarCollapsed ? "desktop-shell--sidebar-collapsed" : ""}`}>
-      <aside className="sidebar">
-        <div className="brand-row">
-          <button className="brand-button" onClick={() => setWorkspaceView("chat")} type="button"><span aria-hidden="true" className="brand-mark">M</span><span className="brand-name">MyCompanion</span></button>
-          <button aria-expanded={!isSidebarCollapsed} aria-label={isSidebarCollapsed ? "展开侧边栏" : "收起侧边栏"} className="sidebar-collapse" onClick={() => setIsSidebarCollapsed((value) => !value)} type="button">{isSidebarCollapsed ? "▣" : "◫"}</button>
-        </div>
-        <nav aria-label="主导航" className="primary-nav">
-          <button className="nav-row nav-row--new" disabled={isImporting || isSaving} onClick={openFilePicker} type="button"><Icon name="plus" /><span>{t(isImporting ? "nav.reading" : "nav.import")}</span><kbd>Ctrl I</kbd></button>
-          <button aria-current={workspaceView === "library" ? "page" : undefined} className={`nav-row ${workspaceView === "library" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("library")} type="button"><Icon name="character" /><span>{t("nav.library")}</span></button>
-          <button aria-current={workspaceView === "chat" && !memoryPanelOpen ? "page" : undefined} className={`nav-row ${workspaceView === "chat" && !memoryPanelOpen ? "nav-row--active" : ""}`} onClick={() => { setMemoryPanelOpen(false); setWorkspaceView("chat"); }} type="button"><Icon name="book" /><span>{t("nav.chat")}</span><small>{conversations.length || ""}</small></button>
-          <button aria-current={workspaceView === "plugins" ? "page" : undefined} className={`nav-row ${workspaceView === "plugins" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("plugins")} type="button"><Icon name="sparkles" /><span>{t("nav.plugins")}</span><small>{plugins.length || ""}</small></button>
-          <button aria-current={workspaceView === "chat" && memoryPanelOpen ? "page" : undefined} className={`nav-row ${workspaceView === "chat" && memoryPanelOpen ? "nav-row--active" : ""}`} onClick={() => { if (workspaceView === "chat" && memoryPanelOpen) { setMemoryPanelOpen(false); } else { setMemoryPanelOpen(true); setWorkspaceView("chat"); } }} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{lastMemoryReport?.injectedCount ?? ""}</small></button>
-        </nav>
-        <section aria-labelledby="recent-characters-title" className="sidebar-library">
-          <div className="tree-heading"><div><Icon name="character" size={16} /><h2 id="recent-characters-title">我的角色</h2></div><button aria-label="导入新的角色卡" disabled={isImporting || isSaving} onClick={openFilePicker} type="button"><Icon name="plus" size={16} /></button></div>
-          <div id="right-nav-panel" hidden><div aria-label="收藏角色" className="hotswap" /></div>
-          {listError ? <p className="sidebar-error">{listError}</p> : null}
-          {characters.length === 0 ? (
-            <div className="tree-empty"><span>还没有角色</span><small>导入 PNG、JSON 或 CHARX 角色卡</small></div>
-          ) : (
-            <ul className="character-list" aria-label="已保存角色">
-              {characters.map((character) => <li key={character.id}><button aria-pressed={selectedCharacter?.id === character.id} className="character-row" disabled={isLoadingCharacter} onClick={() => void handleSelectCharacter(character.id)} type="button"><CharacterAvatar character={character} /><span className="character-row__copy"><strong>{character.name}</strong><small>世界书 {character.lorebookEntryCount} · 正则 {character.regexScriptCount}</small></span><Icon name="chevron" size={14} /></button></li>)}
-            </ul>
-          )}
-        </section>
-        <footer className="sidebar-footer">
-          <div className={`service-state service-state--${serviceState}`}><span aria-hidden="true" className="status-dot" /><span>{t("service." + serviceState)}</span></div>
-          <button aria-label={t("nav.settings")} aria-pressed={workspaceView === "settings"} onClick={() => setWorkspaceView("settings")} type="button"><Icon name="settings" size={18} /></button>
-        </footer>
-        <input ref={fileInputRef} multiple accept=".json,.png,.yaml,.yml,.charx,.zip,.byaf,.jpg,.jpeg,application/json,image/png,application/charx,application/zip,application/byaf,application/yaml,text/yaml" aria-label={libraryText(i18n.language, "选择角色卡文件")} className="visually-hidden-input" disabled={isImporting || isSaving} onChange={(event) => void handleCardFile(event)} type="file" />
-      </aside>
+      <AppSidebar
+        busy={isImporting || isSaving}
+        collapsed={isSidebarCollapsed}
+        conversationCount={conversations.length}
+        characters={characters}
+        fileInputRef={fileInputRef}
+        isImporting={isImporting}
+        isLoadingCharacter={isLoadingCharacter}
+        listError={listError}
+        memoryInjectedCount={lastMemoryReport?.injectedCount ?? ""}
+        memoryPanelOpen={memoryPanelOpen}
+        onCollapseToggle={() => setIsSidebarCollapsed((value) => !value)}
+        onCardFile={(event) => void handleCardFile(event)}
+        onChatNav={() => { setMemoryPanelOpen(false); setWorkspaceView("chat"); }}
+        onMemoryNav={() => { if (workspaceView === "chat" && memoryPanelOpen) { setMemoryPanelOpen(false); } else { setMemoryPanelOpen(true); setWorkspaceView("chat"); } }}
+        onNavigate={setWorkspaceView}
+        onOpenFilePicker={openFilePicker}
+        onSelectCharacter={(id) => void handleSelectCharacter(id)}
+        pluginCount={plugins.length}
+        selectedCharacterId={selectedCharacter?.id}
+        serviceState={serviceState}
+        view={workspaceView}
+      />
 
       {workspaceView === "library" ? <LibraryView
         batchItems={characterImport.batchItems}
