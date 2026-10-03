@@ -1,6 +1,7 @@
 // Runs a quiet turn against the real selected story without adding chat rows.
 // Uses the same renderer SSE/preflight exchange as foreground generation.
-// Image and group overrides remain unsupported by the service.
+// Image control prompts use the existing native media/budget pipeline; group
+// overrides remain unsupported by the service.
 export const quietGenerationSource = String.raw`
 import { eventSource, event_types, getContext } from '/plugin-runtime/compat-runtime.js';
 
@@ -45,7 +46,7 @@ export async function generateQuietPrompt(options = {}, ...legacy) {
     window.removeEventListener('pagehide', stop);
     // Like Tavern's Generate finalizer, notify without making completion depend
     // on extension listeners. A pending listener must not swallow cancellation.
-    void eventSource.emit(event_types.GENERATION_ENDED, getContext().chat.length).catch(error => console.error(error));
+    if (!options.dryRun) void eventSource.emit(event_types.GENERATION_ENDED, getContext().chat.length).catch(error => console.error(error));
   }
 }
 `;

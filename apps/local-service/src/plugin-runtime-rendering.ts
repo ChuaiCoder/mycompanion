@@ -14,6 +14,9 @@ subscribeHostContext(refreshRegexDisplay);
 onExtensionSettingsSaved(refreshRegexDisplay);
 eventSource.on(event_types.CHARACTER_EDITED,refreshRegexDisplay);
 eventSource.on(event_types.PRESET_CHANGED,refreshRegexDisplay);
+window.addEventListener('mycompanion:more-messages-loaded', () => {
+  void eventSource.emit(event_types.MORE_MESSAGES_LOADED);
+});
 export function connectMessageRendering(value) { renderer = value; }
 function connected() {
   if (!renderer) throw new Error('消息渲染器尚未连接。');

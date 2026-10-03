@@ -3,26 +3,29 @@ import { modelToEncodingMap } from "gpt-tokenizer/mapping";
 import * as modelCatalog from "gpt-tokenizer/models";
 import * as cl100k from "gpt-tokenizer/encoding/cl100k_base";
 import * as o200k from "gpt-tokenizer/encoding/o200k_base";
+import { contentTokenCost } from "./content-token-cost.js";
 import type { RuntimeRepository } from "./runtime-repository.js";
 
-function encodingFor(model: string) {
+export function tokenizerDescriptor(model: string) {
   // The package's model map lists encoding exceptions; catalog models absent
   // from that map use o200k_base (the same default as GptEncoding).
   const mapped = Object.hasOwn(modelToEncodingMap, model) ? modelToEncodingMap[model as keyof typeof modelToEncodingMap]
     : Object.hasOwn(modelCatalog, model) ? "o200k_base" : undefined;
-  const encoding = mapped === "o200k_base" ? "o200k_base" : "cl100k_base";
-  return { encoding, estimated: mapped !== encoding } as const;
+  // Harmony uses the same ordinary-text ranks as o200k; its special framing
+  // stays an estimate in the compatibility message-count contract.
+  const encoding = mapped === "o200k_base" || mapped === "o200k_harmony" ? "o200k_base" : "cl100k_base";
+  return { encoding, estimated: mapped !== encoding && mapped !== "o200k_harmony", knownModel: mapped !== undefined } as const;
 }
 
 /** Same BPE table as the extension token-count endpoint, usable by sync budgets. */
 export function countTextTokens(text: string, model = ""): number {
   if (!text) return 0;
-  const tokenizer = encodingFor(model).encoding === "o200k_base" ? o200k : cl100k;
+  const tokenizer = tokenizerDescriptor(model).encoding === "o200k_base" ? o200k : cl100k;
   return tokenizer.countTokens(text, { disallowedSpecial: new Set() });
 }
 
 export async function tokenizerFor(model: string) {
-  const { encoding, estimated } = encodingFor(model);
+  const { encoding, estimated } = tokenizerDescriptor(model);
   const tokenizer = encoding === "o200k_base" ? await import("gpt-tokenizer/encoding/o200k_base") : await import("gpt-tokenizer/encoding/cl100k_base");
   return { encoding, estimated,
     count: (text: string) => tokenizer.countTokens(text, { disallowedSpecial: new Set() }) };
@@ -38,10 +41,7 @@ function countMessages(messages: Array<Record<string, unknown>>, model: string, 
     for (const [key, value] of Object.entries(message)) {
       if (typeof value === "string") tokens += count(value);
       else if (key === "content" && Array.isArray(value)) {
-        for (const part of value) {
-          if (part?.type === "text" && typeof part.text === "string") tokens += count(part.text);
-          else if (part?.type === "image_url") tokens += 85;
-        }
+        tokens += contentTokenCost(value, model, count).tokens;
       } else if (value != null) tokens += count(JSON.stringify(value));
       if (key === "name" && value != null) tokens += legacy ? -1 : 1;
     }
@@ -57,7 +57,7 @@ export function countCompatibilityMessagesSync(messages: Array<Record<string, un
 export async function countCompatibilityMessages(messages: Array<Record<string, unknown>>, model: string, full = false) {
   const tokenizer = await tokenizerFor(model);
   return { token_count: countMessages(messages, model, full, tokenizer.count), model, encoding: tokenizer.encoding,
-    estimated: tokenizer.estimated, framingEstimated: true };
+    estimated: true, textEstimated: tokenizer.estimated, framingEstimated: true };
 }
 
 export function registerTokenizerRoutes(app: FastifyInstance, runtime: RuntimeRepository): void {

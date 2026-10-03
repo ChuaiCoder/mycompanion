@@ -37,7 +37,9 @@ if (!hasSingleInstanceLock) {
   app.on("before-quit", event => {
     if (!service || closeGuard?.isApproved()) return;
     event.preventDefault();
-    if (closeGuard) void closeGuard.requestClose();
+    // CDP/renderer destruction can skip BrowserWindow's close event. After the
+    // guard drains the surviving service, retry quit even without a live window.
+    if (closeGuard) void closeGuard.requestClose().then(closed => { if (closed) app.quit(); });
     else void service.stop().then(() => { service = null; app.quit(); });
   });
   app.on("window-all-closed", () => app.quit());

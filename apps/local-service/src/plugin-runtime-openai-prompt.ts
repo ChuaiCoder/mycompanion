@@ -22,8 +22,8 @@ const render = () => {
     panel.append(heading, body);
     mount.append(panel);
   }
-  panel.querySelector('pre').textContent = lastReport.messages.map(message =>
-    '[' + message.role + (message.name ? ' · ' + message.name : '') + '] ' + message.content).join('\n\n') +
+    panel.querySelector('pre').textContent = lastReport.messages.map(message =>
+    '[' + message.role + (message.name ? ' · ' + message.name : '') + '] ' + (Array.isArray(message.content)?message.content.filter(part=>part.type==='text').map(part=>part.text).join('\n'):message.content)).join('\n\n') +
     '\n\nToken：' + lastReport.totalTokens + '/' + lastReport.contextLimitTokens +
     (lastReport.diagnostics.length ? '\n' + lastReport.diagnostics.join('\n') : '');
 };
@@ -64,7 +64,7 @@ export async function prepareOpenAIMessages(messageData, dryRun = false) {
   const messages = (messageData.messages || []).map(message => ({...message,
     ...(Number(oai_settings.names_behavior) === 1 ? {} : {name:undefined})}));
   const optionalText = value => typeof value === 'string' ? value : undefined;
-  const payload = { messages, extensionPrompts,
+  const payload = { messages, extensionPrompts,imageQuality:oai_settings.inline_image_quality||'auto',
     messageExamples: Array.isArray(messageData.messageExamples) ? messageData.messageExamples : [],
     name2: optionalText(messageData.name2),
     charDescription: optionalText(messageData.charDescription),
@@ -75,7 +75,7 @@ export async function prepareOpenAIMessages(messageData, dryRun = false) {
     systemPromptOverride: optionalText(messageData.systemPromptOverride),
     jailbreakPromptOverride: optionalText(messageData.jailbreakPromptOverride),
     personaDescription: optionalText(messageData.personaDescription),
-    bias: optionalText(messageData.bias), quietPrompt: optionalText(messageData.quietPrompt),
+    bias: optionalText(messageData.bias), quietPrompt: optionalText(messageData.quietPrompt), quietImage: optionalText(messageData.quietImage),
     cyclePrompt: optionalText(messageData.cyclePrompt), type: optionalText(messageData.type) || 'normal',
     contextLimitTokens: Number(oai_settings.openai_max_context) || 32768,
     maxTokens: Number(oai_settings.openai_max_tokens) || 1024 };

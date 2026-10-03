@@ -56,7 +56,7 @@ it("generates quietly with the selected story and request-scoped response length
   expect((await app.inject({ method: "GET", url: "/api/settings/provider" })).json().maxTokens).toBe(512);
 });
 
-it("rejects unsupported quiet media and forced groups before model transport", async () => {
+it("rejects forced quiet groups before model transport", async () => {
   const app = buildApp(); apps.push(app);
   const avatar = (await app.inject({ method: "POST", url: "/api/characters/create", payload: {
     ch_name: "Quiet Character", first_mes: "Opening",
@@ -64,7 +64,7 @@ it("rejects unsupported quiet media and forced groups before model transport", a
   const character = (await app.inject({ method: "POST", url: "/api/characters/get", payload: { avatar_url: avatar } })).json();
   const story = (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json();
   const providerFetch = vi.fn(); vi.stubGlobal("fetch", providerFetch);
-  for (const extra of [{ quietImage: "data:image/png;base64,AA==" }, { forceChId: 0 }]) {
+  for (const extra of [{ forceChId: 0 }]) {
     const response = await app.inject({ method: "POST", url: `/api/conversations/${story.id}/quiet-generation`,
       payload: { quietPrompt: "Prompt", ...extra } });
     expect(response.statusCode).toBe(422);

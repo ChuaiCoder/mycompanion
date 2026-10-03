@@ -4,10 +4,11 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { ChatMessage, ConversationDetail, GenerationSseEvent } from "@mycompanion/shared";
 import * as api from "../api";
 import { useChatGeneration } from "./useChatGeneration";
+vi.mock("../composer-drafts", () => ({ loadComposerDraftStore: async () => ({ read: () => undefined, write: () => {}, flush: async () => {} }) }));
 
 vi.mock("../api", async importOriginal => ({
   ...await importOriginal<typeof import("../api")>(),
-  streamChatMessage: vi.fn(), streamRegenerate: vi.fn(), fetchConversation: vi.fn(),
+  streamChatMessage: vi.fn(), streamRegenerate: vi.fn(), streamForegroundMode: vi.fn(), fetchConversation: vi.fn(),
   stopGeneration: vi.fn(), deleteMessage: vi.fn(), editMessage: vi.fn(), listConversations: vi.fn(),
 }));
 
@@ -41,6 +42,41 @@ beforeEach(() => {
   vi.mocked(api.listConversations).mockResolvedValue({ items: [], total: 0 });
 });
 afterEach(cleanup);
+
+it("impersonation streams only into the draft and leaves real chat messages untouched", async () => {
+  const existing: ChatMessage = { id: "existing", conversationId: first.id, branchId: first.activeBranchId, parentMessageId: null, role: "assistant", content: "existing reply", status: "complete", createdAt: first.createdAt };
+  const initial = { ...first, messages: [existing] }; vi.mocked(api.fetchConversation).mockResolvedValue(initial);
+  vi.mocked(api.streamForegroundMode).mockImplementation(async (_id, mode, _signal, event) => {
+    expect(mode).toBe("impersonate"); event({ type: "delta", delta: "partial" });
+    event({ type: "impersonate_result", text: "final user draft" });
+  });
+  const { result } = fixture(initial);
+  await act(async () => expect(await result.current.handleImpersonate()).toEqual({ status: "complete", text: "final user draft" }));
+  expect(result.current.chatInput).toBe("final user draft"); expect(result.current.active?.messages).toEqual([existing]);
+});
+
+it("late impersonation output cannot replace the newly opened story's draft", async () => {
+  let callback!: (event: GenerationSseEvent) => void; const pending = deferred<void>();
+  vi.mocked(api.streamForegroundMode).mockImplementation(async (_id, _mode, _signal, event) => { callback = event; await pending.promise; });
+  const { result } = fixture(); let operation!: ReturnType<typeof result.current.handleImpersonate>;
+  act(() => { operation = result.current.handleImpersonate(); });
+  act(() => { result.current.setActive(second); result.current.setChatInput("new story draft"); });
+  await act(async () => { callback({ type: "delta", delta: "old partial" }); callback({ type: "impersonate_result", text: "old final" }); pending.resolve(); await operation; });
+  expect(result.current.chatInput).toBe("new story draft"); expect(result.current.active?.id).toBe(second.id);
+});
+
+it("continued assistant start retains the same message prefix without appending a row", async () => {
+  const existing: ChatMessage = { id: "continued", conversationId: first.id, branchId: first.activeBranchId, parentMessageId: null, role: "assistant", content: "prefix", status: "complete", createdAt: first.createdAt };
+  const complete = { ...existing, content: "prefix suffix" }; const initial = { ...first, messages: [existing] };
+  vi.mocked(api.fetchConversation).mockResolvedValue({ ...initial, messages: [complete] });
+  vi.mocked(api.streamForegroundMode).mockImplementation(async (_id, mode, _signal, event) => {
+    expect(mode).toBe("continue"); event({ type: "assistant_start", message: { ...existing, status: "streaming" } });
+    event({ type: "delta", delta: " suffix" }); event({ type: "done", message: complete });
+  });
+  const { result } = fixture(initial); act(() => result.current.setChatInput("retained user draft"));
+  await act(async () => expect(await result.current.handleContinue()).toEqual({ status: "complete", text: complete.content }));
+  expect(result.current.active?.messages).toEqual([complete]); expect(result.current.chatInput).toBe("retained user draft");
+});
 
 it("accepts a regenerated branch and removes its old reply before the next output macro reads context", async () => {
   const message = (id: string, parentMessageId: string | null, role: ChatMessage["role"]): ChatMessage => ({

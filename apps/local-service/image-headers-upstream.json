@@ -1,0 +1,54 @@
+{
+  "formatVersion": 1,
+  "commit": "e6e83a5578961de81f6d5834d90fb7430d8f29a5",
+  "repository": "https://codeberg.org/image-size/image-size",
+  "license": "MIT",
+  "scope": "Memory-only PNG/JPEG/GIF/WebP header handlers; generic detector and other formats excluded",
+  "changes": [
+    "ESM relative import specifiers receive .js; provenance comments and module-local ts-nocheck added; function bodies unchanged"
+  ],
+  "files": [
+    {
+      "source": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/lib/types/interface.ts",
+      "sourceSha256": "f1aff04ebe9428d040b9f3091e8b40bf93b24230245db80e82d8554d656a231b",
+      "output": "apps/local-service/src/image-header-upstream/interface.ts",
+      "outputSha256": "5c6bd8c55fa98d5a99cd28f19ef6097a6525c587e6911bc2e05d813f0eb2fbd2"
+    },
+    {
+      "source": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/lib/types/utils.ts",
+      "sourceSha256": "996fbcf67ab175f2bb4aaf9f4507db1b45c76bd56fedbc927ace334626fd6210",
+      "output": "apps/local-service/src/image-header-upstream/utils.ts",
+      "outputSha256": "3333d091c5dc918c03bda6683de7660f80838dee623a71e3d7598d32c4689a02"
+    },
+    {
+      "source": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/lib/types/png.ts",
+      "sourceSha256": "96ed384afc7d84a3422204a8b74df4bc19c647bd60d1dc21f2617a67f6c009db",
+      "output": "apps/local-service/src/image-header-upstream/png.ts",
+      "outputSha256": "f9ab0f81725e9a1a9b9a2157c23842978b31966d24420bcb3169b8062338577e"
+    },
+    {
+      "source": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/lib/types/jpg.ts",
+      "sourceSha256": "8946145908bbd8790441c647647e1d2281a76bf6382668718de4cfa5cab823d8",
+      "output": "apps/local-service/src/image-header-upstream/jpg.ts",
+      "outputSha256": "d77c3b0c2f3baace55b3434f7fb8549db770484efbf824fabab9d4051e661b86"
+    },
+    {
+      "source": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/lib/types/gif.ts",
+      "sourceSha256": "991773dbfe113674419071c5b15627aa92f5ef8ba556343a3d8ce8e53464eb5f",
+      "output": "apps/local-service/src/image-header-upstream/gif.ts",
+      "outputSha256": "29e3d46dcab4bbfcd0aafbde05168ef39fd9a86752e8851b9bc6454d17022736"
+    },
+    {
+      "source": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/lib/types/webp.ts",
+      "sourceSha256": "0f9e571bdf962b9884b58933f3a2a943f400a7ee05a6727982565aac8255f14d",
+      "output": "apps/local-service/src/image-header-upstream/webp.ts",
+      "outputSha256": "b197d3a541d4591c0a941f1ce0190c8ec6de54352067a2cc3cb092e6fead1898"
+    },
+    {
+      "source": "https://codeberg.org/image-size/image-size/raw/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/LICENSE",
+      "sourceSha256": "3109783dad7527b490aabc49c3cb148573c19b41b843e70cf9388a93f3d7fccd",
+      "output": "apps/local-service/src/image-header-upstream/LICENSE.txt",
+      "outputSha256": "3109783dad7527b490aabc49c3cb148573c19b41b843e70cf9388a93f3d7fccd"
+    }
+  ]
+}

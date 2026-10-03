@@ -2,6 +2,7 @@ import type { WorldInfoDocument } from "@mycompanion/shared";
 import { loadExtensionHost } from "./ExtensionHost";
 
 export interface WorldInfoRuntime {
+  world_names: string[];
   newWorldInfoEntryTemplate: Record<string, unknown>;
   loadWorldInfo(name: string): Promise<WorldInfoDocument | null>;
   saveWorldInfo(name: string, data: WorldInfoDocument, immediately: boolean): Promise<void>;

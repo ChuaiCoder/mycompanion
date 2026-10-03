@@ -8,6 +8,7 @@ import { toExtensionChatState, type WorldInfoDocument } from "@mycompanion/share
 import type { CharacterRepository, StoredCharacter } from "./character-repository.js";
 import type { RuntimeRepository } from "./runtime-repository.js";
 import { mainIconPath, characterAssetContentType } from "./character-archive.js";
+import { importChatJsonl } from "./chat-jsonl-import.js";
 
 const merge = deepmerge({ mergeArray: () => (_target, source) => structuredClone(source) });
 const object = (value: unknown): value is Record<string, unknown> => !!value && typeof value === "object" && !Array.isArray(value);
@@ -64,16 +65,17 @@ function characterBook(name: string, book: WorldInfoDocument) {
   })) };
 }
 
-async function readForm(request: FastifyRequest): Promise<{ fields: Record<string, unknown>; image?: Uint8Array }> {
+async function readForm(request: FastifyRequest): Promise<{ fields: Record<string, unknown>; image?: Uint8Array; filename?: string }> {
   if (!request.isMultipart()) return { fields: jsonObject(request.body, "Character form") };
   const fields: Record<string, unknown> = Object.create(null);
-  let image: Uint8Array | undefined, total = 0;
+  let image: Uint8Array | undefined, filename: string | undefined, total = 0;
   for await (const part of request.parts()) {
     if (part.type === "file") {
       const bytes = await part.toBuffer(); total += bytes.byteLength;
       if (part.fieldname !== "avatar" || image) invalid("Unexpected avatar upload");
       // Browsers include an empty file part for an unselected file input.
       if (bytes.length) image = bytes;
+      filename = part.filename;
     } else {
       if (part.valueTruncated) invalid("Character field was truncated");
       total += Buffer.byteLength(typeof part.value === "string" ? part.value : JSON.stringify(part.value));
@@ -90,7 +92,7 @@ async function readForm(request: FastifyRequest): Promise<{ fields: Record<strin
     }
     if (total > 500 * 1024 * 1024) throw Object.assign(new Error("Character upload is too large"), { statusCode: 413 });
   }
-  return { fields, ...(image ? { image } : {}) };
+  return { fields, ...(image ? { image } : {}), ...(filename ? { filename } : {}) };
 }
 
 function makeCard(fields: Record<string, unknown>, runtime: RuntimeRepository, old?: StoredCharacter): CharacterCard {
@@ -233,7 +235,24 @@ export function registerCharacterCompatibility(app: FastifyInstance, characters:
       const conversation = runtime.getConversation(text(body.file_name).replace(/\.jsonl$/, ""));
       if (!stored || !conversation || conversation.characterId !== stored.detail.id) return reply.code(404).send({ error: "Chat not found" });
       const state = toExtensionChatState(conversation);
-      return [{ user_name: "User", character_name: stored.detail.name, create_date: conversation.createdAt, chat_metadata: state.metadata }, ...state.messages];
+      const header = conversation.chatHeader && Object.keys(conversation.chatHeader).length
+        ? { ...conversation.chatHeader, ...(Object.hasOwn(conversation.chatHeader, "chat_metadata") || Object.keys(state.metadata).length ? { chat_metadata: state.metadata } : {}) }
+        : { user_name: "User", character_name: stored.detail.name, create_date: conversation.createdAt, chat_metadata: state.metadata };
+      return [header, ...state.messages];
+    });
+    scoped.post("/api/chats/import", { bodyLimit: 500 * 1024 * 1024 }, async (request, reply) => {
+      const { fields, image, filename } = await readForm(request);
+      if (!image || typeof fields.avatar_url !== "string") return reply.code(400).send({ error: true });
+      const stored = characters.getByAvatar(fields.avatar_url);
+      if (!stored) return reply.code(404).send({ error: true });
+      if (fields.file_type !== "jsonl") return reply.code(400).send({ error: true, message: "Only JSONL chat import is supported" });
+      try {
+        const fileName = importChatJsonl(runtime, stored, image, filename ?? "import.jsonl");
+        return { res: true, fileNames: [fileName] };
+      } catch (error) {
+        if (error instanceof SyntaxError || error instanceof Error && error.message.startsWith("Invalid JSONL")) return { error: true };
+        throw error;
+      }
     });
   });
 }

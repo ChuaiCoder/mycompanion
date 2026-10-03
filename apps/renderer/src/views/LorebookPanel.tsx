@@ -12,6 +12,7 @@ import {
   testCharacterLorebook,
 } from "../api";
 import { Icon } from "../components";
+import { loadWorldInfoRuntime } from "../world-info-runtime";
 
 const entryStatusText: Record<string, string> = {
   injected: "已注入",
@@ -24,13 +25,14 @@ export interface LorebookPanelProps {
   characterId: string;
   characterName: string;
   runtimeError: string | null;
+  primaryWorld?: string | undefined;
 }
 
 /**
  * 角色世界书面板（FR-LORE-001/002/003）：
  * 逐条启用/停用、全部启用/停用，以及不修改真实聊天的匹配测试器。
  */
-export function LorebookPanel({ characterId, characterName, runtimeError }: LorebookPanelProps) {
+export function LorebookPanel({ characterId, characterName, runtimeError, primaryWorld }: LorebookPanelProps) {
   const [entries, setEntries] = useState<CharacterLorebookEntry[] | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
@@ -38,6 +40,18 @@ export function LorebookPanel({ characterId, characterName, runtimeError }: Lore
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<LorebookReport | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
+  const [namedBinding, setNamedBinding] = useState("");
+  useEffect(() => {
+    let disposed = false;
+    const update = () => {
+      if (!primaryWorld) { setNamedBinding(""); return; }
+      void loadWorldInfoRuntime().then(runtime => {
+        if (!disposed) setNamedBinding(runtime.world_names.includes(primaryWorld) ? primaryWorld : "");
+      }).catch(() => {});
+    };
+    update(); window.addEventListener("mycompanion:world-info", update);
+    return () => { disposed = true; window.removeEventListener("mycompanion:world-info", update); };
+  }, [primaryWorld]);
 
   useEffect(() => {
     let cancelled = false;
@@ -86,6 +100,10 @@ export function LorebookPanel({ characterId, characterName, runtimeError }: Lore
     }
   };
 
+  if (namedBinding) return <section className="document-section lorebook-panel" aria-label="角色世界书绑定">
+    <h2>世界书</h2><p>当前角色使用 <strong>{namedBinding}</strong>。在世界书编辑器中修改条目和启用状态，原始随卡内容仍保留在角色卡中。</p>
+    <button type="button" onClick={() => void loadWorldInfoRuntime().then(runtime => runtime.selectWorldInfoEditor(namedBinding))}>编辑绑定的世界书</button>
+  </section>;
   return (
     <section className="document-section lorebook-panel" aria-labelledby="lorebook-panel-title">
       <h2 id="lorebook-panel-title">世界书</h2>
@@ -96,8 +114,8 @@ export function LorebookPanel({ characterId, characterName, runtimeError }: Lore
       ) : (
         <>
           <p>
-            导入的条目默认停用；启用后会在每轮对话前按关键词匹配，命中的内容注入到提示词的“世界书”区域。
-            超过 500 token 预算的条目会被舍弃并在诊断中标出。
+            这里显示原始随卡条目的启用状态。编辑内容和高级匹配时，点击“编辑角色的世界书”保存并绑定到独立世界书。
+            对话实际使用的条目与预算可以在提示词预览中检查。
           </p>
           <div className="lorebook-panel__actions">
             <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(true)} type="button">全部启用</button>

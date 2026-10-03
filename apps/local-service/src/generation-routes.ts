@@ -122,6 +122,29 @@ export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeR
   );
 
   // 编辑一条消息（FR-CHAT-002）。
+  for (const mode of ["continue", "impersonate"] as const) {
+    app.post<{ Params: IdParams; Body: unknown }>(`/api/conversations/:id/messages/${mode}`, async (request, reply) => {
+      const parsed = nativeGenerationRequestSchema.safeParse(request.body ?? {});
+      if (!parsed.success) return sendError(reply, 400, "INVALID_REQUEST", "生成参数无效。");
+      const conversation = runtime.getConversation(request.params.id);
+      if (!conversation) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
+      const character = characters.get(conversation.characterId);
+      if (!character) return sendError(reply, 409, "CHARACTER_NOT_FOUND", "故事关联的角色已不存在。");
+      const last = conversation.messages.at(-1);
+      if (mode === "continue" && (!last || last.role !== "assistant" || last.status === "streaming")) {
+        return sendError(reply, 409, "NOTHING_TO_CONTINUE", "最后一条消息不是可续写的角色回复。");
+      }
+      const existing = inFlightGenerations.get(conversation.id);
+      if (existing && !existing.signal.aborted) return sendError(reply, 409, "GENERATION_IN_PROGRESS", "该故事正在生成回复，请稍候或先停止。");
+      const controller = new AbortController(); inFlightGenerations.set(conversation.id, controller);
+      await streamGenerationToReply(reply, conversation.id, character, undefined, controller, undefined,
+        conversation.messages.slice(-80), parsed.data.extensionPrompts, { ...parsed.data, generationType: mode,
+          ...(mode === "continue" ? { continueFrom: last!, prepareAssistant: () => runtime.prepareContinueMessage(conversation.id, last!) } : { ephemeral: true }) });
+      return reply;
+    });
+  }
+
+  // 编辑一条消息（FR-CHAT-002）。
   app.patch<{ Params: { id: string; messageId: string }; Body: unknown }>(
     "/api/conversations/:id/messages/:messageId",
     async (request, reply) => {

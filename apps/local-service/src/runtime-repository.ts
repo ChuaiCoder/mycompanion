@@ -2,13 +2,16 @@ import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import type { MacroVariableChange } from "./prompt-macros.js";
 import { MacroVariableConflictError } from "./macro-variable-conflict.js";
-import { worldInfoStateRevision, worldInfoSourcesMatch, WORLD_INFO_STATE_KEY } from "./world-info-effects.js";
+import { worldInfoStateRevision, worldInfoSourcesMatch, WORLD_INFO_STATE_KEY,restoreWorldInfoStateForBranch } from "./world-info-effects.js";
 import { DatabaseSync } from "node:sqlite";
 import { classifyMemoryRelation, isCompleteSourceQuote, isProtectedMemory, quoteDirectlyNamesClaim, quoteProvesTransition } from "./memory-conflict-core.js";
 import { WorldInfoRepository } from "./world-info-repository.js";
 import { RetainedCharacterChatsRepository } from "./retained-character-chats.js";
 import { PersonaAvatarRepository } from "./persona-avatars.js";
-import { sameProviderCredentialScope } from "./provider-credential-scope.js";
+import { VectorStore } from "./vector-store.js";
+import { VectorCollectionRepository } from "./vector-collections.js";
+import { ProviderRepository } from "./provider-repository.js";
+import { visibleCodePlugins } from "./code-plugin-identity.js";
 
 import type {
   BackupPayload,
@@ -25,27 +28,19 @@ import type {
   MemoryStatus,
   MemoryType,
   MessageGenerationMetadata,
+  ModelCandidateSnapshot,
   PluginListResponse,
   PluginManifest,
   ProviderSettings,
+  ProviderTask,
   StageSummary,
   UpdateProviderSettings,
 } from "@mycompanion/shared";
 import type { CharacterDetail } from "@mycompanion/shared";
-import { mergeChatMessages, mergeJsonChanges, toExtensionMessage, type ExtensionChatSave } from "@mycompanion/shared";
+import { mergeChatMessages, mergeJsonChanges, toExtensionMessage, projectNativeCandidateMessage, hasNativeCandidateHistory, NATIVE_CANDIDATE_INFO_KEY, type ExtensionChatSave } from "@mycompanion/shared";
 
 /** 模型上下文上限的默认值；旧数据库与未保存过设置的行都按此回退。 */
 export const DEFAULT_CONTEXT_LIMIT_TOKENS = 32_768;
-
-interface ProviderRow {
-  kind: ProviderSettings["kind"];
-  base_url: string;
-  model: string;
-  api_key_ciphertext: string | null;
-  temperature: number;
-  max_tokens: number;
-  context_limit_tokens: number | null;
-}
 
 interface ConversationRow {
   id: string;
@@ -58,6 +53,7 @@ interface ConversationRow {
   created_at: string;
   updated_at: string;
   metadata_json: string;
+  header_json: string;
 }
 
 interface MessageRow {
@@ -171,7 +167,7 @@ function parseGeneration(json: string | null): MessageGenerationMetadata | undef
 
 function messageFromRow(row: MessageRow): ChatMessage {
   const generation = parseGeneration(row.generation_json);
-  return {
+  return projectNativeCandidateMessage({
     id: row.id,
     conversationId: row.conversation_id,
     branchId: row.branch_id,
@@ -182,7 +178,7 @@ function messageFromRow(row: MessageRow): ChatMessage {
     ...(generation ? { generationMetadata: generation } : {}),
     ...(row.extension_data_json && row.extension_data_json !== "{}" ? { extensionData: JSON.parse(row.extension_data_json) as Record<string, unknown> } : {}),
     createdAt: row.created_at,
-  };
+  });
 }
 
 function summaryFromRow(row: ConversationRow): ConversationSummary {
@@ -204,6 +200,9 @@ export class RuntimeRepository {
   readonly worldInfo: WorldInfoRepository;
   readonly retainedChats: RetainedCharacterChatsRepository;
   readonly avatars: PersonaAvatarRepository;
+  readonly vectors: VectorStore;
+  readonly vectorCollections: VectorCollectionRepository;
+  readonly providers: ProviderRepository;
 
   /** All backup sections share this connection; inner savepoints stay rollbackable. */
   withBackupTransaction<T>(work: () => T): T {
@@ -235,6 +234,8 @@ export class RuntimeRepository {
     this.worldInfo = new WorldInfoRepository(database);
     this.retainedChats = new RetainedCharacterChatsRepository(database, this);
     this.avatars = new PersonaAvatarRepository(database);
+    this.vectors = new VectorStore(database);
+    this.vectorCollections = new VectorCollectionRepository(database, this.vectors);
     this.#migrateSchema();
     this.#database.exec(`
       CREATE TABLE IF NOT EXISTS provider_settings (
@@ -257,7 +258,8 @@ export class RuntimeRepository {
         active_branch_id TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
-        metadata_json TEXT NOT NULL DEFAULT '{}'
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        header_json TEXT NOT NULL DEFAULT '{}'
       );
 
       CREATE TABLE IF NOT EXISTS messages (
@@ -351,6 +353,7 @@ export class RuntimeRepository {
       );
     `);
     this.#migrateDerivedState();
+    this.providers = new ProviderRepository(database);
     this.#recoverStaleStreamingMessages();
   }
 
@@ -451,6 +454,9 @@ export class RuntimeRepository {
     if (conversationsExists && !hasConversationColumn("metadata_json")) {
       this.#database.exec("ALTER TABLE conversations ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'");
     }
+    if (conversationsExists && !hasConversationColumn("header_json")) {
+      this.#database.exec("ALTER TABLE conversations ADD COLUMN header_json TEXT NOT NULL DEFAULT '{}'");
+    }
     if (hasMessagesColumn("id") && !hasMessagesColumn("extension_data_json")) {
       this.#database.exec("ALTER TABLE messages ADD COLUMN extension_data_json TEXT NOT NULL DEFAULT '{}'");
     }
@@ -490,6 +496,13 @@ export class RuntimeRepository {
   }
 
   saveExtensionSettings(settings: Record<string, unknown>): void {
+    // A settings-only replacement must not erase independently saved QR sets.
+    // An explicit field still permits backup/import overwrite and API deletion.
+    const qrKey="__mycompanion_quick_reply_presets";
+    if(!Object.hasOwn(settings,qrKey)){
+      const existing=this.getExtensionSettings();
+      if(Object.hasOwn(existing,qrKey))settings={...settings,[qrKey]:existing[qrKey]};
+    }
     this.#database.prepare(`INSERT INTO extension_settings (singleton, settings_json) VALUES (1, ?)
       ON CONFLICT(singleton) DO UPDATE SET settings_json = excluded.settings_json`).run(JSON.stringify(settings));
   }
@@ -523,66 +536,20 @@ export class RuntimeRepository {
   }
 
   getProvider(): ProviderSettings {
-    const row = this.#database
-      .prepare("SELECT * FROM provider_settings WHERE singleton = 1")
-      .get() as ProviderRow | undefined;
-    if (!row) {
-      return {
-        kind: "openai-compatible",
-        baseUrl: "https://api.openai.com/v1",
-        model: "gpt-4o-mini",
-        hasApiKey: false,
-        temperature: 0.8,
-        maxTokens: 1_024,
-        contextLimitTokens: DEFAULT_CONTEXT_LIMIT_TOKENS,
-      };
-    }
-    return {
-      kind: row.kind,
-      baseUrl: row.base_url,
-      model: row.model,
-      hasApiKey: Boolean(row.api_key_ciphertext),
-      temperature: row.temperature,
-      maxTokens: row.max_tokens,
-      contextLimitTokens: row.context_limit_tokens ?? DEFAULT_CONTEXT_LIMIT_TOKENS,
-    };
+    return this.resolveTaskProvider("chat")!.settings;
   }
 
-  getEncryptedApiKey(): string | undefined {
-    const row = this.#database
-      .prepare("SELECT api_key_ciphertext FROM provider_settings WHERE singleton = 1")
-      .get() as Pick<ProviderRow, "api_key_ciphertext"> | undefined;
-    return row?.api_key_ciphertext ?? undefined;
+  resolveTaskProvider(task: ProviderTask): { profileId: string; settings: ProviderSettings } | undefined {
+    return this.providers.resolve(task);
+  }
+
+  getEncryptedApiKey(profileId?: string): string | undefined {
+    return this.providers.encryptedKey(profileId ?? this.providers.assignments().chat);
   }
 
   saveProvider(settings: UpdateProviderSettings, encryptedApiKey?: string): ProviderSettings {
-    const previous = sameProviderCredentialScope(settings, this.getProvider()) ? this.getEncryptedApiKey() : undefined;
-    const apiKey = settings.clearApiKey ? null : encryptedApiKey ?? previous ?? null;
-    this.#database.prepare(`
-      INSERT INTO provider_settings (
-        singleton, kind, base_url, model, api_key_ciphertext,
-        temperature, max_tokens, context_limit_tokens, updated_at
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(singleton) DO UPDATE SET
-        kind = excluded.kind,
-        base_url = excluded.base_url,
-        model = excluded.model,
-        api_key_ciphertext = excluded.api_key_ciphertext,
-        temperature = excluded.temperature,
-        max_tokens = excluded.max_tokens,
-        context_limit_tokens = excluded.context_limit_tokens,
-        updated_at = excluded.updated_at
-    `).run(
-      settings.kind,
-      settings.baseUrl,
-      settings.model,
-      apiKey,
-      settings.temperature,
-      settings.maxTokens,
-      settings.contextLimitTokens,
-      new Date().toISOString(),
-    );
-    return this.getProvider();
+    const selected = this.providers.resolve("chat")!;
+    return this.providers.save(selected.profileId, this.providers.get(selected.profileId)!.name, settings, encryptedApiKey).settings;
   }
 
   createConversation(character: CharacterDetail, greetingIndex?: number): ConversationDetail {
@@ -1061,6 +1028,7 @@ export class RuntimeRepository {
     updatedAt: string;
     messages: ChatMessage[];
     chatMetadata: Record<string, unknown>;
+    chatHeader: Record<string, unknown>;
   }> {
     const conversations = this.#database
       .prepare("SELECT * FROM conversations ORDER BY created_at")
@@ -1076,6 +1044,7 @@ export class RuntimeRepository {
       // 备份包含全部分支的完整消息树（不止激活分支）。
       messages: this.listAllBranchMessages(row.id),
       chatMetadata: JSON.parse(row.metadata_json) as Record<string, unknown>,
+      chatHeader: JSON.parse(row.header_json) as Record<string, unknown>,
     }));
   }
 
@@ -1132,6 +1101,7 @@ export class RuntimeRepository {
     createdAt: string;
     updatedAt: string;
     chatMetadata?: Record<string, unknown> | undefined;
+    chatHeader?: Record<string, unknown> | undefined;
     messages: Array<{
       id: string;
       branchId: string;
@@ -1149,15 +1119,16 @@ export class RuntimeRepository {
     this.#database.exec("SAVEPOINT restore_conversation");
     try {
       this.#database.prepare(`
-        INSERT INTO conversations (id, character_id, character_name, title, active_branch_id, created_at, updated_at, metadata_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO conversations (id, character_id, character_name, title, active_branch_id, created_at, updated_at, metadata_json, header_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           character_name = excluded.character_name,
           title = excluded.title,
           active_branch_id = excluded.active_branch_id,
           updated_at = excluded.updated_at,
-          metadata_json = excluded.metadata_json
-      `).run(entry.id, entry.characterId, entry.characterName, entry.title, entry.activeBranchId, entry.createdAt, entry.updatedAt, JSON.stringify(entry.chatMetadata ?? previous?.chatMetadata ?? {}));
+          metadata_json = excluded.metadata_json,
+          header_json = excluded.header_json
+      `).run(entry.id, entry.characterId, entry.characterName, entry.title, entry.activeBranchId, entry.createdAt, entry.updatedAt, JSON.stringify(entry.chatMetadata ?? previous?.chatMetadata ?? {}), JSON.stringify(entry.chatHeader ?? previous?.chatHeader ?? {}));
       // 覆盖恢复：清掉该对话的旧消息/摘要/设置，再写入备份的完整消息树（全部分支）。
       this.#database.prepare("DELETE FROM messages WHERE conversation_id = ?").run(entry.id);
       this.#database.prepare("DELETE FROM stage_summaries WHERE conversation_id = ?").run(entry.id);
@@ -1281,6 +1252,8 @@ export class RuntimeRepository {
         ...(entry.sourceUrl ? { sourceUrl: entry.sourceUrl } : {}),
         ...(entry.sourceRef ? { sourceRef: entry.sourceRef } : {}),
         ...(entry.sourceRevision ? { sourceRevision: entry.sourceRevision } : {}),
+        ...(entry.extensionName ? { extensionName: entry.extensionName } : {}),
+        ...(entry.installationScope ? { installationScope: entry.installationScope } : {}),
       });
       this.#database.prepare(`
         INSERT INTO code_plugins (id, manifest_json, normalized_json, enabled, installed_at, contributions_json)
@@ -1369,6 +1342,8 @@ export class RuntimeRepository {
     sourceUrl?: string;
     sourceRef?: string;
     sourceRevision?: string;
+    extensionName?: string;
+    installationScope?: "local" | "global";
   } | undefined {
     const plugin = this.getCodePlugin(id);
     if (!plugin) return undefined;
@@ -1387,6 +1362,8 @@ export class RuntimeRepository {
       ...(plugin.sourceUrl ? { sourceUrl: plugin.sourceUrl } : {}),
       ...(plugin.sourceRef ? { sourceRef: plugin.sourceRef } : {}),
       ...(plugin.sourceRevision ? { sourceRevision: plugin.sourceRevision } : {}),
+      ...(plugin.extensionName ? { extensionName: plugin.extensionName } : {}),
+      ...(plugin.installationScope ? { installationScope: plugin.installationScope } : {}),
     };
   }
 
@@ -1406,7 +1383,7 @@ export class RuntimeRepository {
     return row.n;
   }
 
-  getConversation(id: string): ConversationDetail | undefined {
+  getConversation(id: string, messageLimit?: number): ConversationDetail | undefined {
     const row = this.#database.prepare(`
       SELECT c.*,
         COALESCE((SELECT substr(m.content, 1, 120) FROM messages m
@@ -1416,7 +1393,7 @@ export class RuntimeRepository {
       FROM conversations c WHERE c.id = ?
     `).get(id) as ConversationRow | undefined;
     if (!row) return undefined;
-    return { ...summaryFromRow(row), messages: this.listMessages(id), chatMetadata: JSON.parse(row.metadata_json) as Record<string, unknown> };
+    return { ...summaryFromRow(row), messages: this.listMessages(id, messageLimit), chatMetadata: JSON.parse(row.metadata_json) as Record<string, unknown>, chatHeader: JSON.parse(row.header_json) as Record<string, unknown> };
   }
 
   /** Merge only invocation-owned WI metadata inside the accepting savepoint.
@@ -1442,33 +1419,54 @@ export class RuntimeRepository {
     const projected = current.map(message => toExtensionMessage(message, conversation.characterName));
     const merged = mergeChatMessages(input.base.messages, input.next.messages, projected, mergeJsonChanges);
     const metadata = mergeJsonChanges(input.base.metadata, input.next.metadata, conversation.chatMetadata);
-    // Extensions can debounce a save even when no chat data changed. Comparing
-    // the merged projection also handles a stale snapshot preceding newer native
-    // replies. Do not materialize presentation defaults or touch updated_at.
-    if (isDeepStrictEqual(merged, projected) && isDeepStrictEqual(metadata, conversation.chatMetadata)) {
+    const timestamp = new Date().toISOString();
+    const projectedById = new Map(projected.map(message => [message.id, message]));
+    const extensionFields = (raw: (typeof projected)[number]) => {
+      const { id: _id, mes: _mes, is_user: _user, role: _role, content: _content,
+        status: _status, generationMetadata: _generation, ...fields } = raw;
+      return fields;
+    };
+    const messages = isDeepStrictEqual(merged, projected) ? current : merged.map((raw, index): ChatMessage => {
+      const previous = existing.get(raw.id);
+      const previousProjection = projectedById.get(raw.id);
+      const parentMessageId = merged[index - 1]?.id ?? null;
+      if (previous && isDeepStrictEqual(raw, previousProjection)) {
+        return previous.parentMessageId === parentMessageId ? previous : { ...previous, parentMessageId };
+      }
+      // Projection-only fields never override our generation status/identity.
+      // Apply only changed extension fields so editing a message does not make
+      // its unchanged presentation defaults (or its neighbors') durable data.
+      const extensionData = previousProjection ? mergeJsonChanges(extensionFields(previousProjection), extensionFields(raw),
+        previous?.extensionData ?? {}) as Record<string, unknown> : extensionFields(raw);
+      const message: ChatMessage = { ...previous, id: raw.id, conversationId: id, branchId: input.branchId,
+        parentMessageId, role: raw.is_user ? "user" : "assistant", content: raw.mes,
+        status: previous?.status ?? "complete", createdAt: previous?.createdAt ?? timestamp, extensionData,
+        ...(previous?.generationMetadata&&hasNativeCandidateHistory(previous.extensionData)
+          ?{generationMetadata:{...previous.generationMetadata,nativeCandidates:true as const}}:{}),
+      };
+      if (!Object.keys(extensionData).length) delete message.extensionData;
+      return projectNativeCandidateMessage(message);
+    });
+    const messagesChanged = !isDeepStrictEqual(messages, current);
+    // Debounced/stale unchanged snapshots and ignored projection-only edits
+    // remain full no-ops. A metadata-only save does not rewrite message rows.
+    if (!messagesChanged && isDeepStrictEqual(metadata, conversation.chatMetadata)) {
       return { ...conversation, activeBranchId: input.branchId, messages: current,
         messageCount: current.length, lastMessagePreview: current.at(-1)?.content.slice(0, 120) ?? "" };
     }
-    const timestamp = new Date().toISOString();
-    const messages = merged.map((raw, index): ChatMessage => {
-      const previous = existing.get(raw.id);
-      // Projection-only fields never override our generation status/identity.
-      const { id: messageId, mes, is_user, role: _role, content: _content, status: _status, ...extensionData } = raw;
-      return { ...previous, id: messageId, conversationId: id, branchId: input.branchId,
-        parentMessageId: merged[index - 1]?.id ?? null, role: is_user ? "user" : "assistant", content: mes,
-        status: previous?.status ?? "complete", createdAt: previous?.createdAt ?? timestamp, extensionData };
-    });
     this.#database.exec("BEGIN IMMEDIATE");
     try {
-      this.#database.prepare("DELETE FROM messages WHERE conversation_id = ? AND branch_id = ?").run(id, input.branchId);
-      const insert = this.#database.prepare(`INSERT INTO messages
-        (id, conversation_id, branch_id, parent_message_id, role, content, status, generation_json, extension_data_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-      for (const message of messages) insert.run(message.id, id, input.branchId, message.parentMessageId, message.role, message.content, message.status,
-        message.generationMetadata ? JSON.stringify(message.generationMetadata) : null, JSON.stringify(message.extensionData), message.createdAt);
+      if (messagesChanged) {
+        this.#database.prepare("DELETE FROM messages WHERE conversation_id = ? AND branch_id = ?").run(id, input.branchId);
+        const insert = this.#database.prepare(`INSERT INTO messages
+          (id, conversation_id, branch_id, parent_message_id, role, content, status, generation_json, extension_data_json, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        for (const message of messages) insert.run(message.id, id, input.branchId, message.parentMessageId, message.role, message.content, message.status,
+          message.generationMetadata ? JSON.stringify(message.generationMetadata) : null, JSON.stringify(message.extensionData ?? {}), message.createdAt);
+      }
       this.#database.prepare("UPDATE conversations SET metadata_json = ?, updated_at = ? WHERE id = ?")
         .run(JSON.stringify(metadata), timestamp, id);
-      if (input.branchId === conversation.activeBranchId) this.syncMemoryReachability(id);
+      if (messagesChanged && input.branchId === conversation.activeBranchId) this.syncMemoryReachability(id);
       this.#database.exec("COMMIT");
     } catch (error) { this.#database.exec("ROLLBACK"); throw error; }
     return { ...conversation, activeBranchId: input.branchId, messages, messageCount: messages.length,
@@ -1542,11 +1540,44 @@ export class RuntimeRepository {
     return this.addMessage(conversationId, "assistant", "", "streaming");
   }
 
+  // Accept a continuation only after preflight. A changed branch/tail must not
+  // turn a stale model request into an overwrite of an edited message.
+  prepareContinueMessage(conversationId: string, expected: ChatMessage): ChatMessage {
+    const current = this.getConversation(conversationId);
+    const tail = current?.messages.at(-1);
+    if (!tail || current?.activeBranchId !== expected.branchId || tail.id !== expected.id
+      || tail.role !== "assistant" || tail.content !== expected.content || tail.status === "streaming") {
+      throw new Error("续写期间末尾消息已改变，请重新打开消息后重试。");
+    }
+    this.#database.prepare("UPDATE messages SET status = 'streaming' WHERE id = ? AND conversation_id = ? AND branch_id = ?")
+      .run(tail.id, conversationId, tail.branchId);
+    return { ...tail, status: "streaming" };
+  }
+
+  finalizeContinuedMessage(message: ChatMessage, status: "complete" | "stopped" | "failed", content: string,
+    generation?: MessageGenerationMetadata): ChatMessage {
+    return this.withTransaction(() => {
+      const finalized = this.finalizeAssistantMessage(message, status, content, generation);
+      this.syncMemoryReachability(message.conversationId);
+      const extensionData = structuredClone(finalized.extensionData ?? {});
+      const swipes = extensionData.swipes;
+      const selected = extensionData.swipe_id;
+      if (Array.isArray(swipes) && Number.isInteger(selected) && Number(selected) >= 0 && Number(selected) < swipes.length) {
+        swipes[Number(selected)] = content;
+        this.#database.prepare("UPDATE messages SET extension_data_json = ? WHERE id = ? AND conversation_id = ? AND branch_id = ?")
+          .run(JSON.stringify(extensionData), message.id, message.conversationId, message.branchId);
+        return { ...finalized, extensionData };
+      }
+      return finalized;
+    });
+  }
+
   finalizeAssistantMessage(
     message: ChatMessage,
     status: "complete" | "stopped" | "failed",
     content: string,
     generation?: MessageGenerationMetadata,
+    candidates?: ModelCandidateSnapshot[],
   ): ChatMessage {
     const finalized: ChatMessage = {
       ...message,
@@ -1554,10 +1585,38 @@ export class RuntimeRepository {
       content,
       ...(generation ? { generationMetadata: generation } : {}),
     };
+    if(candidates?.length&&finalized.generationMetadata)
+      finalized.generationMetadata={...finalized.generationMetadata,nativeCandidates:true};
     this.withTransaction(() => {
+      // An extension can save variables/unknown fields while the provider runs.
+      // Merge candidate-owned fields into the latest row inside this transaction.
+      const latest=this.getMessage(message.conversationId,message.id,message.branchId)??message;
+      const extensionData=structuredClone(latest.extensionData??{});
+      if(candidates?.length){
+        const record=(value:unknown):Record<string,unknown>=>value!==null&&typeof value==="object"&&!Array.isArray(value)?value as Record<string,unknown>:{};
+        const extra=record(extensionData.extra),oldInfos=Array.isArray(extensionData.swipe_info)?extensionData.swipe_info:[];
+        const ordered=[...candidates].sort((a,b)=>a.index-b.index);
+        const candidateContent=(candidate:ModelCandidateSnapshot)=>candidate.index===0&&status!=="failed"?content:candidate.content;
+        extensionData.swipes=ordered.map(candidateContent);
+        extensionData.swipe_id=ordered.findIndex(candidate=>candidate.index===0);
+        extensionData.swipe_info=ordered.map(candidate=>{
+          const old=record(oldInfos.find(info=>record(record(record(info).extra)[NATIVE_CANDIDATE_INFO_KEY]).index===candidate.index));
+          const reason=candidate.finishReason??"eof",outcome=reason==="length"?"truncated":["stop","done","response"].includes(reason)?"complete":"incomplete";
+          const candidateStatus=status!=="complete"?status:outcome==="incomplete"?"failed":"complete";
+          const oldExtra=structuredClone(record(old.extra)),latestExtra=structuredClone(extra);
+          const candidateExtra={...(candidate.index===0?{...oldExtra,...latestExtra}:{...latestExtra,...oldExtra}),[NATIVE_CANDIDATE_INFO_KEY]:{
+            version:1,index:candidate.index,originalContent:candidateContent(candidate),status:candidateStatus,
+            finishReason:reason,completionOutcome:outcome,responseState:structuredClone(candidate.responseState),
+          }};
+          return {...old,send_date:old.send_date??message.createdAt,extra:candidateExtra};
+        });
+        const selected=extensionData.swipe_id as number;
+        if(selected>=0)extensionData.extra=structuredClone(record((extensionData.swipe_info as Record<string,unknown>[])[selected]).extra);
+      }
+      const projected=projectNativeCandidateMessage({...finalized,extensionData});
       this.#database.prepare(`
-        UPDATE messages SET status = ?, content = ?, generation_json = ? WHERE id = ? AND conversation_id = ? AND branch_id = ?
-      `).run(status, content, generation ? JSON.stringify(generation) : null, message.id, message.conversationId, message.branchId);
+        UPDATE messages SET status = ?, content = ?, generation_json = ?, extension_data_json = ? WHERE id = ? AND conversation_id = ? AND branch_id = ?
+      `).run(projected.status, content, projected.generationMetadata ? JSON.stringify(projected.generationMetadata) : null, JSON.stringify(extensionData), message.id, message.conversationId, message.branchId);
       this.#database.prepare("UPDATE conversations SET updated_at = ? WHERE id = ?")
         .run(new Date().toISOString(), message.conversationId);
     });
@@ -1590,6 +1649,7 @@ export class RuntimeRepository {
       this.#database.prepare("UPDATE conversations SET active_branch_id = ?, updated_at = ?, metadata_json = json_set(metadata_json, '$.tainted', json('true')) WHERE id = ?")
         .run(branchId, new Date().toISOString(), conversationId);
       this.syncMemoryReachability(conversationId);
+      this.#restoreBranchWorldInfo(conversationId,current);
       this.#database.exec("RELEASE SAVEPOINT edit_message_branch");
     } catch (error) {
       this.#database.exec("ROLLBACK TO SAVEPOINT edit_message_branch; RELEASE SAVEPOINT edit_message_branch");
@@ -1674,11 +1734,23 @@ export class RuntimeRepository {
       SELECT count(*) AS n FROM messages WHERE conversation_id = ? AND branch_id = ?
     `).get(conversationId, branchId) as { n: number } | undefined;
     if (!countRow || countRow.n === 0) return undefined;
-    this.#database.prepare(`
+    const previous=this.getConversation(conversationId);
+    this.withTransaction(()=>{
+      this.#database.prepare(`
       UPDATE conversations SET active_branch_id = ?, updated_at = ? WHERE id = ?
     `).run(branchId, new Date().toISOString(), conversationId);
-    this.syncMemoryReachability(conversationId);
+      this.syncMemoryReachability(conversationId);
+      this.#restoreBranchWorldInfo(conversationId,previous);
+    });
     return this.getConversation(conversationId);
+  }
+
+  #restoreBranchWorldInfo(conversationId:string,previous?:ConversationDetail):void {
+    const current=this.getConversation(conversationId);if(!current)return;
+    const restored=restoreWorldInfoStateForBranch(current.chatMetadata??{},current.activeBranchId,current.messages,
+      previous?{branchId:previous.activeBranchId,messages:previous.messages}:undefined);
+    if(restored)this.#database.prepare("UPDATE conversations SET metadata_json = ? WHERE id = ?")
+      .run(JSON.stringify({...current.chatMetadata,...restored}),conversationId);
   }
 
   listPlugins(): PluginListResponse {
@@ -1841,13 +1913,14 @@ export class RuntimeRepository {
   }
 
   activeCodePluginsAsInstalled(): InstalledPlugin[] {
+    const visible = new Set(visibleCodePlugins(this.listCodePlugins().items).map(plugin => plugin.id));
     const rows = this.#database.prepare(`
       SELECT p.*,
         (SELECT count(*) FROM code_plugin_files f WHERE f.plugin_id = p.id) AS file_count,
         COALESCE((SELECT sum(length(content)) FROM code_plugin_files f WHERE f.plugin_id = p.id), 0) AS total_bytes
       FROM code_plugins p WHERE p.enabled = 1 ORDER BY p.installed_at
     `).all() as unknown as CodePluginRow[];
-    return rows.map((row) => {
+    return rows.filter(row => visible.has((JSON.parse(row.normalized_json) as CodePlugin).id)).map((row) => {
       const plugin = JSON.parse(row.normalized_json) as Omit<CodePlugin, "enabled" | "installedAt">;
       const contributions = JSON.parse(row.contributions_json) as CodePluginContribution;
       const permissions: InstalledPlugin["permissions"] = [];

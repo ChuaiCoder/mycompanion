@@ -1,0 +1,70 @@
+/* Native controls retain a visible keyboard focus ring in every panel. */
+.desktop-shell :is(button, a, summary, input, textarea, select):focus-visible {
+  outline: 2px solid #145da8;
+  outline-offset: 2px;
+}
+
+@media (forced-colors: active) {
+  .desktop-shell :is(button, a, summary, input, textarea, select):focus-visible {
+    outline-color: Highlight;
+  }
+}
+
+/* Zooming a desktop window uses this layout too. Keep the same navigation
+ * controls in the document and tab order instead of hiding their destinations. */
+@media (max-width: 820px) {
+  html, body, #root { min-width: 0; }
+  .desktop-shell { width: 100%; }
+  .desktop-shell .sidebar {
+    position: static;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto auto auto;
+    height: auto;
+    min-width: 0;
+  }
+  .desktop-shell .brand-row { grid-column: 1; }
+  .desktop-shell .primary-nav {
+    grid-column: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px 10px 8px;
+  }
+  .desktop-shell .primary-nav .nav-row {
+    display: grid;
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    min-width: 0;
+    padding: 6px 9px;
+  }
+  .desktop-shell .primary-nav .nav-row--new {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+  .desktop-shell .primary-nav .nav-row span { overflow-wrap: anywhere; }
+  .desktop-shell .sidebar-footer { display: flex; grid-column: 1; }
+  .desktop-shell .chat-pane { display: flex; flex-direction: column; }
+  .desktop-shell :is(.chat-pane, .conversation-pane) > .pane-header {
+    flex-wrap: wrap;
+    align-items: flex-start;
+    height: auto;
+  }
+  .desktop-shell .pane-heading { flex-wrap: wrap; }
+  .desktop-shell .pane-heading strong { flex-shrink: 1; overflow-wrap: anywhere; }
+  .desktop-shell .pane-header-actions { flex-wrap: wrap; max-width: 100%; }
+  .desktop-shell .chat-pane > :is(.chat-message-list, .prompt-preview, .chat-composer) { min-width: 0; max-width: 100%; }
+  .desktop-shell .memory-panel { min-width: 0; }
+  .desktop-shell .memory-panel :is(textarea, input, select) { min-width: 0; max-width: 100%; }
+  .desktop-shell .memory-panel__summary-header { flex-wrap: wrap; }
+  .desktop-shell .memory-panel :is(p, summary, dt, dd, small) { overflow-wrap: anywhere; }
+  .desktop-shell :is(.message-actions, .chat-message__editor-actions, .memory-panel__actions) { flex-wrap: wrap; }
+  .desktop-shell .conversation-pane { grid-template-rows: auto minmax(0, 1fr) auto; }
+  .desktop-shell :is(.export-actions, .sticky-actions, .settings-actions) { flex-wrap: wrap; }
+  .desktop-shell .inspector-header { flex-wrap: wrap; }
+  .desktop-shell .settings-workspace { overflow: visible; padding: 24px 12px; }
+  .desktop-shell .settings-card { min-width: 0; padding: 18px; overflow-wrap: anywhere; }
+  .desktop-shell .settings-card :is(form, fieldset, label, details, section, .settings-form) { min-width: 0; max-width: 100%; }
+  .desktop-shell .settings-card :is(input, select, textarea) { min-width: 0; max-width: 100%; }
+  .desktop-shell .settings-card select { width: 100%; }
+  .desktop-shell .plugin-url-input { min-width: 0; max-width: 100%; }
+}

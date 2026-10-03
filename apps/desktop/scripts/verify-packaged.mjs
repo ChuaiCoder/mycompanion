@@ -10,6 +10,11 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { verifyIndependentApp } from './verify-independent-app.mjs';
 import { verifyPluginMacroEngine } from './verify-plugin-macro-engine.mjs';
+import { argument, bindPackagedArtifacts, assertPackagedArtifactsUnchanged } from './packaged-artifact-binding.mjs';
+import { createPackagedDesktopFeatures } from './verify-packaged-desktop-features.mjs';
+import { createPackagedDataWorkflows } from './verify-packaged-data-workflows.mjs';
+import { createPackagedCachedPerformance } from './verify-packaged-cached-performance.mjs';
+import { ownedProcessTree, processCreationTime } from './owned-process-tree.mjs';
 
 const run = promisify(execFile);
 const project = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -21,29 +26,41 @@ for (const flag of ['--helper', '--legacy-fixture', '--legacy-local-state', '--e
   assert(!process.argv.includes(flag), 'The embedded-engine verifier has been removed: ' + flag);
 }
 const labelFlag = process.argv.indexOf('--report-label');
-const reportLabel = labelFlag >= 0 ? process.argv[labelFlag + 1] : '';
+const reportLabel = labelFlag >= 0 ? process.argv[labelFlag + 1] : new Date().toISOString().replace(/[^a-z0-9]/gi, '-').toLowerCase();
 assert(labelFlag < 0 || /^[a-z0-9-]+$/.test(reportLabel ?? ''), 'Report label must contain only lowercase letters, digits and hyphens');
 const profile = await mkdtemp(join(tmpdir(), 'mycompanion-packaged-'));
 const hash = async path => createHash('sha256').update(await readFile(path)).digest('hex');
 const quote = text => "'" + text.replaceAll("'", "''") + "'";
 const powershell = async source => (await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', source], { windowsHide: true, maxBuffer: 1024 * 1024 })).stdout.trim();
-const report = { passed: false, independent: true, executable, executableSha256: await hash(executable), artifactKind: dirname(executable).endsWith('win-unpacked') ? 'unpacked' : 'portable', profile, reportLabel, consoleApiErrorsCaptured: true, stages: [], runs: [], browserErrors: [], runtimeExceptions: [], resourceErrors: [] };
+const featureTranche = process.argv.includes('--desktop-feature-tranche');
+const dataTranche = process.argv.includes('--data-workflows');
+assert(!dataTranche || !process.argv.includes('--private-card'), 'Data workflow downloads use a separate public fixture profile; run the private-card acceptance separately');
+const cachedPerformance = process.argv.includes('--cached-performance');
+assert(featureTranche || !process.argv.includes('--private-card'), '--private-card requires --desktop-feature-tranche');
+const identity = await bindPackagedArtifacts(process.argv, executable, featureTranche || cachedPerformance || dataTranche);
+const reportPath = join(project, '.cache/reports/packaged-' + reportLabel + '-verification.json');
+assert.equal(await access(reportPath).then(() => true, () => false), false, 'Acceptance report already exists; use a new report label');
+const report = { passed: false, independent: true, ...identity, artifactKind: dirname(executable).endsWith('win-unpacked') ? 'unpacked' : 'portable', profile, reportLabel, consoleApiErrorsCaptured: true, stages: [], runs: [], browserErrors: [], runtimeExceptions: [], resourceErrors: [] };
+const features = featureTranche ? await createPackagedDesktopFeatures({ report, privateCardPath: argument(process.argv, '--private-card') }) : null;
+const dataChecks = dataTranche ? createPackagedDataWorkflows(report) : null;
+const performanceChecks = cachedPerformance ? createPackagedCachedPerformance(report) : null;
 console.log('Verifying actual executable with isolated profile:', profile);
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let socket;
 let pid;
 let engineOrigin;
 let children = [];
+let launcherIdentity;
+// Keep delayed image/log errors private too, even after the card step returns.
+const protectPrivateDetails = Boolean(argument(process.argv, '--private-card'));
+const privateDetails = details => protectPrivateDetails ? { redactedPrivateCard: true, detailsSha256: createHash('sha256').update(JSON.stringify(details)).digest('hex') } : details;
 async function processes() {
     return JSON.parse(await powershell('ConvertTo-Json -Compress -InputObject @(Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CreationDate,ExecutablePath)'));
 }
 async function captureChildren() {
     const all = await processes();
-    const ids = new Set([pid]);
-    for (let index = 0; index < all.length; index++) {
-        for (const process of all) if (ids.has(process.ParentProcessId)) ids.add(process.ProcessId);
-    }
-    return all.filter(process => ids.has(process.ProcessId));
+    if (!launcherIdentity || !all.some(process => process.ProcessId === launcherIdentity.ProcessId && process.CreationDate === launcherIdentity.CreationDate)) return children;
+    return ownedProcessTree(all, launcherIdentity);
 }
 try {
   for (const phase of ['initial', 'restart']) {
@@ -52,9 +69,23 @@ try {
     const currentRun = { phase };
     report.runs.push(currentRun);
     const args = ['--user-data-dir="' + profile + '"', '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1', '--no-first-run'];
+    if (cachedPerformance) args.push('--disable-gpu', '--disable-renderer-backgrounding');
     pid = Number(await powershell(`$env:PATH = $env:SystemRoot + '\\System32'; $verificationProcess = Start-Process -FilePath ${quote(executable)} -ArgumentList @(${args.map(quote).join(',')}) -WindowStyle Hidden -PassThru; $verificationProcess.Id`));
     assert(Number.isInteger(pid) && pid > 0);
     currentRun.launcherPid = pid;
+    launcherIdentity = undefined;
+    const identityDeadline = Date.now() + 5000;
+    do {
+      launcherIdentity = (await processes()).find(process => process.ProcessId === pid && resolve(process.ExecutablePath ?? '').toLowerCase() === executable.toLowerCase());
+      if (launcherIdentity) {
+        (currentRun.launcherIdentitySamples ??= []).push(launcherIdentity);
+        try { processCreationTime(launcherIdentity.CreationDate); break; }
+        catch { launcherIdentity = undefined; }
+      }
+      await delay(250);
+    } while (Date.now() < identityDeadline);
+    assert(launcherIdentity, 'The launched candidate process identity could not be verified');
+    currentRun.launcherIdentity = launcherIdentity;
     const launchStarted = Date.now();
     // A portable build extracts the application before Electron starts. Record
     // the cost separately instead of confusing extraction with engine startup.
@@ -90,19 +121,19 @@ try {
     socket.addEventListener('message', event => {
         const message = JSON.parse(event.data);
         if (message.method === 'Runtime.exceptionThrown') {
-            const exception = { phase, afterStage: report.stages.at(-1), details: message.params.exceptionDetails };
+            const exception = { phase, afterStage: report.stages.at(-1), details: privateDetails(message.params.exceptionDetails) };
             report.browserErrors.push(exception);
             report.runtimeExceptions.push(exception);
         }
-        if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') report.browserErrors.push({ phase, details: {
+        if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') report.browserErrors.push({ phase, details: privateDetails({
             message: message.params.args.map(arg => arg.value ?? arg.description ?? arg.type).join(' '), stackTrace: message.params.stackTrace,
-        } });
-        if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') report.browserErrors.push({ phase, details: message.params.entry });
+        }) });
+        if (message.method === 'Log.entryAdded' && message.params.entry.level === 'error') report.browserErrors.push({ phase, details: privateDetails(message.params.entry) });
         if (message.method === 'Page.javascriptDialogOpening') {
-            currentRun.blockingDialog = { type: message.params.type, message: message.params.message };
+            currentRun.blockingDialog = privateDetails({ type: message.params.type, message: message.params.message });
         }
         if (message.method === 'Network.requestWillBeSent') requestUrls.set(message.params.requestId, message.params.request.url);
-        if (message.method === 'Network.loadingFailed') report.resourceErrors.push({ phase, url: requestUrls.get(message.params.requestId), ...message.params });
+        if (message.method === 'Network.loadingFailed') report.resourceErrors.push({ phase, ...privateDetails({ url: requestUrls.get(message.params.requestId), ...message.params }) });
         if (['Network.loadingFailed', 'Network.loadingFinished'].includes(message.method)) requestUrls.delete(message.params.requestId);
         const request = pending.get(message.id);
         if (!request) return; pending.delete(message.id); clearTimeout(request.timer);
@@ -115,7 +146,7 @@ try {
     });
     const evaluate = async expression => {
         const result = await send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
-        if (result.exceptionDetails) throw new Error(JSON.stringify(result.exceptionDetails));
+        if (result.exceptionDetails) throw new Error(JSON.stringify(privateDetails(result.exceptionDetails)));
         return result.result.value;
     };
     const reload = async () => {
@@ -153,14 +184,18 @@ try {
           currentRun.macroEngine=await verifyPluginMacroEngine({webContents:{executeJavaScript:evaluate}},remoteService,{reload});
           report.stages.push(phase+'-packaged-public-macro-api-environment-and-native-parity');
         }
+        if (features) await features.verify({ phase, evaluate, origin: engineOrigin, profile, sendCdp: send, reload });
+        if (dataChecks) await dataChecks.verify({ phase, evaluate, origin: engineOrigin, profile, sendCdp: send, reload });
+        if (performanceChecks) await performanceChecks.verify({ phase, evaluate, origin: engineOrigin, reload, sendCdp: send });
         await access(join(profile, 'mycompanion.sqlite'));
         assert.equal(await access(join(profile, 'tavern')).then(() => true, () => false), false, 'Independent app created a Tavern profile');
         assert(!(await readFile(join(profile, 'mycompanion.sqlite'))).includes(Buffer.from('mc-independent-verification-key')), 'API key was stored in plaintext');
     children = await captureChildren();
     assert(!children.some(process => process.ExecutablePath?.replaceAll('\\', '/').endsWith('/resources/node/node.exe')), 'Independent app started a reference engine child');
     currentRun.ownedProcesses = children;
-    // Page.close follows the desktop window's normal close path. The target
-    // may disappear before acknowledging; actual process/port exit is the gate.
+    // Page.close destroys the Chromium target. The desktop before-quit guard
+    // must stop its service even if no renderer flush is possible. Title-bar
+    // save/close is covered separately by the source-main close regression.
     const closeStarted = Date.now();
     // Keep the transport alive until Chromium acknowledges the close or the
     // target disconnects. Closing our socket immediately can lose the command.
@@ -187,13 +222,14 @@ try {
     currentRun.stopped = true;
     socket?.close(); socket = null;
     await closeCommand;
-    report.stages.push(phase + '-normal-window-close-stops-independent-app-and-launcher');
+    report.stages.push(phase + '-target-close-stops-independent-service-app-and-launcher');
     console.log(report.stages.at(-1));
     pid = undefined;
 
   }
     report.assertionsPassed = true;
     assert.equal(report.runtimeExceptions.length, 0, 'Actual EXE raised unhandled runtime exceptions; inspect runtimeExceptions');
+    await assertPackagedArtifactsUnchanged(identity);
     report.passed = true;
     console.log(JSON.stringify({ passed: true, stages: report.stages, profile }));
 } catch (error) {
@@ -215,7 +251,7 @@ try {
     }
 } finally {
     socket?.close();
+    await features?.close();
     await mkdir(join(project, '.cache/reports'), { recursive: true });
-    const suffix = reportLabel ? '-' + reportLabel : '-independent';
-    await writeFile(join(project, '.cache/reports/packaged' + suffix + '-verification.json'), JSON.stringify(report, null, 2));
+    await writeFile(reportPath, JSON.stringify(report, null, 2), { flag: 'wx' });
 }

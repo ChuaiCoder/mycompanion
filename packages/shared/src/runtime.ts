@@ -1,10 +1,12 @@
 import { z } from "zod";
+import { toolInvocationSchema } from "./tools.js";
 export const browserMacroResultSchema = z.object({
   content: z.string(), local: z.record(z.string(), z.unknown()), global: z.record(z.string(), z.unknown()),
 });
 
 import { memoryRetrievalReportSchema } from "./memory.js";
 import { lorebookReportSchema } from "./worldbook.js";
+import { tokenAccountingSchema, providerTokenUsageSchema } from "./tokens.js";
 
 export const MAX_CONTEXT_TOKENS = 2_000_000;
 
@@ -33,6 +35,7 @@ const promptRegionKeySchema = z.enum([
 ]);
 
 export const promptBudgetReportSchema = z.object({
+  tokenAccounting: tokenAccountingSchema.optional(),
   contextLimitTokens: z.number().int().nonnegative(),
   reserveTokens: z.number().int().nonnegative(),
   availableTokens: z.number().int().nonnegative(),
@@ -58,6 +61,7 @@ export const promptPreviewRequestSchema = z.object({
 }).strict();
 
 export const promptPreviewResponseSchema = z.object({
+  tokenAccounting: tokenAccountingSchema.optional(),
   // 即将发给模型的消息（已脱敏）。
   messages: z.array(z.object({
     role: z.enum(["system", "user", "assistant"]),
@@ -86,7 +90,7 @@ const extensionAssemblyMessageSchema = z.object({
   role: z.enum(["system", "user", "assistant"]),
   content: z.string().max(200_000),
   name: z.string().max(200).optional(),
-  image: z.unknown().optional(),
+  image: z.string().max(8 * 1024 * 1024).nullable().optional(),
   tool_calls: z.unknown().optional(),
   reasoning: z.unknown().optional(),
   signature: z.unknown().optional(),
@@ -97,6 +101,7 @@ export const extensionPromptAssemblyRequestSchema = z.object({
   commitVariables: z.boolean().default(false),
   messages: z.array(extensionAssemblyMessageSchema).max(80),
   messageExamples: z.array(z.array(extensionAssemblyMessageSchema).max(50)).max(50).default([]),
+  imageQuality:z.enum(["low","high","auto","original"]).default("auto"),
   extensionPrompts: z.array(extensionPromptSchema).max(200).default([]),
   name2: z.string().max(200).optional(),
   charDescription: z.string().max(200_000).optional(),
@@ -110,6 +115,7 @@ export const extensionPromptAssemblyRequestSchema = z.object({
   personaDescription: z.string().max(200_000).optional(),
   bias: z.string().max(100_000).optional(),
   quietPrompt: z.string().max(100_000).optional(),
+  quietImage: z.string().max(8 * 1024 * 1024).nullable().optional(),
   cyclePrompt: z.string().max(100_000).optional(),
   type: z.string().max(40).default("normal"),
   contextLimitTokens: z.number().int().min(1).max(MAX_CONTEXT_TOKENS).optional(),
@@ -128,14 +134,14 @@ export const quietGenerationRequestSchema = z.object({
   skipWIAN: z.boolean().default(false),
   quietName: z.string().max(200).nullable().default(null),
   responseLength: z.number().int().min(1).max(131_072).nullable().default(null),
-  quietImage: z.string().nullable().default(null),
+  quietImage: z.string().max(8 * 1024 * 1024).nullable().default(null),
   forceChId: z.number().int().nonnegative().nullable().default(null),
   jsonSchema: z.record(z.string(), z.unknown()).nullable().default(null),
   extensionPrompts: z.array(extensionPromptSchema).default([]),
 }).strict();
 export type QuietGenerationRequest = z.infer<typeof quietGenerationRequestSchema>;
 
-export const providerKindSchema = z.enum(["openai-compatible", "ollama"]);
+export const providerKindSchema = z.enum(["openai-compatible", "ollama", "anthropic", "gemini"]);
 
 export const providerSettingsSchema = z.object({
   kind: providerKindSchema,
@@ -164,7 +170,7 @@ export const providerConnectionResponseSchema = z.object({
   message: z.string(),
   models: z.array(z.string()).max(500).default([]),
   testedModel: z.string().optional(),
-  capability: z.literal("chat-completion").optional(),
+  capability: z.enum(["chat-completion", "embedding"]).optional(),
   issue: z.object({
     code: z.string(), field: z.enum(["baseUrl", "apiKey", "model", "connection"]),
     suggestion: z.string(), retryable: z.boolean(),
@@ -176,7 +182,40 @@ export const providerConnectionResponseSchema = z.object({
 export const chatMessageStatusSchema = z.enum(["streaming", "complete", "stopped", "failed"]);
 
 // 生成配置摘要：记录每条助手回复生成时的模型与参数（FR-CHAT-002）。
+export const modelResponseStateSchema = z.object({
+  protocol: z.enum(["openai", "claude", "gemini"]),
+  model: z.string().min(1).max(200).optional(),
+  reasoning: z.string(), signature: z.string(),
+  toolCalls: z.array(z.object({id:z.string(),type:z.literal("function"),function:z.object({name:z.string(),arguments:z.string()}),signature:z.string().optional()})),
+  media: z.array(z.object({mimeType:z.string(),data:z.string(),signature:z.string().optional()})),
+  providerContent: z.array(z.record(z.string(),z.unknown())),
+});
+export type ModelResponseState = z.infer<typeof modelResponseStateSchema>;
+// Native candidates share a request's usage and input budget, but never its
+// reasoning, media, tool-call ordinals or per-choice finish state.
+export const modelCandidateSnapshotSchema = z.object({
+  index: z.number().int().nonnegative(), content: z.string(), responseState: modelResponseStateSchema,
+  finishReason: z.string().max(200).optional(),
+});
+export type ModelCandidateSnapshot = z.infer<typeof modelCandidateSnapshotSchema>;
+export const nativeCandidateInfoSchema = modelCandidateSnapshotSchema.omit({content:true}).extend({
+  version:z.literal(1), originalContent:z.string(), status:chatMessageStatusSchema,
+  completionOutcome:z.enum(["complete","truncated","incomplete"]).optional(),
+});
+export type NativeCandidateInfo = z.infer<typeof nativeCandidateInfoSchema>;
+export const modelToolRoundSchema = z.object({
+  content:z.string(),responseState:modelResponseStateSchema,usage:providerTokenUsageSchema.optional(),
+  tokenAccounting:tokenAccountingSchema.optional(),
+  invocations:z.array(toolInvocationSchema),
+});
+export type ModelToolRound = z.infer<typeof modelToolRoundSchema>;
+
 export const messageGenerationMetadataSchema = z.object({
+  nativeCandidates: z.literal(true).optional(),
+  responseState: modelResponseStateSchema.optional(),
+  toolRounds: z.array(modelToolRoundSchema).optional(),
+  tokenAccounting: tokenAccountingSchema.optional(),
+  usage: providerTokenUsageSchema.optional(),
   model: z.string().min(1),
   temperature: z.number(),
   maxTokens: z.number().int().nonnegative(),
@@ -213,6 +252,7 @@ export const conversationSummarySchema = z.object({
 export const conversationDetailSchema = conversationSummarySchema.extend({
   messages: z.array(chatMessageSchema),
   chatMetadata: z.record(z.string(), z.unknown()).optional(),
+  chatHeader: z.record(z.string(), z.unknown()).optional(),
 });
 
 export const conversationListResponseSchema = z.object({
@@ -243,6 +283,7 @@ export const nativeCompletionRequestSchema = z.object({
   max_tokens: z.number().int().positive().optional(),
   max_completion_tokens: z.number().int().positive().optional(),
   stream: z.boolean(),
+  n: z.number().int().positive().nullable().optional(),
 }).passthrough();
 export type NativeCompletionRequest = z.infer<typeof nativeCompletionRequestSchema>;
 
@@ -261,13 +302,18 @@ export const sendMessageResponseSchema = z.object({
 export const generationSseEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("macro_request"), requestId: z.string().uuid(), conversationId: z.string().uuid().nullable(),
     branchId: z.string().uuid().nullable(), evaluation: z.record(z.string(), z.unknown()) }),
+  z.object({ type: z.literal("effect_request"), requestId: z.string().uuid(), conversationId: z.string().uuid().nullable(),
+    branchId: z.string().uuid().nullable(), evaluation: z.object({ invocationId: z.string().uuid(),
+      ordinal: z.number().int().nonnegative(), kind: z.string(), payload: z.unknown() }).passthrough() }),
+  z.object({ type: z.literal("effect_end"), invocationId: z.string().uuid() }),
   z.object({ type: z.literal("macro_result"), result: z.record(z.string(), z.unknown()) }),
   z.object({type:z.literal("macro_variables"),conversationId:z.string().uuid(),branchId:z.string().uuid().optional(),
     worldInfoState:z.record(z.string(),z.unknown()).optional(),changes:z.array(z.object({
     scope:z.enum(["local","global"]),key:z.string(),beforeExists:z.boolean(),afterExists:z.boolean(),before:z.unknown().optional(),after:z.unknown().optional(),
   }))}),
   z.object({ type: z.literal("quiet_result"), text: z.string() }),
-  z.object({ type: z.literal("completion_request"), requestId: z.string().uuid(), request: nativeCompletionRequestSchema, dryRun: z.boolean() }),
+  z.object({ type: z.literal("impersonate_result"), text: z.string() }),
+  z.object({ type: z.literal("completion_request"), requestId: z.string().uuid(), request: nativeCompletionRequestSchema, dryRun: z.boolean(), provider: providerSettingsSchema.optional() }),
   z.object({ type: z.literal("generation_end"), reason: z.enum(["stopped", "preview"]) }),
   z.object({ type: z.literal("user_message"), message: chatMessageSchema }),
   z.object({ type: z.literal("assistant_start"), message: chatMessageSchema }),
@@ -362,6 +408,8 @@ export const codePluginSchema = z.object({
   sourceUrl: z.string().url().optional(),
   sourceRef: z.string().max(200).optional(),
   sourceRevision: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
+  extensionName: z.string().min(1).max(255).regex(/^[^/\\\u0000]+$/).optional(),
+  installationScope: z.enum(["local", "global"]).optional(),
   js: z.string().max(500).nullable(),
   css: z.string().max(500).nullable(),
   enabled: z.boolean(),

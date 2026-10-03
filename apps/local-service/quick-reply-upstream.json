@@ -1,0 +1,33 @@
+{
+  "repository": "https://github.com/SillyTavern/SillyTavern",
+  "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "license": "AGPL-3.0-only",
+  "path": "src/quick-reply-upstream.ts",
+  "adaptedSha256": "6e990fbe556009f1953a3cc068a80dd2cd307731cacd3995ef9b41476bdac7c3",
+  "files": [
+    {
+      "upstreamPath": "public/scripts/extensions/quick-reply/src/AutoExecuteHandler.js",
+      "upstreamSha256": "435bbee8ae36c2ce393d2be7e6dab4e12f0e2ff1085b1c610b06d9ae686edff8"
+    },
+    {
+      "upstreamPath": "public/scripts/extensions/quick-reply/src/QuickReply.js",
+      "upstreamSha256": "0209150d5a5366757eca23fbe911fee81c51c092aa4109e9ba1c7ce0f91fa46b"
+    },
+    {
+      "upstreamPath": "public/scripts/extensions/quick-reply/src/QuickReplySet.js",
+      "upstreamSha256": "e0da437fde542002a7c0b4652a6cf4c4288923a35150d3d722f916eb7d32ab2e"
+    },
+    {
+      "upstreamPath": "public/scripts/extensions/quick-reply/index.js",
+      "upstreamSha256": "d486692119260c299545f8b1a0390dedc003888c5508e2b4b59abb131c0b4911"
+    }
+  ],
+  "components": [
+    "AutoExecuteHandler",
+    "QuickReply.execute",
+    "QuickReplySet.executeWithOptions/execute/from/get",
+    "loadSets (including legacy migration)",
+    "executeQuickReplyByName"
+  ],
+  "adaptation": "Retain initialized model defaults and execution methods unmodified. Native fact storage supplies settings/get quickReplyPresets. Model construction hooks only execution; the upstream editor, buttons, context menus and DOM lifecycle are omitted. A host wrapper supplies invocation cancellation; a document adapter maps the original textarea assignment/button click to actual native React composer callbacks and honors the real disabled button. Neither changes the original execution bodies."
+}

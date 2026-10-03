@@ -82,21 +82,23 @@ export function placementText(value: string): string {
     (value.startsWith("unknown:") ? `未知阶段 ${value.slice(8)}` : value);
 }
 
-export function RichTextPreview({ text }: { text: string }) {
+const unchangedText = (value: string) => value;
+
+export function RichTextPreview({ text, translate = unchangedText }: { text: string; translate?: (value: string) => string }) {
   const looksLikeHtml = /<[a-z][\s\S]*>/i.test(text);
   return looksLikeHtml ? (
-    <pre className="code-preview" aria-label="HTML 开场白源码"><code>{text}</code></pre>
+    <pre className="code-preview" aria-label={translate("HTML 开场白源码")}><code>{text}</code></pre>
   ) : (
     <blockquote>{text}</blockquote>
   );
 }
 
-export function ExpandableDescription({ text, emptyText }: { text: string; emptyText: string }) {
+export function ExpandableDescription({ text, emptyText, translate = unchangedText }: { text: string; emptyText: string; translate?: (value: string) => string }) {
   if (!text) return <p>{emptyText}</p>;
   if (Array.from(text).length <= 240) return <p>{text}</p>;
   return (
     <details className="description-disclosure">
-      <summary>{text.slice(0, 220)}… <span>展开完整简介</span></summary>
+      <summary>{text.slice(0, 220)}… <span>{translate("展开完整简介")}</span></summary>
       <p>{text}</p>
     </details>
   );
@@ -105,18 +107,20 @@ export function ExpandableDescription({ text, emptyText }: { text: string; empty
 export function ImportedContentDetails({
   lorebookEntries,
   regexScripts,
-}: Pick<CharacterCardPreviewResponse, "lorebookEntries" | "regexScripts">) {
+  translate = unchangedText,
+  locale,
+}: Pick<CharacterCardPreviewResponse, "lorebookEntries" | "regexScripts"> & { translate?: (value: string) => string; locale?: string }) {
   return (
     <>
       {lorebookEntries.length > 0 ? (
         <details className="content-disclosure">
-          <summary><span>世界书</span><small>{lorebookEntries.length} 条 · 已保存，运行时未启用</small></summary>
+          <summary><span>{translate("世界书")}</span><small>{translate(`${lorebookEntries.length} 条 · 已保存，运行时未启用`)}</small></summary>
           <ol className="content-preview-list">
             {lorebookEntries.map((entry) => (
               <li key={`${entry.index}-${entry.name}`}>
-                <div className="content-preview-heading"><strong>{entry.name}</strong><span>{entry.sourceEnabled ? "卡内启用" : "卡内停用"}</span></div>
-                <p>{entry.contentPreview || "（空内容）"}</p>
-                <dl><div><dt>关键词</dt><dd>{entry.keys.join("、") || "无"}</dd></div><div><dt>触发</dt><dd>{entry.constant ? "常驻" : entry.useRegex ? "正则关键词" : "普通关键词"}</dd></div><div><dt>顺序</dt><dd>{entry.insertionOrder}</dd></div></dl>
+                <div className="content-preview-heading"><strong>{entry.name}</strong><span>{translate(entry.sourceEnabled ? "卡内启用" : "卡内停用")}</span></div>
+                <p>{entry.contentPreview || translate("（空内容）")}</p>
+                <dl><div><dt>{translate("关键词")}</dt><dd>{entry.keys.join("、") || translate("无")}</dd></div><div><dt>{translate("触发")}</dt><dd>{translate(entry.constant ? "常驻" : entry.useRegex ? "正则关键词" : "普通关键词")}</dd></div><div><dt>{translate("顺序")}</dt><dd>{locale ? entry.insertionOrder.toLocaleString(locale) : entry.insertionOrder}</dd></div></dl>
               </li>
             ))}
           </ol>
@@ -124,13 +128,13 @@ export function ImportedContentDetails({
       ) : null}
       {regexScripts.length > 0 ? (
         <details className="content-disclosure">
-          <summary><span>正则规则</span><small>{regexScripts.length} 条 · 导入后全部禁用</small></summary>
+          <summary><span>{translate("正则规则")}</span><small>{translate(`${regexScripts.length} 条 · 导入后全部禁用`)}</small></summary>
           <ol className="content-preview-list">
             {regexScripts.map((script) => (
               <li key={`${script.index}-${script.name}`}>
-                <div className="content-preview-heading"><strong>{script.name}</strong><span className="status-disabled">已禁用</span></div>
-                <code className="regex-source">{script.findRegexPreview || "（未提供查找表达式）"}</code>
-                <dl><div><dt>卡内状态</dt><dd>{script.sourceDisabled ? "停用" : "启用"}</dd></div><div><dt>作用阶段</dt><dd>{script.placements.map(placementText).join("、") || "未声明"}</dd></div><div><dt>编辑时运行</dt><dd>{script.runOnEdit ? "是" : "否"}</dd></div></dl>
+                <div className="content-preview-heading"><strong>{script.name}</strong><span className="status-disabled">{translate("已禁用")}</span></div>
+                <code className="regex-source">{script.findRegexPreview || translate("（未提供查找表达式）")}</code>
+                <dl><div><dt>{translate("卡内状态")}</dt><dd>{translate(script.sourceDisabled ? "停用" : "启用")}</dd></div><div><dt>{translate("作用阶段")}</dt><dd>{script.placements.map(value => translate(placementText(value))).join("、") || translate("未声明")}</dd></div><div><dt>{translate("编辑时运行")}</dt><dd>{translate(script.runOnEdit ? "是" : "否")}</dd></div></dl>
               </li>
             ))}
           </ol>
@@ -175,10 +179,10 @@ export function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   );
 }
 
-export function Metric({ label, value }: { label: string; value: number }) {
+export function Metric({ label, value, locale }: { label: string; value: number; locale?: string }) {
   return (
     <div className="metric">
-      <strong>{value}</strong>
+      <strong>{locale ? value.toLocaleString(locale) : value}</strong>
       <span>{label}</span>
     </div>
   );

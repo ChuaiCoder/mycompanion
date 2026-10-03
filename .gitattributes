@@ -1,0 +1,19 @@
+* text=auto eol=lf
+# Preserve the exact bytes recorded by upstream manifests and frozen oracles.
+# Authored source/docs still use LF. Re-running an importer must not silently
+# invalidate its readable source, embedded module string and adapted SHA.
+packages/macro-engine/src/** -text
+apps/local-service/upstream-slash/** -text
+apps/local-service/src/*upstream*.ts -text
+apps/local-service/src/image-header-upstream/** -text
+apps/local-service/src/character-byaf-schemas.ts -text
+apps/local-service/src/character-byaf-LICENSE.txt -text
+apps/local-service/src/vector-metric-LICENSE.txt -text
+apps/local-service/src/fixtures/*-upstream-reference.json -text
+*.zip -text
+*.png -text
+*.jpg -text
+*.jpeg -text
+*.webp -text
+*.exe -text
+*.tar.gz -text

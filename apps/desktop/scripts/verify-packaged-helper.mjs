@@ -1,5 +1,6 @@
 import { verifyHelperPromptViewer } from './verify-helper-prompt-viewer.mjs';
 import { verifyHelperMacroLifecycle } from './verify-helper-macro-lifecycle.mjs';
+import { verifyHelperHttp } from './verify-helper-http.mjs';
 // Runs byte-unchanged Tavern Helper against the actual portable EXE in a disposable profile.
 // The helper is installed only into that profile, never into the release artifact.
 import assert from 'node:assert/strict';
@@ -17,10 +18,12 @@ import { buildApp } from '../../local-service/dist/app.js';
 import { RuntimeRepository } from '../../local-service/dist/runtime-repository.js';
 import { verifyHelperScriptsBeforeReload, verifyHelperScriptsAfterReload } from './verify-helper-scripts.mjs';
 import { seedHelperScopes, verifyHelperScopesBeforeReload, verifyHelperScopesAfterReload } from './verify-helper-scopes.mjs';
+import { bindPackagedArtifacts, assertPackagedArtifactsUnchanged } from './packaged-artifact-binding.mjs';
+import { ownedProcessTree, processCreationTime } from './owned-process-tree.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const labelIndex = process.argv.indexOf('--report-label');
-const reportLabel = labelIndex >= 0 ? process.argv[labelIndex + 1] : '';
+const reportLabel = labelIndex >= 0 ? process.argv[labelIndex + 1] : new Date().toISOString().replace(/[^a-z0-9]/gi, '-').toLowerCase();
 assert(labelIndex < 0 || /^[a-z0-9-]+$/.test(reportLabel ?? ''), 'Invalid report label');
 const exeIndex = process.argv.indexOf('--exe');
 assert(exeIndex >= 0 && process.argv[exeIndex + 1], 'Pass --exe <portable candidate>');
@@ -29,6 +32,7 @@ const verifyScripts = process.argv.includes('--scripts');
 const verifyViewer = process.argv.includes('--prompt-viewer');
 const verifyParameters = process.argv.includes('--generation-parameters');
 const verifyMacros = process.argv.includes('--macro-api');
+const verifyHttpContract = process.argv.includes('--http-contract');
 const providerBodies = [];
 const verifyScopes = process.argv.includes('--scopes');
 assert(existsSync(executable), 'Portable EXE does not exist');
@@ -38,10 +42,13 @@ const helperRoot = resolve(helperIndex >= 0 ? process.argv[helperIndex + 1] :
 const profile = mkdtempSync(join(tmpdir(), 'mycompanion-packaged-helper-'));
 const reportPath = join(root, '.cache/reports', reportLabel ? 'packaged-'+reportLabel+'-verification.json' : verifyViewer ? 'packaged-helper-prompt-viewer-verification.json' : verifyScopes ? 'packaged-helper-scopes-verification.json' : verifyScripts ? 'packaged-helper-scripts-verification.json' : 'packaged-untouched-helper-verification.json');
 const expectedHash = 'f2df4136516e5a9a13dd1a50414bd423227d745d8bc25c5e19ead2c3b8afd799';
-const report = {passed:false, executable, profile, helperRoot, stages:[], runs:[], providerRequests:0, errors:[]};
+const identity = await bindPackagedArtifacts(process.argv, executable, true);
+assert(!existsSync(reportPath), 'Report already exists; use a new --report-label');
+const report = {passed:false, ...identity, profile, helperRoot, fixtureSeedOrigin:'Workspace service only seeds the disposable fixture profile; tested runtime is the actual candidate EXE', stages:[], runs:[], providerRequests:0, errors:[]};
 let provider, candidate;
+let launcherIdentity, ownedProcesses = [];
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
-const deadline = Date.now() + 180_000;
+const deadline = Date.now() + (verifyHttpContract ? 600_000 : 180_000);
 const exec = promisify(execFile);
 async function processes() {
   const { stdout } = await exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command',
@@ -50,9 +57,11 @@ async function processes() {
   return JSON.parse(stdout);
 }
 async function captureChildren(pid) {
-  const all = await processes(), ids = new Set([pid]);
-  for (let i = 0; i < all.length; i++) for (const process of all) if (ids.has(process.ParentProcessId)) ids.add(process.ProcessId);
-  return all.filter(process => ids.has(process.ProcessId));
+  const all = await processes();
+  if (!launcherIdentity || launcherIdentity.ProcessId !== pid || !all.some(process => process.ProcessId === launcherIdentity.ProcessId
+    && process.CreationDate === launcherIdentity.CreationDate
+    && resolve(process.ExecutablePath ?? '').toLowerCase() === executable.toLowerCase())) return ownedProcesses;
+  return ownedProcessTree(all, launcherIdentity);
 }
 
 async function filesUnder(directory) {
@@ -103,6 +112,7 @@ async function seedProfile(providerPort) {
     const runtime = new RuntimeRepository(database);
     runtime.installCodePlugin({manifest,files,plugin:{
       id:'js-slash-runner',kind:'sillytavern-js',displayName:manifest.display_name,
+      extensionName:'JS-Slash-Runner',installationScope:'local',
       version:manifest.version,author:manifest.author,license:'PolyForm Noncommercial 1.0.0',
       js:manifest.js,css:manifest.css,warnings:[],fileCount:files.size,
       totalBytes:[...files.values()].reduce((total,file) => total + file.length,0),
@@ -111,14 +121,31 @@ async function seedProfile(providerPort) {
   } finally { database.close(); }
 }
 
-async function launch(phase) {
+async function launch(phase, {keepOpen=false} = {}) {
   const portFile = join(profile, 'DevToolsActivePort');
   await unlink(portFile).catch(error => { if (error.code !== 'ENOENT') throw error; });
   candidate = spawn(executable, [
     `--user-data-dir=${profile}`, '--remote-debugging-port=0',
     '--remote-debugging-address=127.0.0.1', '--no-first-run',
   ], {windowsHide:true,stdio:'ignore'});
-  const run = {phase,pid:candidate.pid}; report.runs.push(run);
+  const run = {phase,pid:candidate.pid,launcherIdentitySamples:[]}; report.runs.push(run);
+  ownedProcesses = [];
+  launcherIdentity = undefined;
+  const identityStarted=Date.now();
+  do {
+    const observed=(await processes()).find(process=>process.ProcessId===candidate.pid);
+    let creationTime;
+    try { if(observed)creationTime=processCreationTime(observed.CreationDate); } catch { /* An incomplete CIM row is not ownership evidence. */ }
+    run.launcherIdentitySamples.push({elapsedMs:Date.now()-identityStarted,visible:Boolean(observed),
+      ...(observed ? {CreationDate:observed.CreationDate,ExecutablePath:observed.ExecutablePath} : {})});
+    if(observed && Number.isFinite(creationTime) && typeof observed.ExecutablePath==='string'
+      && resolve(observed.ExecutablePath).toLowerCase()===executable.toLowerCase()) {launcherIdentity=observed;break;}
+    if(Date.now()-identityStarted>=5000)break;
+    await delay(250);
+  } while(true);
+  assert(launcherIdentity, 'Candidate launcher process identity could not be verified');
+  run.launcherIdentity=launcherIdentity;
+  ownedProcesses = await captureChildren(candidate.pid);
   const port = await waitFor(async () => {
     try { return Number((await readFile(portFile,'utf8')).split('\n')[0]); } catch { return 0; }
   }, 90_000);
@@ -127,6 +154,7 @@ async function launch(phase) {
     const tabs = await fetch(debuggerOrigin + '/json/list', {signal:AbortSignal.timeout(2000)}).then(r => r.json());
     return tabs.find(tab => tab.type === 'page' && /^http:\/\/127\.0\.0\.1:\d+\/?$/.test(tab.url));
   });
+  run.origin = new URL(target.url).origin;
   const socket = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((resolve,reject) => { socket.addEventListener('open',resolve,{once:true}); socket.addEventListener('error',reject,{once:true}); });
   let nextId = 0;
@@ -233,10 +261,11 @@ async function launch(phase) {
     await verifyHelperPromptViewer(scriptWindow,waitFor,remoteService,providerBodies,run.promptViewer,'正式包助手回复');
     report.stages.push('portable-original-prompt-viewer-refresh-dry-run-mutation-and-stop-'+phase);
   }
+  const close = async () => {
   await evaluate(`import('/plugin-runtime/desktop-host.js').then(host=>host.flush())`);
   run.statuses = await evaluate(`import('/plugin-runtime/desktop-host.js').then(host=>host.getStatuses())`);
   assert.equal(run.statuses.host,undefined);
-  run.ownedProcesses = await captureChildren(candidate.pid);
+  run.ownedProcesses = ownedProcesses = await captureChildren(candidate.pid);
   const closeStarted = Date.now();
   const closeCommand = send('Page.close').then(() => { run.closeCommand = 'acknowledged'; }, error => { run.closeCommandError = error.message; });
   run.shutdown = [];
@@ -262,6 +291,9 @@ async function launch(phase) {
   assert.equal(run.serviceReachableAfterEngineExit, false, 'Service remained reachable after process exit');
   socket.close();
   candidate = undefined;
+  };
+  if (keepOpen) return {evaluate,close,origin:run.origin,run};
+  await close();
 }
 
 try {
@@ -282,12 +314,37 @@ try {
   });
   await new Promise(resolve => provider.listen(0,'127.0.0.1',resolve));
   await seedProfile(provider.address().port);
-  for (const phase of ['initial','restart']) {
-    assert(Date.now() < deadline,'Packaged helper verification timed out');
-    await launch(phase);
+  if (verifyHttpContract) {
+    // Workspace imports are used only by seedProfile above. Every evaluation,
+    // HTTP request and restart below targets the same bound portable EXE.
+    let active = await launch('initial',{keepOpen:true}), restartOrdinal=0;
+    const restart = async () => {
+      assert(Date.now() < deadline,'Packaged helper HTTP verification timed out');
+      const previousOrigin = active.origin;
+      await active.close();
+      await assertPackagedArtifactsUnchanged(identity);
+      active = await launch(`http-restart-${++restartOrdinal}`,{keepOpen:true});
+      assert.notEqual(active.origin,previousOrigin,'Full EXE restart must use a different service port');
+      assert.equal(await fetch(previousOrigin,{signal:AbortSignal.timeout(1500)}).then(()=>true,()=>false),false,'Previous candidate service remained reachable after restart');
+      active.run.previousOrigin = previousOrigin;
+      return {previousOrigin,origin:active.origin};
+    };
+    report.httpContract = await verifyHelperHttp({evaluate:source=>active.evaluate(source),restart,sourceElectronOnly:false});
+    assert.equal(report.httpContract.sourceElectronOnly,false);
+    assert.equal(report.httpContract.passed,true,report.httpContract.error);
+    assert.equal(restartOrdinal,4,'HTTP contract must perform all four full EXE restarts');
+    await active.close();
+    assert.equal(report.errors.length,0,'Actual candidate helper HTTP runtime errors: '+JSON.stringify(report.errors));
+    report.stages.push('portable-untouched-helper-extension-http-git-dual-scope-failure-recovery-and-jsonl-four-full-restarts');
+  } else {
+    for (const phase of ['initial','restart']) {
+      assert(Date.now() < deadline,'Packaged helper verification timed out');
+      await launch(phase);
+    }
   }
   if (verifyViewer) assert(report.providerRequests >= (verifyScripts ? 2 : 1) + 4);
   else assert.equal(report.providerRequests,(verifyScripts ? 2 : 1)+(verifyParameters?1:0)+(verifyMacros?4:0));
+  await assertPackagedArtifactsUnchanged(identity);
   report.passed=true;
   console.log(JSON.stringify({passed:true,stages:report.stages,providerRequests:report.providerRequests,
     executableSha256:report.executableSha256}));
@@ -297,10 +354,14 @@ try {
   process.exitCode=1;
 } finally {
   if (candidate?.pid) {
-    const stopped = spawn('taskkill',['/PID',String(candidate.pid),'/T','/F'],{windowsHide:true,stdio:'ignore'});
-    await new Promise(resolve => stopped.once('close',resolve));
+    ownedProcesses = await captureChildren(candidate.pid).catch(() => ownedProcesses);
+    report.failedOwnedProcesses = ownedProcesses;
+    const current = await processes().catch(() => []);
+    for (const child of [...ownedProcesses].reverse()) if (current.some(process => process.ProcessId === child.ProcessId && process.CreationDate === child.CreationDate)) {
+      await exec('powershell.exe',['-NoProfile','-NonInteractive','-Command',`Stop-Process -Id ${child.ProcessId} -ErrorAction SilentlyContinue`],{windowsHide:true}).catch(()=>{});
+    }
   }
   if (provider) { provider.closeAllConnections(); await new Promise(resolve => provider.close(resolve)); }
   await mkdir(dirname(reportPath),{recursive:true});
-  await writeFile(reportPath,JSON.stringify(report,null,2));
+  await writeFile(reportPath,JSON.stringify(report,null,2), { flag:'wx' });
 }

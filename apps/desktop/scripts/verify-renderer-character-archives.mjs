@@ -10,6 +10,7 @@ import { parseCharacterCardPngDocument } from '@mycompanion/character-card';
 import { app, BrowserWindow, nativeImage } from 'electron';
 import { bindBrowserPort, buildApp } from '../../local-service/dist/app.js';
 import { parseCharacterArchive } from '../../local-service/dist/character-archive.js';
+import { inlineCharacterAssetPath } from '../../local-service/dist/character-inline-assets.js';
 import { installDesktopCloseGuard } from '../dist/desktop-close.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
@@ -174,6 +175,44 @@ async function verify() { try {
   const byafArchive = await parseCharacterArchive((await service.inject({ method: 'GET', url: '/api/characters/' + byafRole.id + '/export?format=charx' })).rawPayload);
   for (const [path, bytes] of byaf.files) assert.deepEqual(byafArchive.assets.get(path), bytes);
   recordStage('native-byaf-full-backup-and-real-overwrite-restore-preserve-two-stories-swipes-and-all-source-files');
+  const inlinePng = nativeImage.createFromBuffer(icon).toPNG(), inlineUri = 'data:image/png;base64,' + inlinePng.toString('base64');
+  const inlineAudioUri = 'data:audio/wav;base64,' + audio.toString('base64');
+  const inlineCard = structuredClone(card); inlineCard.data.name = 'Inline data URI renderer';
+  inlineCard.data.assets = [{ type: 'icon', name: 'main', ext: 'png', uri: inlineUri }, { type: 'audio', name: 'greeting', ext: 'wav', uri: inlineAudioUri }];
+  await evaluate(`nav('角色库');await choose(${JSON.stringify(Buffer.from(JSON.stringify(inlineCard)).toString('base64'))},'inline-data-uri.json');await wait(()=>document.querySelector('#preview-title')?.textContent==='Inline data URI renderer','Actual inline JSON preview');check(document.querySelector('.preview-inspector').textContent.includes('实际识别 2 个文件'),'Both inline assets actually recognized');button('确认导入').click();await wait(()=>document.querySelector('#character-detail-title')?.textContent==='Inline data URI renderer','Actual inline card imported');`);
+  const inlineRole = (await service.inject({ method: 'GET', url: '/api/characters' })).json().items.find(item => item.name === inlineCard.data.name);
+  await evaluate(`await wait(()=>[...document.images].some(image=>image.src.includes('/characters/'+encodeURIComponent(${JSON.stringify(inlineRole.avatar)}))&&image.complete&&image.naturalWidth===${nativeImage.createFromBuffer(inlinePng).getSize().width}),'Actual inline avatar decoded');`);
+  assert.deepEqual((await service.inject({ method: 'GET', url: '/characters/' + inlineRole.avatar })).rawPayload, inlinePng);
+  const inlineJson = await download(`document.querySelector('a[href="/api/characters/${inlineRole.id}/export?format=json"]').click();`);
+  assert.deepEqual(JSON.parse(readFileSync(inlineJson.path, 'utf8')), inlineCard);
+  const inlineCharx = await download(`document.querySelector('a[href="/api/characters/${inlineRole.id}/export?format=charx"]').click();`);
+  const inlineArchive = await parseCharacterArchive(readFileSync(inlineCharx.path));
+  assert.deepEqual(inlineArchive.card, inlineCard);
+  for (const [uri, extension, bytes] of [[inlineUri, 'png', inlinePng], [inlineAudioUri, 'wav', audio]]) assert.deepEqual(inlineArchive.assets.get(inlineCharacterAssetPath(uri, extension)), bytes);
+  const inlinePngDownload = await download(`document.querySelector('a[href="/api/characters/${inlineRole.id}/export?format=png"]').click();`);
+  const inlinePngCard = parseCharacterCardPngDocument(readFileSync(inlinePngDownload.path));
+  for (const [uri, extension, bytes] of [[inlineUri, 'png', inlinePng], [inlineAudioUri, 'wav', audio]]) {
+    const path = inlineCharacterAssetPath(uri, extension); assert(inlinePngCard.card.data.assets.some(asset => asset.uri === '__asset:' + path)); assert.deepEqual(Buffer.from(inlinePngCard.assets.get(path)), bytes);
+  }
+  recordStage('actual-inline-data-uri-json-file-preview-avatar-and-native-json-png-charx-exact-asset-downloads');
+  const inlineBackup = await download(`document.querySelector('button[aria-label="设置"]').click();await wait(()=>button('导出完整备份'),'Inline backup entry');button('导出完整备份').click();`);
+  const inlineBackupPayload = JSON.parse(readFileSync(inlineBackup.path, 'utf8'));
+  const inlineBackupCharacter = inlineBackupPayload.characters.find(item => item.id === inlineRole.id);
+  assert.equal(inlineBackupCharacter.assets[inlineCharacterAssetPath(inlineUri, 'png')], inlinePng.toString('base64'));
+  assert.equal(inlineBackupCharacter.assets[inlineCharacterAssetPath(inlineAudioUri, 'wav')], audio.toString('base64'));
+  await evaluate(`nav('角色库');await wait(()=>document.querySelector('#character-detail-title')?.textContent==='Inline data URI renderer','Inline selected role');button('编辑角色').click();await wait(()=>document.querySelector('#form_create [name=avatar_url]').value===${JSON.stringify(inlineRole.avatar)},'Inline actual editor');edit(document.querySelector('#form_create [name=description]'),'Changed inline card after backup');button('保存角色').click();await wait(async()=>(await fetch('/api/characters/${inlineRole.id}').then(response=>response.json())).description==='Changed inline card after backup','Actual card modified before restore');document.querySelector('button[aria-label="设置"]').click();`);
+  const inlineRestoredLoad = new Promise(resolve => window.webContents.once('did-finish-load', resolve));
+  await evaluate(`await choose(${JSON.stringify(Buffer.from(JSON.stringify(inlineBackupPayload)).toString('base64'))},'inline-full-backup.json',document.querySelector('input[aria-label="选择备份文件"]'));await wait(()=>document.querySelector('select[aria-label="恢复冲突处理"]'),'Inline actual restore strategy');edit(document.querySelector('select[aria-label="恢复冲突处理"]'),'overwrite');await new Promise(requestAnimationFrame);await wait(()=>button('确认恢复')&&!button('确认恢复').disabled,'Inline restore ready');button('确认恢复').click();`);
+  await inlineRestoredLoad; await ready();
+  const restoredInlineArchive = await parseCharacterArchive((await service.inject({ method: 'GET', url: `/api/characters/${inlineRole.id}/export?format=charx` })).rawPayload);
+  assert.deepEqual(restoredInlineArchive.card, inlineCard); assert.deepEqual(restoredInlineArchive.assets, inlineArchive.assets);
+  recordStage('native-inline-full-backup-and-real-ui-overwrite-restore-keep-original-uri-and-all-bytes');
+  const inlineCloseGuard = installDesktopCloseGuard(window, { beforeClose: async () => {}, onError: error => { throw error; } }); assert.equal(await inlineCloseGuard.requestClose(), true);
+  const inlineOrigin = origin; await service.close(); await startService(); assert.notEqual(origin, inlineOrigin); await openWindow();
+  await evaluate(`nav('角色库');await wait(()=>[...document.querySelectorAll('.character-row')].some(row=>row.textContent.includes('Inline data URI renderer')),'Inline role in reopened real library');[...document.querySelectorAll('.character-row')].find(row=>row.textContent.includes('Inline data URI renderer')).click();await wait(()=>document.querySelector('#character-detail-title')?.textContent==='Inline data URI renderer'&&[...document.images].some(image=>image.src.includes('/characters/'+encodeURIComponent(${JSON.stringify(inlineRole.avatar)}))&&image.complete&&image.naturalWidth===${nativeImage.createFromBuffer(inlinePng).getSize().width}),'Inline actual avatar after new port restart');`);
+  assert.deepEqual((await service.inject({ method: 'GET', url: '/characters/' + inlineRole.avatar })).rawPayload, inlinePng);
+  assert.deepEqual((await parseCharacterArchive((await service.inject({ method: 'GET', url: `/api/characters/${inlineRole.id}/export?format=charx` })).rawPayload)).assets, inlineArchive.assets);
+  recordStage('actual-inline-card-close-new-service-port-restart-reopens-original-avatar-uri-and-asset-bytes');
   const report = { passed: true, checkedAt: new Date().toISOString(), label, profile, stages, downloads, expectedArtworkType: 'image/jpeg', completeC01: false };
   await writeFile(reportPath, JSON.stringify(report, null, 2), { flag: 'wx' }); console.log(JSON.stringify({ passed: report.passed, checkedAt: report.checkedAt, label, stages: stages.length, reportPath }));
 } catch (error) {

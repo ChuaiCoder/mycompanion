@@ -159,15 +159,15 @@
       "path": "upstream-slash/DefaultCommands.js",
       "upstreamPath": "public/scripts/slash-commands.js",
       "upstreamSha256": "3da6aa888a52d09fd5d54eadee1724b7c3b7dbc208a3d56fe98c7d23d86fcde3",
-      "adaptedSha256": "e6eb650c85b3cbe78017e97f32eb5cc3e57a3eb798febaf0877b92c33c5a3ef0",
+      "adaptedSha256": "35e2ca507a9662e3befc98fb69e2907ee7560a18927ae02bb4a991320b67a330",
       "license": "AGPL-3.0-only",
-      "adaptation": "Extract original run/abort/delay/pass/echo callbacks and command descriptors. Only delay waits add abort-listener/timer cleanup without changing successful output. Other native/UI command registrations remain explicitly outside this first execution-core tranche."
+      "adaptation": "Extract 27 original complete default command descriptors including inject/listinjects/flushinject. Keep popup/injection/filter/rehydration callback text unchanged within dependency factories; scoped native dependencies own cancellation, paired ephemeral listeners and canonical metadata/prompt restoration. Filter closures receive per-evaluation controllers and correct awaited boolean evaluation at all positions (upstream IN_CHAT async Array.filter bug intentionally not copied). Live native adapters provide composer, message queries, generation stop, reload, saving and tokenization. Only delay waits add abort-listener/timer cleanup without changing successful output. Remaining native/UI registrations are outside this tranche."
     },
     {
       "path": "upstream-slash/SlashUtils.js",
       "upstreamPath": "public/scripts/utils.js",
       "upstreamSha256": "2a2cfe240d5a84ce2e09ba053db6c0c71473b6406173f614f3521d89f50ada61",
-      "adaptedSha256": "2e01afb05eb7133aa8b114931496b58f0a2b12d32c2f0080866fffcf79bc0569",
+      "adaptedSha256": "e4c08118a3b20fe150c3368fe62f8c2ced1b762a22a12013ba039e986b0a8e75",
       "license": "AGPL-3.0-only",
       "adaptation": "Extract unmodified conversion, boolean, regex, UUID and delay utility implementations used by the execution core."
     },
@@ -175,9 +175,9 @@
       "path": "upstream-slash/SlashCommandCommonEnumsProvider.js",
       "upstreamPath": "public/scripts/slash-commands/SlashCommandCommonEnumsProvider.js",
       "upstreamSha256": "b0585af8d51c8ae8c6f8d38234069726dbabc2255d60083ca9a809651ed6b890",
-      "adaptedSha256": "d1df2d92566ca5221758acf8d54babf75d0de15d340372597e6437467a57371b",
+      "adaptedSha256": "42a990552081ba79353e8f7cd49d78c855a8d1042805c16f051c070e262ff9bf",
       "license": "AGPL-3.0-only",
-      "adaptation": "Extract unmodified icons and boolean/variable/number/type/message enum providers needed by the selected command families; UI/entity providers remain outside this tranche."
+      "adaptation": "Extract unmodified icons and boolean/variable/number/type/message/injection enum providers needed by selected command families; UI/entity providers remain outside this tranche."
     },
     {
       "path": "upstream-slash/SlashExecution.js",
@@ -191,9 +191,9 @@
       "path": "upstream-slash/SlashCommandReturnHelper.js",
       "upstreamPath": "public/scripts/slash-commands/SlashCommandReturnHelper.js",
       "upstreamSha256": "fa1f733d000f9774dc7f84c5e372c9e5aca84fdb7b86c0dc90f634ff108c5b24",
-      "adaptedSha256": "a6029de29a57b5b3a75924d19e43de2f0a276ffdedeb10542a7605aaa4688f06",
+      "adaptedSha256": "acca621758aa4d8d3ef67fc04cf40bc25a55edbd5dff81f5567e8eb8c9f1b4f7",
       "license": "AGPL-3.0-only",
-      "adaptation": "Keep return dispatch/converters/options. Route Markdown to the existing renderer and system-message output to native chat/persistence; do not add a parallel renderer."
+      "adaptation": "Keep return dispatch/converters/options in a dependency factory so listinjects popup/system-message consumers retain invocation-local lifecycle bindings. Explicitly import toastr previously provided by upstream globals. Route Markdown to the existing renderer and system-message output to native chat/persistence; do not add a parallel renderer."
     }
   ]
 }

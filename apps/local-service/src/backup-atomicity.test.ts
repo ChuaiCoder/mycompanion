@@ -44,6 +44,9 @@ function seed(sources: ReturnType<typeof setup>, label: string): BackupPayload {
   runtime.worldInfo.save("atomic-book", { entries: { 1: { uid: 1, key: [label], content: label, constant: true, position: 1, disable: false } } });
   runtime.worldInfo.saveSettings({ ...runtime.worldInfo.settings(), globalSelect: ["atomic-book"], world_info_depth: label === "Existing" ? 2 : 3 });
   runtime.saveProvider({ kind: "openai-compatible", baseUrl: "https://example.com/v1", model: label, clearApiKey: false, temperature: 0.5, maxTokens: 256, contextLimitTokens: 4096 }, "fixture-encrypted-secret");
+  const auxiliary = runtime.providers.create(label + " auxiliary", { kind: "openai-compatible", baseUrl: "https://aux.example.com/v1",
+    model: label + " auxiliary model", clearApiKey: false, temperature: 0.6, maxTokens: 128, contextLimitTokens: 8192 }, "fixture-auxiliary-secret");
+  runtime.providers.assign({ summary: auxiliary.id, extraction: auxiliary.id, embedding: auxiliary.id });
   return assembleBackupPayload(sources);
 }
 function snapshot(database: DatabaseSync) {
@@ -68,18 +71,44 @@ function changedBackup(original: BackupPayload): BackupPayload {
   incoming.worldbooks![0]!.data.entries["1"]!.content = "Restored world info";
   incoming.worldInfoSettings = { globalSelect: [], world_info_depth: 7 };
   incoming.providerSettings!.model = "Restored provider";
+  const connections = incoming.providerProfiles!;
+  connections.profiles[0]!.settings.model = "Restored provider";
+  connections.profiles[1]!.name = "Restored auxiliary";
+  connections.profiles[1]!.settings.model = "Restored auxiliary model";
+  connections.tasks = { ...connections.tasks, summary: connections.tasks.chat, extraction: connections.tasks.chat };
   return checksum(incoming);
 }
 
+function assertProvidersRestored(payload: BackupPayload, runtime: RuntimeRepository) {
+  expect(runtime.providers.assignments()).toEqual(payload.providerProfiles!.tasks);
+  for (const incoming of payload.providerProfiles!.profiles) {
+    const restored = runtime.providers.get(incoming.id)!;
+    expect(restored.name).toBe(incoming.name);
+    expect({ ...restored.settings, hasApiKey: false }).toEqual({ ...incoming.settings, hasApiKey: false });
+  }
+  expect(runtime.getEncryptedApiKey("default")).toBe("fixture-encrypted-secret");
+}
+function providerWriteEvent(section: string, mode: string, payload: BackupPayload): { event: "INSERT" | "UPDATE"; condition: string } {
+  if (section === "provider_task_assignments") return { event: "UPDATE", condition: "NEW.singleton = 1" };
+  if (section === "provider_profiles") {
+    const id = mode === "new" ? payload.providerProfiles!.profiles[1]!.id : payload.providerProfiles!.profiles[0]!.id;
+    return { event: mode === "new" ? "INSERT" : "UPDATE", condition: `NEW.id = '${id.replaceAll("'", "''")}'` };
+  }
+  return { event: "INSERT", condition: "1" };
+}
+
 const sections = ["characters", "conversations", "messages", "memories", "plugins", "code_plugins", "code_plugin_files",
-  "stage_summaries", "conversation_settings", "retained_character_chats", "extension_settings", "user_avatars", "world_info_books", "world_info_settings", "provider_settings"];
+  "stage_summaries", "conversation_settings", "retained_character_chats", "extension_settings", "user_avatars", "world_info_books", "world_info_settings", "provider_profiles", "provider_task_assignments"];
 it.each(sections.flatMap(section => ["new", "overwrite"].map(mode => ({ section, mode }))))(
   "rolls back every section after $section fails during $mode restore", ({ section, mode }) => {
     const target = setup(), beforeBackup = seed(target, "Existing");
     const payload = mode === "new" ? seed(setup(), "Incoming") : changedBackup(beforeBackup);
     expect(previewRestore(payload, target, "overwrite").valid).toBe(true);
     const before = snapshot(target.database);
-    target.database.exec(`CREATE TRIGGER reject_restore BEFORE INSERT ON ${section} BEGIN SELECT RAISE(ABORT, 'restore fixture failure'); END`);
+    const write = providerWriteEvent(section, mode, payload);
+    if (section === "provider_profiles" && mode === "new") expect(target.runtime.providers.get(payload.providerProfiles!.profiles[1]!.id)).toBeUndefined();
+    if (section === "provider_profiles" && mode === "overwrite") expect(target.runtime.providers.get(payload.providerProfiles!.profiles[0]!.id)).toBeDefined();
+    target.database.exec(`CREATE TRIGGER reject_restore BEFORE ${write.event} ON ${section} WHEN ${write.condition} BEGIN SELECT RAISE(ABORT, 'restore fixture failure'); END`);
     expect(() => applyRestore(payload, target, "overwrite")).toThrow("restore fixture failure");
     expect(snapshot(target.database)).toEqual(before);
     target.database.exec("DROP TRIGGER reject_restore");
@@ -88,6 +117,8 @@ it.each(sections.flatMap(section => ["new", "overwrite"].map(mode => ({ section,
     expect(target.characters.get(payload.characters[0]!.id)?.description).toBe(mode === "new" ? "Incoming" : "Restored card");
     expect(target.runtime.getConversation(payload.conversations[0]!.id)?.messages[0]?.content).toBe(payload.conversations[0]!.messages[0]!.content);
     expect(Buffer.from(target.runtime.avatars.get("atomic-user.png")!.bytes)).toEqual(Buffer.from(payload.userAvatars![0]!.bytesBase64, "base64"));
+    assertProvidersRestored(payload, target.runtime);
+    for (const profile of beforeBackup.providerProfiles!.profiles) expect(target.runtime.getEncryptedApiKey(profile.id)).toBe(profile.id === "default" ? "fixture-encrypted-secret" : "fixture-auxiliary-secret");
   },
 );
 
@@ -104,20 +135,49 @@ it("rolls back new sections under skip policy while keeping all prior records", 
   expect(target.runtime.getCodePluginBackupEntry("atomic-code")?.files).toEqual(original.codePlugins[0]!.files);
 });
 
-it("rolls back all sections when the final commit fails a deferred constraint", () => {
-  const target = setup(), payload = changedBackup(seed(target, "Existing"));
+it.each(["provider_profiles", "provider_task_assignments"].flatMap(section => ["new", "overwrite"].map(mode => ({ section, mode }))))(
+  "rolls back all sections when $section $mode writes make the final commit fail a deferred constraint", ({ section, mode }) => {
+  const target = setup(), original = seed(target, "Existing"), payload = mode === "new" ? seed(setup(), "Incoming") : changedBackup(original);
+  const write = providerWriteEvent(section, mode, payload);
   target.database.exec(`
     CREATE TABLE restore_fixture_parent (id INTEGER PRIMARY KEY);
     CREATE TABLE restore_fixture_child (parent_id INTEGER REFERENCES restore_fixture_parent(id) DEFERRABLE INITIALLY DEFERRED);
-    CREATE TRIGGER reject_commit AFTER INSERT ON provider_settings BEGIN INSERT INTO restore_fixture_child VALUES (123); END;
-    CREATE TRIGGER reject_commit_update AFTER UPDATE ON provider_settings BEGIN INSERT INTO restore_fixture_child VALUES (123); END;
+    CREATE TRIGGER reject_commit AFTER ${write.event} ON ${section} WHEN ${write.condition} BEGIN INSERT INTO restore_fixture_child VALUES (123); END;
   `);
   const before = snapshot(target.database);
   expect(() => applyRestore(payload, target, "overwrite")).toThrow(/FOREIGN KEY constraint failed/i);
   expect(snapshot(target.database)).toEqual(before);
-  target.database.exec("DROP TRIGGER reject_commit; DROP TRIGGER reject_commit_update");
+  target.database.exec("DROP TRIGGER reject_commit");
   expect(() => applyRestore(payload, target, "overwrite")).not.toThrow();
-  expect(target.runtime.getProvider().model).toBe("Restored provider");
+  assertProvidersRestored(payload, target.runtime);
+});
+
+it("migrates a real singleton database and restores an older backup without providerProfiles atomically, retaining local ciphertext", () => {
+  const payload = changedBackup(seed(setup(), "Incoming"));
+  delete payload.providerProfiles;
+  payload.providerSettings!.model = "Restored legacy backup";
+  checksum(payload);
+  const database = new DatabaseSync(":memory:"); databases.push(database);
+  database.exec("CREATE TABLE provider_settings(singleton INTEGER PRIMARY KEY,kind TEXT,base_url TEXT,model TEXT,api_key_ciphertext TEXT,temperature REAL,max_tokens INTEGER,updated_at TEXT)");
+  database.prepare("INSERT INTO provider_settings VALUES(1,?,?,?,?,?,?,?)").run("openai-compatible", "https://example.com/v1", "Legacy singleton", "legacy-local-ciphertext", 0.5, 256, timestamp);
+  const target = { database, characters: new CharacterRepository(database), runtime: new RuntimeRepository(database) };
+  expect(target.runtime.providers.list().profiles).toHaveLength(1);
+  expect(target.runtime.getProvider()).toMatchObject({ model: "Legacy singleton", contextLimitTokens: 32768, hasApiKey: true });
+  expect(target.runtime.getEncryptedApiKey()).toBe("legacy-local-ciphertext");
+  const before = snapshot(database);
+  database.exec("CREATE TRIGGER reject_legacy_restore BEFORE UPDATE ON provider_profiles WHEN NEW.id = 'default' BEGIN SELECT RAISE(ABORT, 'legacy restore failed'); END");
+  expect(() => applyRestore(payload, target, "overwrite")).toThrow("legacy restore failed");
+  expect(snapshot(database)).toEqual(before);
+  database.exec("DROP TRIGGER reject_legacy_restore");
+  expect(() => applyRestore(payload, target, "overwrite")).not.toThrow();
+  expect(target.runtime.getProvider()).toMatchObject({ model: "Restored legacy backup", contextLimitTokens: 4096, hasApiKey: true });
+  expect(target.runtime.getEncryptedApiKey()).toBe("legacy-local-ciphertext");
+  expect(target.runtime.providers.assignments()).toEqual({ chat: "default", summary: null, extraction: null, embedding: null });
+  expect(target.runtime.providers.list().profiles).toHaveLength(1);
+  expect(database.prepare("SELECT model,api_key_ciphertext FROM provider_settings WHERE singleton=1").get()).toEqual({ model: "Legacy singleton", api_key_ciphertext: "legacy-local-ciphertext" });
+  const restored = assembleBackupPayload(target);
+  expect(restored.providerProfiles!.profiles[0]!.settings.model).toBe("Restored legacy backup");
+  expect(JSON.stringify(restored)).not.toContain("legacy-local-ciphertext");
 });
 
 it("survives a real SQLITE_FULL rollback and reopens the prior data with its original attachment bytes", () => {

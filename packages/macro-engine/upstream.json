@@ -62,6 +62,13 @@
       "upstreamPath": "public/scripts/macros/engine/MacroEnvBuilder.js",
       "upstreamSha256": "95a3cfef74e2987120dfe124ae876339d99d75c950293106c9a671ef77498506",
       "adaptation": "Inject live host state instead of application globals; export constructible per-host builder instead of upstream singleton. Retain lazy fields, provider ordering and error isolation."
+    },
+    {
+      "path": "src/definitions/world-info-macros.js",
+      "upstreamPath": "public/scripts/macros/definitions/core-macros.js",
+      "upstreamSha256": "a45ced11240d0174b75f1cc31a17c4670236e96be92a7d2264cf9a0802c37a7f",
+      "adaptedSha256": "2f1822df1848297246d9ccd5c972a94b5087b7d9cdcf53e3916d6a81b387029d",
+      "adaptation": "Extract the exact outlet registration, including metadata and typed parser arguments. Bind only the extension prompt getter to env.extra.getOutletPrompt; do not recursively substitute its returned value."
     }
   ]
 }

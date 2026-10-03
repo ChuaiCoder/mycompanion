@@ -21,6 +21,7 @@ export interface NativeCharacterMacroEnvironment {
   characterFieldSources?: CharacterMacroFieldSources;
   collapseNewlines?: boolean;
   replaceCharacterCard?: boolean;
+  worldInfoOutlets?: Record<string, string>;
 }
 
 export interface MacroDraftSnapshot {
@@ -39,6 +40,7 @@ interface MacroContext {
   characterName: string;
   userName: string;
   model?: string;
+  dynamicMacros?: Record<string, string>;
   locale?: string;
   contextLimitTokens?: number;
   maxResponseTokens?: number;
@@ -68,6 +70,7 @@ export class MacroEvaluationSession {
   readonly #resolved = new Map<string, string>();
   readonly #characterFields = new Map<string, CharacterMacroFields>();
   #characterEnvironment: NativeCharacterMacroEnvironment = {};
+  #effectScope = 0;
   constructor(metadata: Record<string, unknown> = {}, settings: Record<string, unknown> = {}) {
     const values = macroVariableStores(metadata, settings);
     this.local = structuredClone(values.localVariables ?? {});
@@ -76,7 +79,7 @@ export class MacroEvaluationSession {
     this.stores = createVariableStores(() => this.local, () => this.global);
   }
   resolve(field: string, text: string, context: Parameters<typeof resolveMacros>[1]): string {
-    const key = JSON.stringify([field,text,context.characterName,context.userName,context.model,context.contextLimitTokens,context.maxResponseTokens,context.experimentalMacroEngine]);
+    const key = JSON.stringify([field,text,context.characterName,context.userName,context.model,context.contextLimitTokens,context.maxResponseTokens,context.experimentalMacroEngine,context.dynamicMacros,this.#characterEnvironment.worldInfoOutlets]);
     if (!this.#resolved.has(key)) this.#resolved.set(key, this.evaluate(text, context));
     return this.#resolved.get(key)!;
   }
@@ -91,9 +94,17 @@ export class MacroEvaluationSession {
     return resolveMacros(text, { ...this.#characterEnvironment, ...context, now: this.now,
       localVariables: this.local, globalVariables: this.global, variableStores: this.stores });
   }
+  /** Synchronous phases yield through the optional invocation effect boundary. */
+  invokeEffect(_kind: string, _payload: unknown): unknown { return undefined; }
+  createEffectScope(): string { return String(this.#effectScope++); }
   /** Sources are shared; each evaluation constructs a new eager/lazy field object. */
   bindCharacterEnvironment(environment: NativeCharacterMacroEnvironment): void {
-    this.#characterEnvironment = environment;
+    this.#characterEnvironment = { ...environment,
+      ...(environment.worldInfoOutlets === undefined && this.#characterEnvironment.worldInfoOutlets !== undefined
+        ? { worldInfoOutlets: this.#characterEnvironment.worldInfoOutlets } : {}) };
+  }
+  bindWorldInfoOutlets(outlets: Record<string, string>): void {
+    this.#characterEnvironment = { ...this.#characterEnvironment, worldInfoOutlets: structuredClone(outlets) };
   }
   snapshotDraft(): MacroDraftSnapshot {
     return { local: structuredClone(this.local), global: structuredClone(this.global), resolved: new Map(this.#resolved),
@@ -180,6 +191,7 @@ export function resolveMacros(
     characterName: string;
     userName?: string;
     model?: string;
+    dynamicMacros?: Record<string, string>;
     locale?: string;
     contextLimitTokens?: number;
     maxResponseTokens?: number;
@@ -218,6 +230,7 @@ export function resolveMacros(
     const read = (key: string, global: boolean) => stores[global ? "global" : "local"].get(key);
     const values = {
       names: { user, char, group: char, groupNotMuted: char, notChar: user },
+      ...(context.dynamicMacros === undefined ? {} : { dynamicMacros: context.dynamicMacros }),
       extra: {
         model: context.model, maxContext: context.contextLimitTokens, maxResponse: context.maxResponseTokens,
         maxPrompt: context.contextLimitTokens === undefined || context.maxResponseTokens === undefined ? undefined : context.contextLimitTokens - context.maxResponseTokens,
@@ -226,6 +239,7 @@ export function resolveMacros(
         variables: stores,
         parseMesExamples: parseExamples,
         isInstruct: false,
+        getOutletPrompt: (key: string) => Object.hasOwn(context.worldInfoOutlets ?? {}, key) ? context.worldInfoOutlets![key] : "",
       },
     };
     if (context.characterFieldSources) {
@@ -234,6 +248,7 @@ export function resolveMacros(
         getCharacterCardFieldsLazy: () => readFields() as unknown as Record<string, unknown> }));
       const environment = builder.buildFromRawEnv({ content: text, ...(context.original === undefined ? {} : { original: context.original }),
         replaceCharacterCard: context.replaceCharacterCard !== false,
+        ...(context.dynamicMacros === undefined ? {} : { dynamicMacros: context.dynamicMacros }),
         ...(context.postProcessFn === undefined ? {} : { postProcessFn: context.postProcessFn }) });
       Object.assign(environment.extra, values.extra);
       return MacroEngine.evaluate(text, environment);
@@ -257,12 +272,16 @@ export function resolveMacros(
     .replace(/\{\{newline\}\}/gi, () => post("\n"))
     .replace(/(?:\r?\n)*\{\{trim\}\}(?:\r?\n)*/gi, () => post(""))
     .replace(/\{\{noop\}\}/gi, () => post(""));
+  // Preserve the original environment's insertion order. Dynamic values
+  // override existing fields in place; newly introduced keys run after names.
+  // This phase follows variables/noop, so inserted variable macros never run.
+  const environment: Record<string, string | (() => string)> = Object.create(null);
   if (typeof context.original === "string") {
     let originalSubstituted = false;
-    result = result.replace(/{{original}}/gi, () => {
+    environment.original = () => {
       if (originalSubstituted) return "";
-      originalSubstituted = true; return post(context.original!);
-    });
+      originalSubstituted = true; return context.original!;
+    };
   }
   if (fields) {
     const cardValues: Record<string, string | (() => string)> = {
@@ -272,16 +291,16 @@ export function resolveMacros(
       mesExamplesRaw: fields.mesExamples, charVersion: fields.version, char_version: fields.version,
       charDepthPrompt: fields.charDepthPrompt, creatorNotes: fields.creatorNotes,
     };
-    for (const [name, value] of Object.entries(cardValues)) {
-      result = result.replace(new RegExp("{{" + name + "}}", "gi"), () => post(typeof value === "function" ? value() : value));
-    }
+    Object.assign(environment, cardValues);
   }
-  result = result
-    .replaceAll(/\{\{\s*char\s*\}\}/gi, () => post(context.characterName))
-    .replaceAll(/\{\{\s*user\s*\}\}/gi, () => post(context.userName ?? "User"));
-  result = result.replace(/{{(?:group|groupNotMuted|charIfNotGroup)}}/gi, () => post(context.characterName))
-    .replace(/{{notChar}}/gi, () => post(context.userName ?? "User"));
-  if (context.model !== undefined) result = result.replaceAll(/\{\{model\}\}/gi, () => post(context.model!));
+  Object.assign(environment, { user: context.userName ?? "User", char: context.characterName,
+    group: context.characterName, charIfNotGroup: context.characterName, groupNotMuted: context.characterName,
+    notChar: context.userName ?? "User" }, context.model === undefined ? {} : {model: context.model}, context.dynamicMacros);
+  for (const [name, value] of Object.entries(environment)) {
+    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const pattern = name === "user" || name === "char" ? "\\{\\{\\s*" + escaped + "\\s*\\}\\}" : "{{" + escaped + "}}";
+    result = result.replace(new RegExp(pattern, "gi"), () => post(typeof value === "function" ? value() : value));
+  }
   result = result.replace(/\{\{(maxPrompt(?:Tokens)?|maxContext(?:Tokens)?|maxResponse(?:Tokens)?)\}\}/gi,
     (match, kind: string) => {
       if (context.contextLimitTokens === undefined || context.maxResponseTokens === undefined) return match;
@@ -291,6 +310,8 @@ export function resolveMacros(
     });
   result = result.replace(/\{\{(date|time|weekday|isodate|isotime)\}\}/gi,
     (_match, kind: string) => post(tavernTimeValue(kind, now, context.locale)));
+  result = result.replace(/{{outlet::(.+?)}}/gi, (_match, key: string) =>
+    post(Object.hasOwn(context.worldInfoOutlets ?? {}, key.trim()) ? context.worldInfoOutlets![key.trim()]! : ""));
   result = result.replace(RANDOM_MACRO, (match, body: string) => {
     const trimmed = body.trim();
     if (!trimmed) return match;

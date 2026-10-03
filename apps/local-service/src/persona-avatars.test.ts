@@ -1,8 +1,10 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { runInNewContext } from "node:vm";
 import { afterEach, expect, it } from "vitest";
 import { buildApp } from "./app.js";
+import { compatibilityRuntimeSource } from "./plugin-runtime-host.js";
 
 const opened: ReturnType<typeof buildApp>[] = [];
 const directories: string[] = [];
@@ -37,6 +39,38 @@ it("persists uploaded persona avatars and serves them through the Tavern path af
   expect((await app.inject({ method: "POST", url: "/api/avatars/get" })).json()).toEqual(["Reader.png"]);
   expect((await app.inject({ method: "POST", url: "/api/avatars/delete", payload: { avatar: "Reader.png" } })).json()).toEqual({ result: "ok" });
   expect((await app.inject({ method: "GET", url: "/User%20Avatars/Reader.png" })).statusCode).toBe(404);
+});
+
+it("lets the served getRequestHeaders contract preserve the real FormData boundary for persona creation and replacement", async () => {
+  const served = compatibilityRuntimeSource.replace(/^import .*;\r?\n/gm, "")
+    .replace(/^export \{.*\}(?: from .*?)?;\r?\n/gm, "").replace(/^export /gm, "");
+  const { getRequestHeaders } = runInNewContext(served + "\n({getRequestHeaders})", {
+    extension_settings:{},bindChatContext:()=>{},variableRuntime:{},MacrosParser:{},
+    saveSettings:()=>{},saveSettingsDebounced:()=>{},saveChatConditional:()=>{},saveMetadata:()=>{},saveMetadataDebounced:()=>{},
+    substituteParams:(value:string)=>value,substituteParamsExtended:(value:string)=>value,
+    onExtensionSettingsSaved:()=>()=>{},window:new EventTarget(),console,
+  });
+  const app = buildApp(); opened.push(app);
+  const origin = await app.listen({host:"127.0.0.1",port:0});
+  const upload = async (bytes:Buffer) => {
+    const body = new FormData();
+    body.append("avatar", new Blob([new Uint8Array(bytes)], {type:"image/png"}), "Actual-Reader.png");
+    body.append("overwrite_name", "Actual-Reader.png");
+    return fetch(origin + "/api/avatars/upload", {method:"POST",headers:getRequestHeaders({omitContentType:true}),body});
+  };
+  const created = await upload(png);
+  expect(created.status, await created.clone().text()).toBe(200);
+  expect(await created.json()).toEqual({path:"Actual-Reader.png"});
+  expect(Buffer.from(await (await fetch(origin + "/User%20Avatars/Actual-Reader.png")).arrayBuffer())).toEqual(png);
+  const replacement = Buffer.concat([png,Buffer.from("REPLACED")]);
+  const replaced = await upload(replacement);
+  expect(replaced.status,await replaced.text()).toBe(200);
+  expect(Buffer.from(await (await fetch(origin + "/User%20Avatars/Actual-Reader.png")).arrayBuffer())).toEqual(replacement);
+  const deleted = await fetch(origin + "/api/avatars/delete", {
+    method:"POST",headers:getRequestHeaders(),body:JSON.stringify({avatar:"Actual-Reader.png"}),
+  });
+  expect(deleted.status,await deleted.text()).toBe(200);
+  expect((await fetch(origin + "/User%20Avatars/Actual-Reader.png")).status).toBe(404);
 });
 
 it("rejects invalid avatar names and non-image bytes without storing them", async () => {

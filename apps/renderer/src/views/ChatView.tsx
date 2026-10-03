@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
 import { MessageSurface } from "../message-surface";
 
 import type {
@@ -22,7 +23,11 @@ import {
   type MessageListRef,
 } from "../components";
 import { MemoryPanel } from "./MemoryPanel";
+import { MemoryRetrievalDiagnostics } from "./MemoryRetrievalDiagnostics";
+import { MessageTokenUsage, TokenAccountingDetails } from "./TokenAccountingDetails";
 import { renderMessageContent } from "../message-rendering";
+import { ReplyCandidates } from "./ReplyCandidates";
+import { GenerationDetails } from "./GenerationDetails";
 
 export interface ChatViewProps {
   generationControlsBusy: boolean;
@@ -44,6 +49,9 @@ export interface ChatViewProps {
   onSendMessage: (input: string) => void;
   onStopGeneration: () => void;
   onRegenerate: () => void;
+  onContinue?: () => void;
+  onImpersonate?: () => void;
+  onActivateBranch?: (conversationId: string, branchId: string) => Promise<void>;
   onEditMessage: (message: ChatMessage) => void;
   onEditingDraft: (value: string) => void;
   onSaveEdit: (messageId: string) => void;
@@ -135,10 +143,12 @@ function MessageActions({
 
 function PromptPreviewPanel({
   conversationId,
+  sourceRevision,
   draft,
   isGenerating,
 }: {
   conversationId: string;
+  sourceRevision: string;
   draft: string;
   isGenerating: boolean;
 }) {
@@ -151,12 +161,12 @@ function PromptPreviewPanel({
 
   useEffect(() => {
     setPreview(null); setError(null); setExpanded({});
-  }, [conversationId]);
+  }, [conversationId, sourceRevision]);
 
   // 草稿变化后自动刷新（防抖）；与真实请求相同组装，凭据已脱敏。
   // 面板收起时不请求。
   useEffect(() => {
-    if (!open) return;
+    if (!open || isGenerating) { setIsLoading(false); return; }
     const controller = new AbortController();
     setIsLoading(true);
     setError(null);
@@ -175,7 +185,7 @@ function PromptPreviewPanel({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [open, conversationId, draft]);
+  }, [open, conversationId, sourceRevision, draft, isGenerating]);
 
   const toggleRegion = useCallback((messageIndex: number) => {
     setExpanded((current) => ({
@@ -198,6 +208,7 @@ function PromptPreviewPanel({
       {error ? <p className="prompt-preview__error">{error}</p> : null}
       {preview ? (
         <div className="prompt-preview__body">
+          <TokenAccountingDetails accounting={preview.tokenAccounting} />
           <ul className="prompt-preview__regions">
             {preview.regions.map((region) => (
               <li key={region.key} className="prompt-preview__region">
@@ -256,6 +267,8 @@ export function ChatView({
   onSendMessage,
   onStopGeneration,
   onRegenerate,
+  onContinue,
+  onImpersonate,
   onEditMessage,
   onEditingDraft,
   onSaveEdit,
@@ -266,7 +279,9 @@ export function ChatView({
   onMemoryPanelToggle,
   sourceFocus,
   onOpenMemorySource,
+  onActivateBranch,
 }: ChatViewProps) {
+  const { i18n } = useTranslation(), en = i18n.language.startsWith("en");
   const [surface] = useState(() => new MessageSurface());
   const [, updateSurface] = useState(0);
   useLayoutEffect(() => {
@@ -276,6 +291,7 @@ export function ChatView({
   useLayoutEffect(() => { surface.sync(activeConversation); }, [surface, activeConversation]);
   useLayoutEffect(() => {
     if (!sourceFocus || sourceFocus.conversationId !== activeConversation?.id) return;
+    surface.ensureVisible(sourceFocus.messageId);
     const row = surface.rows.find(value => value.message.id === sourceFocus.messageId);
     if (!row) return;
     surface.rows.forEach(value => value.element.classList.remove("chat-message--source"));
@@ -361,9 +377,12 @@ export function ChatView({
               ) : (
                 <MessageContent message={message} index={index} characterName={name} />
               )}
+              <MessageTokenUsage metadata={message.generationMetadata} />
+              <GenerationDetails metadata={message.generationMetadata} />
+              {activeConversation ? <ReplyCandidates message={message} conversation={activeConversation} disabled={generationControlsBusy} onActivateBranch={onActivateBranch} /> : null}
               {activeConversation && <MessageActions
                 conversation={activeConversation}
-                isGenerating={isGenerating}
+                isGenerating={generationControlsBusy}
                 message={message}
                 onDelete={onDeleteMessage}
                 onEdit={onEditMessage}
@@ -401,7 +420,7 @@ export function ChatView({
               </ul>
             </details>
           ) : null}
-          {lastMemoryReport && lastMemoryReport.results.length > 0 ? (
+          {lastMemoryReport && (lastMemoryReport.results.length > 0 || lastMemoryReport.retrieval) ? (
             <details className="chat-lorebook-report chat-memory-report">
               <summary>
                 <Icon name="brain" size={14} />
@@ -419,6 +438,7 @@ export function ChatView({
                   </li>
                 ))}
               </ul>
+              <MemoryRetrievalDiagnostics retrieval={lastMemoryReport.retrieval} />
             </details>
           ) : null}
           {lastPromptBudget ? (
@@ -449,17 +469,23 @@ export function ChatView({
                   </li>
                 ))}
               </ul>
+              <TokenAccountingDetails accounting={lastPromptBudget.tokenAccounting} />
             </details>
           ) : null}
         </>, surface.auxiliary)}
         {activeConversation ? (
           <PromptPreviewPanel
             conversationId={activeConversation.id}
+            sourceRevision={activeConversation.activeBranchId + "/" + activeConversation.updatedAt}
             draft={chatInput.trim()}
             isGenerating={isGenerating}
           />
         ) : null}
         <form id="send_form" className="chat-composer" onSubmit={(event) => { event.preventDefault(); send(); }}>
+          <div className="chat-composer__actions">
+            <button id="option_continue" className="button button--quiet" disabled={!onContinue || !activeConversation || activeConversation.messages.at(-1)?.role !== "assistant" || generationControlsBusy || Boolean(editingMessageId)} onClick={onContinue} type="button">{en ? "Continue reply" : "续写回复"}</button>
+            <button id="option_impersonate" className="button button--quiet" disabled={!onImpersonate || !activeConversation || generationControlsBusy || Boolean(editingMessageId)} onClick={onImpersonate} type="button">{en ? "Draft my message" : "代写我的消息"}</button>
+          </div>
           <textarea id="send_textarea" ref={composer} aria-label="输入消息" disabled={!activeConversation || isGenerating} onInput={(event) => onChatInput(event.currentTarget.value)} onKeyDown={handleKeyDown} placeholder={activeConversation ? "输入消息，Enter 发送，Shift+Enter 换行" : "请先选择故事"} rows={3} defaultValue={chatInput} />
             <button id="mes_stop" aria-label="停止生成" className="button button--quiet" onClick={onStopGeneration} style={{ display: generationControlsBusy ? undefined : "none" }} type="button">
               <Icon name="stop" size={16} />

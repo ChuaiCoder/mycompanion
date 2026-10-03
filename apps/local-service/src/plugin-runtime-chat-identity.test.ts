@@ -49,3 +49,22 @@ it("retains an empty canonical variable map when a same-story branch snapshot om
   api.applyChatContext({conversationId:"story-a",branchId:"branch-b",chat:[],chatMetadata:{variables:{count:2}}});
   expect(context.chatMetadata.variables).toBe(local);expect(local).toEqual({count:2});
 });
+
+it("keeps default reload failures observable and explicitly reconciles an optimistic failed save from durable state", async () => {
+  const source=chatPersistenceSource.replace(/^import .*;\r?\n/gm,"").replace(/^export /gm,"");
+  const render=vi.fn(), changed=vi.fn(), local={retained:1};
+  const context={conversationId:"story-a",branchId:"branch-a",chat:[{id:"message",mes:"durable",is_user:false}],chatMetadata:{variables:local}};
+  const durable={id:"story-a",activeBranchId:"branch-a",characterName:"Role",messages:[{id:"message",role:"assistant",content:"durable",createdAt:"2026-10-03"}],chatMetadata:{variables:{retained:1}}};
+  const fetch=vi.fn().mockResolvedValueOnce({ok:false,status:503,json:async()=>({error:{message:"Actual failed write"}})})
+    .mockResolvedValueOnce({ok:true,json:async()=>durable});
+  const api=runInNewContext(source+"\n;({bindChatContext,applyChatContext,connectChatPersistence,saveChatConditional,reloadCurrentChat,flushChatSaves})",{
+    mergeJsonChanges,mergeChatMessages,toExtensionMessage,isMacroDraftActive:()=>false,fetch,clearTimeout,setTimeout,crypto:{randomUUID:()=>"fixture-id"},
+  });
+  api.bindChatContext(context);api.applyChatContext({chat:context.chat,chatMetadata:context.chatMetadata});api.connectChatPersistence({render,changed});
+  context.chat[0]!.mes="optimistic";
+  await expect(api.saveChatConditional()).rejects.toThrow("Actual failed write");
+  await expect(api.reloadCurrentChat()).rejects.toThrow("Actual failed write");expect(fetch).toHaveBeenCalledTimes(1);
+  await api.reloadCurrentChat({discardFailedSaves:true});
+  expect(context.chat[0]!.mes).toBe("durable");expect(context.chatMetadata.variables).toBe(local);
+  expect(render).toHaveBeenCalledOnce();expect(changed).toHaveBeenCalledWith("story-a");await expect(api.flushChatSaves()).resolves.toBeUndefined();
+});

@@ -22,10 +22,12 @@ import {
   stopGeneration,
   streamChatMessage,
   streamRegenerate,
+  streamForegroundMode,
 } from "../api";
 import { loadExtensionHost } from "../ExtensionHost";
 import { replaceMessage, updateLastAssistantContent } from "../chat-stream-utils";
 import { observeProviderConnection } from "../provider-connection";
+import { loadComposerDraftStore, type ComposerDraftStore } from "../composer-drafts";
 
 export type NativeGenerationResult = { status: "complete"; text: string } | { status: "stopped" | "skipped" | "preview" } | { status: "failed"; error: Error };
 function resultObserver(handler: (event: GenerationSseEvent) => void) {
@@ -34,6 +36,7 @@ function resultObserver(handler: (event: GenerationSseEvent) => void) {
     if (event.type === "done") state.result = event.message.status === "complete" ? { status: "complete", text: event.message.content }
       : event.message.status === "failed" ? { status: "failed", error: new Error(event.message.content) } : { status: "stopped" };
     if (event.type === "error") state.result = { status: "failed", error: new Error(event.message) };
+    if (event.type === "impersonate_result") state.result = { status: "complete", text: event.text };
     if (event.type === "generation_end" && state.result.status !== "failed") state.result = { status: event.reason };
     handler(event);
   } };
@@ -71,13 +74,42 @@ export function useChatGeneration(deps: {
   activeConversationId.current = activeConversation?.id;
   activeStory.current = activeConversation;
   const isCurrentStory = (id: string) => mounted.current && activeConversationId.current === id;
-  const [chatInput, setChatInput] = useState(initialInput);
+  const [chatInput, setInput] = useState(initialInput);
+  const inputRevision = useRef(0), firstComposer = useRef(true);
+  const composerDrafts = useRef<ComposerDraftStore | null>(null);
+  const [draftTarget, setDraftTarget] = useState<string | undefined>();
+  const setChatInput: Dispatch<SetStateAction<string>> = value => { inputRevision.current++; setInput(value); };
+  const renderedComposer = useRef({ id: activeConversation?.id, revision: inputRevision.current });
+  const inputEditedAtNavigation = useRef(false);
+  if (renderedComposer.current.id !== activeConversation?.id) {
+    inputEditedAtNavigation.current = renderedComposer.current.revision !== inputRevision.current;
+  }
+  renderedComposer.current = { id: activeConversation?.id, revision: inputRevision.current };
   const [isNativeGenerating, setIsGenerating] = useState(false);
   const [extensionGenerating, setExtensionGenerating] = useState(false);
   const isGenerating = isNativeGenerating;
   const generationControlsBusy = isNativeGenerating || extensionGenerating;
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
+
+  useEffect(() => {
+    const id = activeConversation?.id;
+    if (!id) return;
+    let disposed = false;
+    const revision = inputRevision.current;
+    const editedAtNavigation = inputEditedAtNavigation.current;
+    void loadComposerDraftStore().then(store => {
+      if (disposed || activeConversationId.current !== id) return;
+      composerDrafts.current = store;
+      // A user can type while hydration is pending. That newer input wins.
+      if (!editedAtNavigation && revision === inputRevision.current) setInput(store.read(id) ?? (firstComposer.current ? initialInput : ""));
+      firstComposer.current = false; setDraftTarget(id);
+    }).catch(error => { if (!disposed) setRuntimeError("输入草稿暂时无法恢复：" + (error instanceof Error ? error.message : String(error))); });
+    return () => { disposed = true; };
+  }, [activeConversation?.id]);
+  useEffect(() => {
+    if (draftTarget && draftTarget === activeConversation?.id) composerDrafts.current?.write(draftTarget, chatInput);
+  }, [draftTarget, activeConversation?.id, chatInput]);
 
   useEffect(() => {
     setEditingMessageId(null);
@@ -241,9 +273,11 @@ export function useChatGeneration(deps: {
     }
   };
 
-  const handleRegenerate = async (options: NativeGenerationOptions = {}): Promise<NativeGenerationResult> => {
-    if (!activeConversation || isGenerating || streamControllerRef.current) return { status: "skipped" };
+  const handleForegroundGeneration = async (mode: "continue" | "impersonate" | undefined, options: NativeGenerationOptions = {}): Promise<NativeGenerationResult> => {
+    if (!activeConversation || isGenerating || streamControllerRef.current || editingMessageId) return { status: "skipped" };
+    if (mode === "continue" && activeConversation.messages.at(-1)?.role !== "assistant") return { status: "skipped" };
     const story = activeConversation.id;
+    const branch = activeConversation.activeBranchId;
     setRuntimeError(null);
     setIsGenerating(true);
     const controller = new AbortController();
@@ -251,16 +285,28 @@ export function useChatGeneration(deps: {
     streamConversationRef.current = story;
     const abort = () => controller.abort(options.signal?.reason);
     if (options.signal?.aborted) abort(); else options.signal?.addEventListener("abort", abort, { once: true });
-    const observed = resultObserver(makeStreamHandler(story));
+    const handler = makeStreamHandler(story);
+    let impersonated = "";
+    const observed = resultObserver(event => {
+      if (mode !== "impersonate") { handler(event); return; }
+      if (!isCurrentStory(story) || activeStory.current?.activeBranchId !== branch) return;
+      if (event.type === "delta") {
+        impersonated += event.delta;
+        flushSync(() => setChatInput(impersonated));
+      } else if (event.type === "impersonate_result") {
+        flushSync(() => setChatInput(event.text));
+      } else handler(event);
+    });
     try {
-      await streamRegenerate(story, controller.signal, observed.onEvent, options);
+      if (mode) await streamForegroundMode(story, mode, controller.signal, observed.onEvent, options);
+      else await streamRegenerate(story, controller.signal, observed.onEvent, options);
       await reloadStory(story);
       setConversations((await listConversations()).items);
       if (observed.state.result.status === "failed" && isCurrentStory(story)) setRuntimeError(observed.state.result.error.message);
       return observed.state.result;
     } catch (error) {
-      if (isCurrentStory(story) && !(error instanceof DOMException && error.name === "AbortError")) {
-        setRuntimeError(error instanceof ApiRequestError ? error.message : "重新生成失败。");
+      if (isCurrentStory(story) && !controller.signal.aborted && !(error instanceof DOMException && error.name === "AbortError")) {
+        setRuntimeError(error instanceof Error ? error.message : mode === "continue" ? "续写失败。" : mode === "impersonate" ? "代写失败。" : "重新生成失败。");
       }
       try {
         await reloadStory(story);
@@ -273,6 +319,9 @@ export function useChatGeneration(deps: {
       streamConversationRef.current = null;
     }
   };
+  const handleRegenerate = (options: NativeGenerationOptions = {}) => handleForegroundGeneration(undefined, options);
+  const handleContinue = (options: NativeGenerationOptions = {}) => handleForegroundGeneration("continue", options);
+  const handleImpersonate = (options: NativeGenerationOptions = {}) => handleForegroundGeneration("impersonate", options);
 
   const beginEditMessage = (message: ChatMessage): void => {
     if (isGenerating) return;
@@ -328,6 +377,8 @@ export function useChatGeneration(deps: {
     handleSendMessage,
     handleStopGeneration,
     handleRegenerate,
+    handleContinue,
+    handleImpersonate,
     beginEditMessage,
     cancelEditMessage,
     saveEditMessage,

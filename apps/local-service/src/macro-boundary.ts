@@ -8,13 +8,22 @@ import { MacroVariableConflictError } from "./macro-variable-conflict.js";
 export interface BrowserMacroCall {
   ordinal: number; content: string;
   context: { characterName?: string; userName?: string; model?: string; contextLimitTokens?: number;
-    maxResponseTokens?: number; experimentalMacroEngine?: boolean; replaceCharacterCard?: boolean; original?: string; escapeRegex?: boolean };
+    maxResponseTokens?: number; experimentalMacroEngine?: boolean; replaceCharacterCard?: boolean; original?: string; escapeRegex?: boolean;
+    dynamicMacros?: Record<string, string> };
   environment: NativeCharacterMacroEnvironment;
   local: Record<string, unknown>; global: Record<string, unknown>;
 }
 export interface BrowserMacroResult { content: string; local: Record<string, unknown>; global: Record<string, unknown> }
 export type BrowserMacroResolver = (call: BrowserMacroCall) => Promise<BrowserMacroResult>;
 class MacroBoundaryYield extends Error { constructor(readonly call: BrowserMacroCall) { super("Await browser macro boundary"); } }
+export interface BrowserEffectCall {
+  invocationId: string; ordinal: number; kind: string; payload: unknown;
+  environment: NativeCharacterMacroEnvironment;
+  local: Record<string, unknown>; global: Record<string, unknown>;
+}
+export interface BrowserEffectResult { payload?: unknown; local: Record<string, unknown>; global: Record<string, unknown> }
+export type BrowserEffectResolver = ((call: BrowserEffectCall) => Promise<BrowserEffectResult>) & { dispose?: (invocationId: string) => void };
+class EffectBoundaryYield extends Error { constructor(readonly call: BrowserEffectCall) { super("Await browser invocation effect"); } }
 
 /** Observe late rejections too: an extension resolver need not honor the signal. */
 function resolveUnlessAborted<T>(result: Promise<T>, signal: AbortSignal): Promise<T> {
@@ -32,11 +41,24 @@ function resolveUnlessAborted<T>(result: Promise<T>, signal: AbortSignal): Promi
  * by macro key or text. A budget stop remains a real traversal stop.
  */
 export async function runMacroBoundary<T>(session: MacroEvaluationSession, signal: AbortSignal,
-  resolve: BrowserMacroResolver, work: () => T | Promise<T>): Promise<T> {
-  const snapshot = session.snapshotDraft(), originalEvaluate = session.evaluate, originalRandom = session.drawRandom;
+  resolve: BrowserMacroResolver, work: () => T | Promise<T>, resolveEffect?: BrowserEffectResolver): Promise<T> {
+  const snapshot = session.snapshotDraft(), originalEvaluate = session.evaluate, originalRandom = session.drawRandom, originalEffect = session.invokeEffect, originalScope = session.createEffectScope;
+  const invocationId = randomUUID();
   const completed: Array<{ call: BrowserMacroCall; result: BrowserMacroResult }> = [];
+  const completedEffects: Array<{ call: BrowserEffectCall; result: BrowserEffectResult }> = [];
   const draws: number[] = [];
-  let ordinal = 0, drawOrdinal = 0;
+  let ordinal = 0, drawOrdinal = 0, effectOrdinal = 0, scopeOrdinal = 0;
+  session.createEffectScope = () => String(scopeOrdinal++);
+  if (resolveEffect) session.invokeEffect = (kind, payload) => {
+    signal.throwIfAborted();
+    const call: BrowserEffectCall = { invocationId, ordinal: effectOrdinal++, kind, payload: structuredClone(payload),
+      environment: structuredClone(session.getCharacterEnvironment()), local: structuredClone(session.local), global: structuredClone(session.global) };
+    const cached = completedEffects[call.ordinal];
+    if (!cached) throw new EffectBoundaryYield(call);
+    if (JSON.stringify(call) !== JSON.stringify(cached.call)) throw new ModelRequestError("扩展执行阶段在等待期间发生变化，请重试。", 409);
+    session.replaceVariables(cached.result.local, cached.result.global);
+    return structuredClone(cached.result.payload);
+  };
   session.drawRandom = (source = Math.random) => {
     signal.throwIfAborted();
     const index = drawOrdinal++;
@@ -53,6 +75,7 @@ export async function runMacroBoundary<T>(session: MacroEvaluationSession, signa
       ...(source.experimentalMacroEngine === undefined ? {} : { experimentalMacroEngine: source.experimentalMacroEngine }),
       ...(source.replaceCharacterCard === undefined ? {} : { replaceCharacterCard: source.replaceCharacterCard }),
       ...(typeof source.original === "string" ? { original: source.original } : {}),
+      ...(source.dynamicMacros === undefined ? {} : { dynamicMacros: structuredClone(source.dynamicMacros) }),
       ...(source.postProcessFn ? { escapeRegex: true } : {}),
     }, environment: structuredClone(session.getCharacterEnvironment()), local: structuredClone(session.local), global: structuredClone(session.global) };
     const cached = completed[call.ordinal];
@@ -63,21 +86,61 @@ export async function runMacroBoundary<T>(session: MacroEvaluationSession, signa
   };
   try {
     for (;;) {
-      signal.throwIfAborted(); session.restoreDraft(snapshot); ordinal = 0; drawOrdinal = 0;
+      signal.throwIfAborted(); session.restoreDraft(snapshot); ordinal = 0; drawOrdinal = 0; effectOrdinal = 0; scopeOrdinal = 0;
       try { const value = await work(); signal.throwIfAborted(); return value; }
       catch (error) {
+        if (error instanceof EffectBoundaryYield) {
+          const result = await resolveUnlessAborted(resolveEffect!(error.call), signal); signal.throwIfAborted();
+          completedEffects.push({ call: error.call, result: structuredClone(result) }); continue;
+        }
         if (!(error instanceof MacroBoundaryYield)) throw error;
         const result = await resolveUnlessAborted(resolve(error.call), signal); signal.throwIfAborted();
         completed.push({ call: error.call, result: structuredClone(result) });
       }
     }
   } catch (error) { session.restoreDraft(snapshot); throw error; }
-  finally { session.evaluate = originalEvaluate; session.drawRandom = originalRandom; }
+  finally {
+    session.evaluate = originalEvaluate; session.drawRandom = originalRandom; session.invokeEffect = originalEffect; session.createEffectScope = originalScope;
+    if (!signal.aborted && completedEffects.length) resolveEffect?.dispose?.(invocationId);
+  }
+}
+
+type EffectRpc = (signal: AbortSignal, publish: (requestId: string, call: BrowserEffectCall) => void, dispose?: (invocationId: string) => void) => BrowserEffectResolver;
+const effectsByApp = new WeakMap<FastifyInstance, EffectRpc>();
+export function createEffectBoundaryRpc(app: FastifyInstance): EffectRpc {
+  const existing = effectsByApp.get(app); if (existing) return existing;
+  const pending = new Map<string, { complete(value: BrowserEffectResult): void; fail(error: Error): void }>();
+  app.post<{ Params: { id: string }; Body: { result?: BrowserEffectResult; error?: string } }>("/api/generation/effects/:id", { bodyLimit: 16 * 1024 * 1024 }, async (request, reply) => {
+    const exchange = pending.get(request.params.id);
+    if (!exchange) return reply.code(409).send({ error: { message: "扩展执行请求已结束。" } });
+    if (typeof request.body?.error === "string") { exchange.fail(new ModelRequestError(request.body.error, 400)); return { accepted: true }; }
+    const value = request.body?.result;
+    const record = (item: unknown) => item !== null && typeof item === "object" && !Array.isArray(item);
+    if (!value || !record(value.local) || !record(value.global)) {
+      exchange.fail(new ModelRequestError("浏览器返回了无效的扩展执行结果。", 400)); return reply.code(400).send({ error: { message: "浏览器返回了无效的扩展执行结果。" } });
+    }
+    exchange.complete(value); return { accepted: true };
+  });
+  app.addHook("preClose", async () => { for (const exchange of [...pending.values()]) exchange.fail(new Error("Service closed")); });
+  const rpc: EffectRpc = (signal, publish, dispose) => Object.assign(async (call: BrowserEffectCall) => {
+    signal.throwIfAborted();
+    return new Promise<BrowserEffectResult>((resolve, reject) => {
+      const id = randomUUID();
+      const clean = () => { pending.delete(id); clearTimeout(timer); signal.removeEventListener("abort", aborted); };
+      const fail = (error: Error) => { clean(); reject(error); };
+      const aborted = () => fail(signal.reason);
+      const timer = setTimeout(() => fail(new ModelRequestError("浏览器扩展执行超时。", 504)), 120_000);
+      pending.set(id, { complete: value => { clean(); resolve(value); }, fail }); signal.addEventListener("abort", aborted, { once: true });
+      try { publish(id, call); } catch (error) { fail(error instanceof Error ? error : new Error(String(error))); }
+    });
+  }, { ...(dispose ? { dispose } : {}) });
+  effectsByApp.set(app, rpc); return rpc;
 }
 
 type MacroRpc = (signal: AbortSignal, publish: (requestId: string, call: BrowserMacroCall) => void) => BrowserMacroResolver;
 const rpcByApp = new WeakMap<FastifyInstance, MacroRpc>();
 export function createMacroBoundaryRpc(app: FastifyInstance): MacroRpc {
+  createEffectBoundaryRpc(app);
   const existing = rpcByApp.get(app); if (existing) return existing;
   const pending = new Map<string, { complete(value: BrowserMacroResult): void; fail(error: Error): void }>();
   app.post<{ Params: { id: string }; Body: { result?: unknown; error?: string } }>("/api/generation/macros/:id", { bodyLimit: 16 * 1024 * 1024 }, async (request, reply) => {
@@ -118,8 +181,10 @@ export async function completeMacroApi<T>(app: FastifyInstance, reply: FastifyRe
   reply.raw.on("close", closed);
   const resolver = createMacroBoundaryRpc(app)(controller.signal, (requestId, call) => send({ type: "macro_request", requestId,
     ...target, evaluation: call }));
+  const effectResolver = createEffectBoundaryRpc(app)(controller.signal, (requestId, call) => send({ type: "effect_request", requestId,
+    ...target, evaluation: call }), invocationId => send({ type: "effect_end", invocationId }));
   try {
-    const result = await runMacroBoundary(session, controller.signal, resolver, () => work(controller.signal));
+    const result = await runMacroBoundary(session, controller.signal, resolver, () => work(controller.signal), effectResolver);
     controller.signal.throwIfAborted(); send({ type: "macro_result", result: finish ? finish(result) : result });
   } catch (error) {
     if (!controller.signal.aborted) send({ type: "error", message: error instanceof ModelRequestError || error instanceof MacroVariableConflictError

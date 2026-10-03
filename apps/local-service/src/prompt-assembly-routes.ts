@@ -11,12 +11,12 @@ import {
   type LorebookReport,
   type GenerationSseEvent,
   type NativeCompletionRequest,
+  type MemoryRetrievalReport,
 } from "@mycompanion/shared";
 
 import type { CharacterRepository } from "./character-repository.js";
 import { convertedExamplesMatchCard } from "./character-routes.js";
 import type { GenerationPipeline } from "./generation-pipeline.js";
-import { retrieveMemories } from "./memory-engine.js";
 import {
   assembleModelPrompt,
   buildPromptPreview,
@@ -34,9 +34,11 @@ import { MacroVariableConflictError } from "./macro-variable-conflict.js";
 import { bindCharacterMacroEnvironment } from "./character-macros.js";
 import { completeMacroApi, runMacroBoundary } from "./macro-boundary.js";
 import { commitWorldInfoEffects, getCommittedWorldInfoState } from "./world-info-effects.js";
+import { worldInfoOutletsFromPrompts } from "./world-info-activation.js";
+import { materializePromptImage } from "./model-prompt-image.js";
 
 export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: RuntimeRepository, characters: CharacterRepository, pipeline: GenerationPipeline, secretCodec?: SecretCodec): void {
-  const { applyRegexStage, buildLorebookReport, memoryShutdown, preflight, macroRpc, createRegexContext } = pipeline;
+  const { applyRegexStage, buildLorebookReport, memoryShutdown, preflight, macroRpc, effectRpc, createRegexContext, retrieveMemory, snapshotKey } = pipeline;
 
   // 提示词预览（FR-PROMPT-004）：发送前查看即将发给模型的提示词。
   // 组装与预算和真实生成完全一致（含世界书/记忆/摘要/正则阶段），
@@ -58,10 +60,14 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
       }
       const regexContext = createRegexContext(character, conversation.id);
       const macroSession = regexContext.macroSession;
+      macroSession.bindWorldInfoOutlets(worldInfoOutletsFromPrompts(parsed.data.extensionPrompts ?? []));
       const rawHistory = runtime.listMessages(conversation.id, 80);
       runtime.syncMemoryReachability(conversation.id);
       const memories = runtime.listMemories(conversation.id);
       const draftId = crypto.randomUUID(), draftCreatedAt = new Date().toISOString();
+      // Macro evaluation replays this closure; an unchanged query must not
+      // charge the embedding provider twice or share a mutable budget report.
+      const memoryQueries = new Map<string, Promise<MemoryRetrievalReport>>();
       return completeMacroApi(app, reply, { conversationId: conversation.id, branchId: conversation.activeBranchId }, macroSession, parsed.data.browserMacros, async browserSignal => {
       const previewSignal = browserSignal ? AbortSignal.any([browserSignal, memoryShutdown.signal]) : memoryShutdown.signal;
       // 草稿作为“当前用户输入”参与组装；与真实发送一致：先 input 阶段改写，
@@ -89,15 +95,20 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
         regexContext.settings, macroSession, { regexContext, signal: previewSignal, dryRun: true, trigger: "normal",
           worldInfoSourceMessages: draft ? [...conversation.messages, fullHistory.at(-1)!] : conversation.messages,
           worldInfoBranchId: conversation.activeBranchId });
-      const memory = retrieveMemories({
+      const scanText = fullHistory.map((message) => message.content).join("\n");
+      const semanticQuery = [...fullHistory].reverse().find(message => message.role === "user")?.content ?? fullHistory.at(-1)?.content ?? "";
+      const queryKey = JSON.stringify([scanText, semanticQuery]);
+      if (!memoryQueries.has(queryKey)) memoryQueries.set(queryKey, retrieveMemory({
         conversationId: conversation.id,
         memories,
-        model: runtime.getProvider().model,
-        scanText: fullHistory.map((message) => message.content).join("\n"),
-      });
+        model: regexContext.settings.model,
+        scanText, semanticQuery, signal: previewSignal, dryRun: true,
+        embeddingSelection: regexContext.embeddingSelection,
+        embeddingSelectionUnavailable: regexContext.embeddingSelectionUnavailable,
+      }));
+      const memory = structuredClone(await memoryQueries.get(queryKey)!);
       const summary = runtime.getSummary(conversation.id);
-      const encrypted = runtime.getEncryptedApiKey();
-      const apiKey = encrypted ? secretCodec?.unseal(encrypted) : undefined;
+      const apiKey = snapshotKey(regexContext);
       return promptPreviewResponseSchema.parse(buildPromptPreview({
         macroSession,
         ...(parsed.data.extensionPrompts ? { extensionPrompts: parsed.data.extensionPrompts } : {}),
@@ -129,13 +140,13 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
       message: "扩展提示词参数无效。", details: parsed.error.issues.map(issue => issue.message) } });
     const data = parsed.data;
     const extensionPrompts = [...data.extensionPrompts];
-    if (!["normal", "quiet", "regenerate", "swipe", "impersonate"].includes(data.type)) return sendError(reply, 422, "UNSUPPORTED_GENERATION_MODE", `提示词组装尚不支持生成模式：${data.type}`);
+    if (!["normal", "quiet", "regenerate", "swipe", "impersonate", "continue"].includes(data.type)) return sendError(reply, 422, "UNSUPPORTED_GENERATION_MODE", `提示词组装尚不支持生成模式：${data.type}`);
     const allMessages = [...data.messages, ...data.messageExamples.flat()];
-    if (allMessages.some(message => message.image != null || message.tool_calls != null ||
+    if (allMessages.some(message => message.tool_calls != null ||
       (typeof message.reasoning === "string" ? message.reasoning.trim().length > 0 : message.reasoning != null) ||
       message.signature != null || (Array.isArray(message.media) && message.media.length > 0) ||
       (Array.isArray(message.invocations) && message.invocations.length > 0))) {
-      return sendError(reply, 422, "UNSUPPORTED_PROMPT_MEDIA", "当前提示词组装尚不支持图片、工具调用或推理签名；请求未发送到模型。");
+      return sendError(reply, 422, "UNSUPPORTED_PROMPT_MEDIA", "当前扩展提示词组装尚不支持工具调用、生成媒体或推理签名；请求未发送到模型。");
     }
     const conversation = runtime.getConversation(request.params.id);
     if (!conversation) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
@@ -165,9 +176,11 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
       parentMessageId: null, role: message.role === "system" ? "assistant" : message.role,
       content: message.content, status: "complete", createdAt: now,
       extensionData: { ...(message.role === "system" ? { modelRole: "system" } : {}),
+        ...(message.image ? {__mycompanion_prompt_image:message.image,__mycompanion_prompt_image_detail:data.imageQuality} : {}),
         ...(message.name ? { modelName: message.name } : {}) },
     }));
     const provider = runtime.getProvider();
+    const assemblyContext = createRegexContext(character, conversation.id);
     const settings = { ...provider,
       contextLimitTokens: data.contextLimitTokens ?? provider.contextLimitTokens,
       maxTokens: data.maxTokens ?? provider.maxTokens };
@@ -187,20 +200,27 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
         injectedCount: results.length, durationMs: 0 };
     })();
     runtime.syncMemoryReachability(conversation.id);
-    const memory = retrieveMemories({ conversationId: conversation.id, memories: runtime.listMemories(conversation.id),
-      model: runtime.getProvider().model, scanText: history.map(message => message.content).join("\n") });
+    const memory = await retrieveMemory({ conversationId: conversation.id, memories: runtime.listMemories(conversation.id),
+      model: settings.model, scanText: history.map(message => message.content).join("\n"),
+      semanticQuery: [...history].reverse().find(message => message.role === "user")?.content ?? history.at(-1)?.content ?? "",
+      signal: memoryShutdown.signal, dryRun: !data.commitVariables, embeddingSelection: assemblyContext.embeddingSelection,
+      embeddingSelectionUnavailable: assemblyContext.embeddingSelectionUnavailable });
     const summary = runtime.getSummary(conversation.id);
     const recentSaved = conversation.messages.at(-1);
     const latestInput = data.messages[0];
     const pendingTurn = latestInput?.role === "user" && latestInput.content !== recentSaved?.content ? 1 : 0;
     return completeMacroApi(app, reply, { conversationId: conversation.id, branchId: conversation.activeBranchId }, macroSession, data.browserMacros, () => {
-    const { messages, budget } = assembleModelPrompt({ settings, character, history, lorebook, memory,
+    const { messages, budget } = assembleModelPrompt({ settings, character, history, lorebook, memory: structuredClone(memory),
       macroSession,
       prepareNativeCharacterFields: false,
       generationType: data.type,
       ...(data.quietPrompt === undefined ? {} : { quietPrompt: data.quietPrompt }),
+      ...(data.quietImage === undefined ? {} : { quietImage: data.quietImage }),
+      imageQuality: data.imageQuality,
+      ...(data.cyclePrompt === undefined ? {} : { cyclePrompt: data.cyclePrompt }),
       ...(data.bias === undefined ? {} : { bias: data.bias }),
       messageExamples: data.messageExamples.map(block => block.map(message => ({ role: message.role, content: message.content,
+        ...(message.image?{image:message.image,imageDetail:data.imageQuality}:{}),
         ...(message.name ? { name: message.name } : {}) }))),
       characterOverridesResolved: true,
       extensionPrompts,
@@ -224,7 +244,7 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
       }
     }
     reply.header("Cache-Control", "no-store");
-    return { messages, totalTokens: budget.totalTokens,
+    return { messages:messages.map(materializePromptImage), totalTokens: budget.totalTokens,
       ...(data.commitVariables ? {macroChanges} : {}),
       contextLimitTokens: budget.contextLimitTokens, diagnostics: budget.diagnostics,
       regions: budget.regions.map(region => ({ key: region.key, label: region.label, tokens: region.tokens })) };
@@ -234,12 +254,12 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
   // Quiet generation shares the native prompt/regex/budget pipeline but never
   // creates a message or starts memory extraction. Explicit macro variable
   // effects commit only for an accepted non-preview request.
-  app.post<{ Params: IdParams; Body: unknown }>("/api/conversations/:id/quiet-generation", async (request, reply) => {
+  app.post<{ Params: IdParams; Body: unknown }>("/api/conversations/:id/quiet-generation", {bodyLimit: 8 * 1024 * 1024}, async (request, reply) => {
     const parsed = quietGenerationRequestSchema.safeParse(request.body);
     if (!parsed.success) return sendError(reply, 400, "INVALID_REQUEST", "后台生成参数无效。");
     const input = parsed.data;
-    if (input.quietImage || input.forceChId !== null) {
-      return sendError(reply, 422, "UNSUPPORTED_QUIET_OPTION", "当前后台生成尚不支持图片或群组强制角色。");
+    if (input.forceChId !== null) {
+      return sendError(reply, 422, "UNSUPPORTED_QUIET_OPTION", "当前后台生成尚不支持群组强制角色。");
     }
     const conversation = runtime.getConversation(request.params.id);
     if (!conversation) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
@@ -265,9 +285,12 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
     try {
       const regexContext = createRegexContext(character, conversation.id);
       const macroSession = regexContext.macroSession;
+      macroSession.bindWorldInfoOutlets(worldInfoOutletsFromPrompts(input.extensionPrompts));
       const resolver = macroRpc(signal, (requestId, call) => send({ type: "macro_request", requestId, conversationId: conversation.id,
         branchId: conversation.activeBranchId, evaluation: { ...call } }));
-      const phase = <T>(work: () => T | Promise<T>): Promise<T> => input.browserMacros ? runMacroBoundary(macroSession, signal, resolver, work) : Promise.resolve().then(work);
+      const effectResolver = effectRpc(signal, (requestId, call) => send({ type: "effect_request", requestId, conversationId: conversation.id,
+        branchId: conversation.activeBranchId, evaluation: { ...call } }), invocationId => send({ type: "effect_end", invocationId }));
+      const phase = <T>(work: () => T | Promise<T>): Promise<T> => input.browserMacros ? runMacroBoundary(macroSession, signal, resolver, work, effectResolver) : Promise.resolve().then(work);
       const rawHistory = runtime.listMessages(conversation.id, 80);
       const history: ChatMessage[] = [];
       for (const [index, message] of rawHistory.entries()) {
@@ -284,12 +307,14 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
         : await phase(() => buildLorebookReport(character, rawHistory, conversation.id, extensionPrompts, 0, false, settings, macroSession,
           { regexContext, signal, dryRun: input.dryRun, trigger: "quiet", worldInfoSourceMessages: conversation.messages,
             worldInfoBranchId: conversation.activeBranchId }));
-      const memory = retrieveMemories({ conversationId: conversation.id, memories: runtime.listMemories(conversation.id),
-        model: runtime.getProvider().model, scanText: rawHistory.map(message => message.content).join("\n") });
+      const memory = await retrieveMemory({ conversationId: conversation.id, memories: runtime.listMemories(conversation.id),
+        model: settings.model, scanText: rawHistory.map(message => message.content).join("\n"),
+        semanticQuery: [...rawHistory].reverse().find(message => message.role === "user")?.content ?? rawHistory.at(-1)?.content ?? "",
+        signal, dryRun: input.dryRun, embeddingSelection: regexContext.embeddingSelection,
+        embeddingSelectionUnavailable: regexContext.embeddingSelectionUnavailable });
       const summary = runtime.getSummary(conversation.id);
-      const encrypted = runtime.getEncryptedApiKey();
-      const apiKey = encrypted ? secretCodec?.unseal(encrypted) : undefined;
-      let text = await streamReply({ settings, generationType: "quiet", quietPrompt,
+      const apiKey = snapshotKey(regexContext);
+      let text = await streamReply({ settings, generationType: "quiet", quietPrompt, quietImage: input.quietImage,
         ...(input.browserMacros ? { preparePrompt: phase } : {}),
         macroSession,
         onReady: () => {
@@ -307,12 +332,13 @@ export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: Runt
         dryRun: input.dryRun, skipAuthorNote: input.skipWIAN, preserveOutput: input.jsonSchema !== null,
         onRequest: async (request, requestSignal) => {
           const initial = { ...request, ...(input.jsonSchema ? { json_schema: input.jsonSchema } : {}) };
-          prepared = input.browserPreflight ? await preflight(requestSignal, requestId => send({ type: "completion_request", requestId, request: initial, dryRun: input.dryRun })) : initial;
+          prepared = input.browserPreflight ? await preflight(requestSignal, requestId => send({ type: "completion_request", requestId, request: initial, dryRun: input.dryRun, provider: settings })) : initial;
           return prepared;
         },
         onBudget: budget => { if (streamed) send({type:"prompt_budget",report:{
           contextLimitTokens:budget.contextLimitTokens,reserveTokens:budget.reserveTokens,availableTokens:budget.availableTokens,
           regions:budget.regions,recentMessageCount:budget.recentMessages.length,diagnostics:budget.diagnostics,totalTokens:budget.totalTokens,
+          ...(budget.tokenAccounting ? {tokenAccounting:budget.tokenAccounting} : {}),
         }}); }, ...(apiKey ? { apiKey } : {}), character, history,
         chatMetadata: regexContext.metadata, extensionSettings: regexContext.extensionSettings,
         userTurnCount: conversation.messages.filter(message => message.role === "user").length,

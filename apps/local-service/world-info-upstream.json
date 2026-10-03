@@ -7,7 +7,7 @@
       "path": "src/world-info-upstream-runtime.ts",
       "upstreamPath": "public/scripts/world-info.js",
       "upstreamSha256": "111c7f47945839e75b021e09bdbb112a54f0a9b7857d2b95435f573efc7cd9a5",
-      "adaptedSha256": "d49bb5f4237d7222135b2ec8c2cb0a6dbd410243ae0f2e409a8cfb892df6fa6b",
+      "adaptedSha256": "5b20f92b4c72ed404a268d939f296041d21f8181a265a493c9b23403c982dced",
       "components": [
         "WorldInfoBuffer",
         "WorldInfoTimedEffects",
@@ -17,7 +17,7 @@
         "parseDecorators",
         "checkWorldInfo (scan phase only)"
       ],
-      "adaptation": "Invocation-local dependencies and metadata; synchronous native tokenizer/macro adapter; injection text already prepared; presentation/regex is a separate existing native stage. Weighted/probability draws use the request session. An idempotent removeEntry repairs splice(-1) deletion for overlapping groups. At zero chat depth, explicit extension scan injections remain eligible while chat/character/recursive text stay excluded. Scanner selection/state transitions/timer algorithms otherwise retained. Async extension scan listeners are not part of this synchronous native tranche."
+      "adaptation": "Invocation-local dependencies and metadata; synchronous native tokenizer/macro traversal yields through an awaited browser effect RPC at each original scan event. Ordinal replay caches listener results and graph transport preserves shared entry/array/Map/Set identities across loops. Two state snapshot/restore methods bridge private TimedEffects fields to the identical extracted class in the extension realm. Injection text is already prepared; presentation/regex stays a separate native stage. Weighted/probability draws use the request session. An idempotent removeEntry repairs splice(-1) deletion for overlapping groups. At zero chat depth, explicit extension scan injections remain eligible while chat/character/recursive text stay excluded. Scanner selection/state transitions/timer algorithms otherwise retained."
     },
     {
       "upstreamPath": "public/scripts/utils.js",

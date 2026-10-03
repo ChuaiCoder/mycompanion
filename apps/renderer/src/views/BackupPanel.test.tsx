@@ -1,6 +1,7 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BackupPanel } from "./BackupPanel";
+import i18n from "../i18n";
 const host = vi.hoisted(() => ({ flush: vi.fn(), reload: vi.fn(), world: vi.fn() }));
 vi.mock("../ExtensionHost", () => ({ loadExtensionHost: async () => host, reloadForExtensions: host.reload }));
 vi.mock("../world-editor-drafts", () => ({ flushWorldEditorDrafts: host.world }));
@@ -13,7 +14,7 @@ const preview = { valid: true, errors: [], sections: Object.fromEntries(Object.k
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 function file(value: unknown = backup) { const result = new File([JSON.stringify(value)], "backup.json", { type: "application/json" }); Object.defineProperty(result, "text", { value: async () => JSON.stringify(value) }); return result; }
 beforeEach(() => { host.flush.mockResolvedValue(undefined); });
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); });
+afterEach(async () => { cleanup(); await i18n.changeLanguage("zh"); vi.unstubAllGlobals(); vi.restoreAllMocks(); vi.clearAllMocks(); });
 
 it("downloads the complete backup after flushing drafts and settings", async () => {
   const fetch = vi.fn(async () => response(backup)); vi.stubGlobal("fetch", fetch);
@@ -49,4 +50,22 @@ it("rejects other JSON files locally and prevents restore while generation is bu
   fireEvent.change(screen.getByLabelText("选择备份文件"), { target: { files: [file({ hello: "world" })] } });
   await screen.findByText("备份格式或版本不受支持，请选择 MyCompanion 完整备份文件。"); expect(fetch).not.toHaveBeenCalled();
   ui.rerender(<BackupPanel busy />); expect(screen.getByRole("button", { name: "导出完整备份" })).toBeDisabled();
+});
+
+it("changes language during a restore preview without losing the chosen file or strategy, or restoring it", async () => {
+  await i18n.changeLanguage("en");
+  const fetch = vi.fn(async (_url: string) => response({ ...preview, totals: { ...tally, new: 1000 } }));
+  vi.stubGlobal("fetch", fetch); render(<BackupPanel />);
+  fireEvent.change(screen.getByLabelText("Choose backup file"), { target: { files: [file()] } });
+  await screen.findByRole("table", { name: "Restore preview" });
+  fireEvent.change(screen.getByLabelText("Restore conflict handling"), { target: { value: "overwrite" } });
+  await screen.findByText("Add 1,000, overwrite 0, skip 0.");
+  await waitFor(() => expect(screen.getByRole("button", { name: "Confirm restore" })).toBeEnabled());
+  await act(() => i18n.changeLanguage("zh"));
+  expect(screen.getByRole("table", { name: "恢复预览" })).toBeInTheDocument();
+  expect(screen.getByLabelText("恢复冲突处理")).toHaveValue("overwrite");
+  expect(screen.getByText(/backup\.json/)).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "确认恢复" })).toBeEnabled();
+  expect(fetch.mock.calls.every(([url]) => url.endsWith("/preview"))).toBe(true);
+  expect(host.reload).not.toHaveBeenCalled();
 });

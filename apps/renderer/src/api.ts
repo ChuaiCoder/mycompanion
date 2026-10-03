@@ -630,7 +630,7 @@ async function prepareExtensionPrompts(signal?: AbortSignal, options: Partial<Qu
   const host = await import(/* @vite-ignore */ path);
   signal?.throwIfAborted();
   let prompts;
-  try { prompts = await host.prepareExtensionPrompts(options); }
+  try { prompts = await host.prepareExtensionPrompts({ ...options, signal }); }
   catch (error) { throw new ExtensionPromptPreparationError(error instanceof Error ? error.message : String(error)); }
   signal?.throwIfAborted();
   return prompts;
@@ -657,7 +657,7 @@ export async function promptPreview(
   return promptPreviewResponseSchema.parse(payload);
 }
 
-export interface NativeGenerationOptions { allowEmpty?: boolean; dryRun?: boolean; signal?: AbortSignal; quiet?: Partial<QuietGenerationRequest> }
+export interface NativeGenerationOptions { allowEmpty?: boolean; dryRun?: boolean; signal?: AbortSignal; quiet?: Partial<QuietGenerationRequest>; mode?: "continue" | "impersonate" }
 export type QuietGenerationOptions = Partial<QuietGenerationRequest> & { signal?: AbortSignal };
 
 // Installed code may return a promise that never settles. Stop/shutdown must
@@ -678,7 +678,7 @@ async function streamNativeGeneration(id: string, content: string | undefined, s
   const path = '/plugin-runtime/desktop-host.js';
   const host = await import(/* @vite-ignore */ path);
   const quiet = options.quiet;
-  const type = quiet ? "quiet" : content === undefined ? "regenerate" : "normal";
+  const type = quiet ? "quiet" : options.mode ?? (content === undefined ? "regenerate" : "normal");
   const prepareSignal = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
   await waitForGenerationHook(host.beginNativeGeneration(type, { ...options, ...(quiet ? { quiet_prompt: quiet.quietPrompt, quietToLoud: quiet.quietToLoud, skipWIAN: quiet.skipWIAN, quietName: quiet.quietName } : {}), signal: prepareSignal }), prepareSignal);
   signal.throwIfAborted();
@@ -688,21 +688,28 @@ async function streamNativeGeneration(id: string, content: string | undefined, s
   // before native assembly creates the invocation-owned variable draft.
   await waitForGenerationHook(host.flush(), prepareSignal);
   signal.throwIfAborted();
-  const suffix = quiet ? "/quiet-generation" : `/messages${content === undefined ? "/regenerate" : ""}`;
+  const suffix = quiet ? "/quiet-generation" : `/messages${type === "normal" ? "" : "/" + type}`;
   const response = await fetch(`/api/conversations/${encodeURIComponent(id)}${suffix}`, {
     method: "POST", headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
     body: JSON.stringify(quiet ? { ...quiet, quietPrompt, quietPromptMacrosResolved: false, extensionPrompts: prompts, browserMacros: true, browserPreflight: true, dryRun: options.dryRun ?? false } : { content, extensionPrompts: prompts, browserMacros: true, browserPreflight: true,
       allowEmpty: content === undefined ? undefined : options.allowEmpty ?? false, dryRun: options.dryRun ?? false }), signal,
   });
   if (!response.ok || !response.body) { await readApiPayload(response); throw new Error("生成请求失败。"); }
-  await readSseStream(response.body, async event => {
+  const effectInvocations = new Set<string>();
+  try { await readSseStream(response.body, async event => {
     if(event.type === "macro_request"){await host.respondToMacroRequest(event,signal);return;}
+    if(event.type === "effect_request"){effectInvocations.add(event.evaluation.invocationId);await host.respondToEffectRequest(event,signal);return;}
+    if(event.type === "effect_end"){host.endEffectInvocation(event.invocationId);effectInvocations.delete(event.invocationId);return;}
     if(event.type === "macro_variables"){host.applyNativeMacroVariables(event);return;}
-    if (event.type !== "completion_request") { onEvent(event); return; }
+    if (event.type !== "completion_request") {
+      onEvent(event);
+      if (event.type === "impersonate_result") await host.completeNativeImpersonation(id, event.text, signal);
+      return;
+    }
     const url = `/api/generation/preflight/${encodeURIComponent(event.requestId)}`;
     let request;
     const hookSignal = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
-    try { request = await waitForGenerationHook(host.prepareNativeCompletion(event.request, event.dryRun, hookSignal, type), hookSignal); }
+    try { request = await waitForGenerationHook(host.prepareNativeCompletion(event.request, event.dryRun, hookSignal, type, event.provider), hookSignal); }
     catch (error) {
       if (!signal.aborted) await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), signal });
@@ -711,7 +718,7 @@ async function streamNativeGeneration(id: string, content: string | undefined, s
     signal.throwIfAborted();
     const accepted = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request }), signal });
     if (!accepted.ok) await readApiPayload(accepted);
-  });
+  }); } finally { for (const invocationId of effectInvocations) host.endEffectInvocation(invocationId); }
 }
 export async function streamQuietGeneration(id: string, options: QuietGenerationOptions): Promise<string | undefined> {
   const { signal = new AbortController().signal, ...quiet } = options;
@@ -895,6 +902,10 @@ export async function setCodePluginEnabled(id: string, enabled: boolean): Promis
     body: JSON.stringify({ enabled }),
   });
   return codePluginSchema.parse(await readApiPayload(response));
+}
+export function streamForegroundMode(id: string, mode: "continue" | "impersonate", signal: AbortSignal,
+  onEvent: (event: GenerationSseEvent) => void, options: NativeGenerationOptions = {}): Promise<void> {
+  return streamNativeGeneration(id, undefined, signal, onEvent, { ...options, mode });
 }
 
 export async function checkCodePluginUpdate(id: string, signal?: AbortSignal): Promise<CodePluginUpdateCheck> {

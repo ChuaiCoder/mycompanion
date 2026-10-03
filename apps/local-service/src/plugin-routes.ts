@@ -22,16 +22,17 @@ import {
   CodePluginPackageError,
   CodePluginRepositoryError,
   contentTypeForPluginFile,
-  installCodePluginFromUrl,
   parseCodePluginPackage,
 } from "./code-plugin-repository.js";
-import { checkCodePluginUpdate } from "./code-plugin-git-state.js";
+import { CodePluginMutationError, installCodePluginUrl, checkInstalledCodePlugin, updateInstalledCodePlugin, resolveCodePlugin, discoveredCodePlugins, extensionInstallationName } from "./code-plugin-service.js";
+import { registerExtensionCompatibility } from "./extension-compatibility.js";
 import { PRESET_STORAGE_KEY } from "./preset-routes.js";
 import type { RuntimeRepository } from "./runtime-repository.js";
 import { sendError } from "./http-errors.js";
 import type { IdParams, PluginAssetParams } from "./route-types.js";
 
 export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepository): void {
+  registerExtensionCompatibility(app, runtime);
   app.get("/api/plugins", async () => {
     return pluginListResponseSchema.parse(runtime.listPlugins());
   });
@@ -85,7 +86,8 @@ export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepos
   });
 
   app.get("/api/code-plugins", async () => {
-    return codePluginListResponseSchema.parse(runtime.listCodePlugins());
+    const response = runtime.listCodePlugins();
+    return codePluginListResponseSchema.parse({ ...response, items: response.items.map(plugin => ({ ...plugin, extensionName: extensionInstallationName(plugin) })) });
   });
 
   app.post<{ Body: unknown }>("/api/code-plugins/install", async (request, reply) => {
@@ -118,13 +120,9 @@ export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepos
       return sendError(reply, 400, "INVALID_INSTALL_URL", "扩展仓库地址无效。");
     }
     try {
-      const repository = await installCodePluginFromUrl(parsed.data.url, parsed.data.branch);
-      const existing = runtime.getCodePlugin(repository.plugin.id);
-      if (existing && existing.sourceUrl !== repository.plugin.sourceUrl) {
-        return sendError(reply, 409, "EXTENSION_SOURCE_CONFLICT", "同名扩展已来自另一个仓库；请先确认已安装扩展的来源。");
-      }
-      return reply.status(201).send(codePluginSchema.parse(runtime.installCodePlugin(repository)));
+      return reply.status(201).send(codePluginSchema.parse(await installCodePluginUrl(runtime, parsed.data.url, parsed.data.branch)));
     } catch (error) {
+      if (error instanceof CodePluginMutationError) return sendError(reply, error.statusCode, error.code, error.message);
       if (error instanceof CodePluginRepositoryError) {
         return sendError(reply, 422, "INVALID_CODE_PLUGIN", error.message);
       }
@@ -132,20 +130,14 @@ export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepos
     }
   });
 
-  const sameSource = (a: ReturnType<RuntimeRepository["getCodePlugin"]>, b: ReturnType<RuntimeRepository["getCodePlugin"]>): boolean =>
-    Boolean(a && b && a.sourceUrl === b.sourceUrl && a.sourceRef === b.sourceRef
-      && a.sourceRevision === b.sourceRevision && a.installedAt === b.installedAt);
-
   app.post<{ Params: IdParams }>("/api/code-plugins/:id/check-update", async (request, reply) => {
     const plugin = runtime.getCodePlugin(request.params.id);
     if (!plugin) return sendError(reply, 404, "PLUGIN_NOT_FOUND", "代码扩展不存在。");
     try {
-      const result = await checkCodePluginUpdate(plugin);
-      if (!sameSource(plugin, runtime.getCodePlugin(plugin.id))) {
-        return sendError(reply, 409, "EXTENSION_CHANGED", "扩展在检查期间发生变化，请重新检查。");
-      }
+      const result = await checkInstalledCodePlugin(runtime, plugin);
       return reply.header("Cache-Control", "no-store").send(codePluginUpdateCheckSchema.parse(result));
     } catch (error) {
+      if (error instanceof CodePluginMutationError) return sendError(reply, error.statusCode, error.code, error.message);
       if (error instanceof CodePluginRepositoryError) return sendError(reply, 422, "UPDATE_CHECK_FAILED", error.message);
       throw error;
     }
@@ -160,13 +152,9 @@ export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepos
     if (plugin.sourceRevision !== parsed.data.expectedRevision) return sendError(reply, 409, "EXTENSION_CHANGED", "扩展版本已改变，请重新检查后再更新。");
     try {
       // Clone and validate away from installed assets; a failed download leaves the old version intact.
-      const repository = await installCodePluginFromUrl(plugin.sourceUrl, parsed.data.branch ?? plugin.sourceRef ?? "");
-      if (!sameSource(plugin, runtime.getCodePlugin(plugin.id))) return sendError(reply, 409, "EXTENSION_CHANGED", "扩展在下载期间发生变化，请重新检查后再更新。");
-      if (repository.plugin.id !== plugin.id || repository.plugin.sourceUrl !== plugin.sourceUrl) {
-        return sendError(reply, 409, "EXTENSION_SOURCE_CONFLICT", "下载的扩展来源与已安装版本不同。");
-      }
-      return codePluginSchema.parse(runtime.installCodePlugin(repository));
+      return codePluginSchema.parse(await updateInstalledCodePlugin(runtime, plugin, parsed.data.branch ?? plugin.sourceRef ?? ""));
     } catch (error) {
+      if (error instanceof CodePluginMutationError) return sendError(reply, error.statusCode, error.code, error.message);
       if (error instanceof CodePluginRepositoryError) return sendError(reply, 422, "EXTENSION_UPDATE_FAILED", error.message);
       throw error;
     }
@@ -209,9 +197,9 @@ export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepos
   });
 
   app.get("/api/code-plugins/runtime", async (_request, reply) => {
-    const items = runtime.listCodePlugins().items.map(plugin => {
+    const items = discoveredCodePlugins(runtime).map(plugin => {
       const manifest = runtime.getCodePluginManifest(plugin.id) ?? {};
-      return { id: plugin.id, displayName: plugin.displayName, enabled: plugin.enabled, js: plugin.js, css: plugin.css,
+      return { id: plugin.id, extensionName: extensionInstallationName(plugin), installationScope: plugin.installationScope ?? "local", displayName: plugin.displayName, enabled: plugin.enabled, js: plugin.js, css: plugin.css,
         order: Number.isFinite(Number(manifest.loading_order)) ? Number(manifest.loading_order) : 0,
         hooks: typeof manifest.hooks === "object" && manifest.hooks !== null && !Array.isArray(manifest.hooks) ? manifest.hooks : {},
       };
@@ -225,7 +213,7 @@ export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepos
     app.get<{ Params: PluginAssetParams }>(
       assetRoute,
       async (request, reply) => {
-        const plugin = runtime.getCodePlugin(request.params.id);
+        const plugin = resolveCodePlugin(runtime, request.params.id);
         if (!plugin) {
           return reply.status(404).type("text/plain").send("Extension is not installed.");
         }

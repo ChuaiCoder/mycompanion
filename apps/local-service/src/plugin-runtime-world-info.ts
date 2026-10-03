@@ -173,6 +173,11 @@ export function setWorldInfoButtonClass(chid, forceValue) {
   if (forceValue === undefined && chid === undefined) return;
   document.querySelectorAll('#set_character_world, #world_button').forEach(node => node.classList.toggle('world_set', value));
 }
+export async function getSortedEntries() {
+  await flushWorldInfoWrites();const context=getContext();
+  return request('/api/worldinfo/entries',{characterId:context.characterUuid??null,conversationId:context.conversationId??null,
+    metadata:context.chatMetadata,settings:getWorldInfoSettings()});
+}
 export async function getWorldInfoPrompt(chat, maxContext, isDryRun = false, globalScanData) {
   const target=captureMacroApiTarget();
   await flushWorldInfoWrites();
@@ -180,7 +185,7 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun = false, glo
   const { snapshotExtensionPrompts } = await import('/plugin-runtime/compat-runtime.js');
   const extensionScanPrompts = await snapshotExtensionPrompts({}, [], { scanOnly: true });
   world_info.globalSelect = selected_world_info;
-  const { report, activated } = await requestMacroEvaluation('/api/worldinfo/prompt', current=>({
+  const { report, activated, outletEntries = {} } = await requestMacroEvaluation('/api/worldinfo/prompt', current=>({
     chat, maxContext, isDryRun, maxResponseTokens: oai_settings.openai_max_tokens,
     model: getChatCompletionModel() ?? undefined, globalVariables: extension_settings.variables?.global ?? {},
     characterId: current.characterUuid, metadata: current.chatMetadata,conversationId:target.conversationId,
@@ -190,18 +195,12 @@ export async function getWorldInfoPrompt(chat, maxContext, isDryRun = false, glo
   const sorted = report.results.filter(item => item.status === 'injected').sort((a, b) => a.insertionOrder - b.insertionOrder);
   const at = position => sorted.filter(item => item.position === position && item.content).map(item => item.content);
   const worldInfoBefore = at(0).join('\n'), worldInfoAfter = at(1).join('\n');
-  const worldInfoDepth = [], outletEntries = {};
+  const worldInfoDepth = [];
   for (const item of sorted) {
     if (item.position === 4 && item.content) {
       let group = worldInfoDepth.find(group => group.depth === item.depth && group.role === item.role);
       if (!group) { group = { depth: item.depth, role: item.role, entries: [] }; worldInfoDepth.push(group); }
       group.entries.push(item.content);
-    }
-  }
-  for (const item of [...sorted].reverse()) {
-    if (item.position === 7 && item.outletName && item.content) {
-      if (!Object.hasOwn(outletEntries, item.outletName)) Object.defineProperty(outletEntries, item.outletName, { value: [], enumerable: true });
-      outletEntries[item.outletName].push(item.content);
     }
   }
   if (!isDryRun && activated.length) await eventSource.emit(event_types.WORLD_INFO_ACTIVATED, activated);
@@ -235,4 +234,4 @@ export function syncWorldInfoControls() {
 await loadWorldInfoState();
 `;
 
-export const worldInfoShimSource = `export { DEFAULT_DEPTH, DEFAULT_WEIGHT, MAX_SCAN_DEPTH, METADATA_KEY, convertCharacterBook, createNewWorldInfo, deleteWorldInfo, getWorldInfoPrompt, getWorldInfoSettings, loadWorldInfo, newWorldInfoEntryTemplate, parseRegexFromString, saveWorldInfo, selected_world_info, setWorldInfoButtonClass, wi_anchor_position, world_info, world_info_include_names, world_info_logic, world_info_position, world_names, worldInfoCache, updateWorldInfoSettings, updateWorldInfoList } from '/plugin-runtime/world-info.js';`;
+export const worldInfoShimSource = `export { DEFAULT_DEPTH, DEFAULT_WEIGHT, MAX_SCAN_DEPTH, METADATA_KEY, convertCharacterBook, createNewWorldInfo, deleteWorldInfo, getSortedEntries, getWorldInfoPrompt, getWorldInfoSettings, loadWorldInfo, newWorldInfoEntryTemplate, parseRegexFromString, saveWorldInfo, selected_world_info, setWorldInfoButtonClass, wi_anchor_position, world_info, world_info_include_names, world_info_logic, world_info_position, world_names, worldInfoCache, updateWorldInfoSettings, updateWorldInfoList } from '/plugin-runtime/world-info.js';`;

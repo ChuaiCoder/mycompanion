@@ -17,6 +17,11 @@ style.textContent =
   '.mc-extension-popup.wide_dialogue_popup{width:85vw;min-height:65vh}.mc-extension-popup.wider_dialogue_popup{width:85vw}.mc-extension-popup.large_dialogue_popup{width:90vw;height:90vh}' +
   '.mc-extension-popup.transparent_dialogue_popup{background:transparent;border:0;box-shadow:none}.mc-extension-popup.left_aligned_dialogue_popup .popup-content{text-align:left}' +
   '.mc-extension-popup.horizontal_scrolling_dialogue_popup{overflow-x:auto}.mc-extension-popup.vertical_scrolling_dialogue_popup{overflow-y:auto}' +
+  '.mc-extension-popup .popup-content .flex-container{display:flex;gap:8px}.mc-extension-popup .popup-content .flexFlowColumn{flex-direction:column}.mc-extension-popup .popup-content .wide100p{width:100%;box-sizing:border-box}' +
+  '.mc-extension-popup .popup-content .menu_button{position:relative;display:flex;align-items:center;justify-content:center;text-align:center;cursor:pointer;min-height:36px;padding:8px 14px;border:1px solid var(--border,#ddd);border-radius:8px;background:var(--surface,#f5f5f5);color:inherit}' +
+  '.mc-extension-popup .popup-content .menu_button:hover{border-color:var(--accent,#536dfe)}.mc-extension-popup .popup-content .menu_button.toggleable{padding-left:32px}.mc-extension-popup .popup-content .menu_button.toggleable::before{position:absolute;left:12px;content:"\\2610"}' +
+  '.mc-extension-popup .popup-content .menu_button.toggleable.toggled{border-color:var(--accent,#536dfe)}.mc-extension-popup .popup-content .menu_button.toggleable.toggled::before{content:"\\2611";color:var(--accent,#536dfe)}' +
+  '.mc-extension-popup .scrollable-buttons-container{max-height:50vh;overflow-y:auto;margin-top:1rem;flex-shrink:1;min-height:0;scrollbar-width:thin}' +
   '@keyframes mc-popup-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}@keyframes mc-popup-out{from{opacity:1}to{opacity:0}}' +
   '.mc-extension-popup[opening]:not(.popup--animation-none){animation:mc-popup-in .1s ease}.mc-extension-popup[closing]:not(.popup--animation-none){animation:mc-popup-out .1s ease}.mc-extension-popup.popup--animation-slow{animation-duration:.2s}';
 document.head.append(style);
@@ -211,17 +216,27 @@ export class Popup {
     try {
       if (this.onClosing && !await this.onClosing(this)) { this.result = this.value = this.inputResults = undefined; return undefined; }
     } catch (error) { this.result = this.value = this.inputResults = undefined; throw error; }
+    if (this.state === 'closed') return;
     this.state = 'closing';
     Popup.util.lastResult = { result, value, inputResults: this.inputResults };
     this.dlg.removeAttribute('opening'); this.dlg.setAttribute('closing', ''); fixToastrForDialogs();
     if (this.forcePopup) await this.forcePopup.completeCancelled();
     await animate(this.dlg);
+    if (this.state === 'closed') return;
     this.dlg.close();
     try { await this.onClose?.(this); }
     catch (error) { this.reject(error); throw error; }
     finally { this.dispose(); }
     this.resolve(value);
     return value;
+  }
+  cancelForLifecycle(error) {
+    if (this.state === 'closed') return;
+    this.state = 'closed';
+    this.forcePopup?.cancelForLifecycle(error);
+    if (this.dlg.open) this.dlg.close();
+    this.dispose();
+    this.reject?.(error);
   }
   dispose() {
     this.state = 'closed'; this.cropper?.destroy(); $(this.cropImage).removeData('cropper');

@@ -1,6 +1,6 @@
 import { nativeCompletionRequestSchema, type ProviderSettings } from "@mycompanion/shared";
 import { CONTEXT_RESERVE_TOKENS } from "./prompt-budget.js";
-import { countCompatibilityMessagesSync, countTextTokens } from "./tokenizer-service.js";
+import { accountCompletionTokens } from "./token-accounting.js";
 import { ModelRequestError } from "./model-request-error.js";
 
 /** Measure the normalized outgoing payload, after extension/custom-body edits. */
@@ -11,11 +11,9 @@ export function measureChatCompletionRequest(body: Record<string, unknown>, sett
   const request = parsed.data;
   const responseTokens = Math.max(request.max_completion_tokens ?? 0, request.max_tokens ?? 0) || settings.maxTokens;
   const reserveTokens = responseTokens + CONTEXT_RESERVE_TOKENS;
-  let promptTokens = countCompatibilityMessagesSync(request.messages, request.model, true);
-  for (const field of ["tools", "response_format"] as const) {
-    if (request[field]) promptTokens += countTextTokens(JSON.stringify(request[field]), request.model);
-  }
-  return { request, contextLimitTokens, reserveTokens,
+  const tokenAccounting = accountCompletionTokens(request);
+  const promptTokens=tokenAccounting.promptTokens;
+  return { request, contextLimitTokens, reserveTokens, tokenAccounting,
     availableTokens: Math.max(0, contextLimitTokens - reserveTokens), totalTokens: promptTokens + reserveTokens };
 }
 

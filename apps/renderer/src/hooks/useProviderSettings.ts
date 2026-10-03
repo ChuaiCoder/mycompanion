@@ -23,7 +23,7 @@ export function useProviderSettings(deps: {
   useEffect(() => {
     const update = (event: Event) => {
       const detail = (event as CustomEvent<ProviderSettings & { connectionUnchanged?: boolean }>).detail;
-      if (!detail.connectionUnchanged) { revision.current++; updateProvider(detail); setIsConnectionReady(false); setProviderNotice(null); setProviderIssue(undefined); }
+      if (!detail.connectionUnchanged) { revision.current++; updateProvider(detail); updateApiKey(""); setIsConnectionReady(false); setProviderNotice(null); setProviderIssue(undefined); }
     };
     window.addEventListener("mycompanion:provider-saved", update);
     return () => { revision.current++; window.removeEventListener("mycompanion:provider-saved", update); };

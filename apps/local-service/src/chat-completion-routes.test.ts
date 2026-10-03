@@ -32,14 +32,15 @@ it("does not send a saved key to a different override origin and honors explicit
   vi.stubGlobal("fetch", vi.fn(async (_url: URL, init: RequestInit) => { authorizations.push(new Headers(init.headers).get("authorization")); return Response.json({choices:[]}); }));
   const send = (extra: Record<string, unknown>) => app.inject({method:"POST",url:"/api/backends/chat-completions/generate",payload:{messages:[{role:"user",content:"x"}],...extra}});
   await send({}); await send({custom_url:"http://localhost:9998/v1"}); await send({custom_url:"http://localhost:9998/v1",proxy_password:"explicit"});
-  expect(authorizations).toEqual(["Bearer saved-key",null,"Bearer explicit"]);
+  await send({custom_url:"http://localhost:9999/different/v1"});
+  expect(authorizations).toEqual(["Bearer saved-key",null,"Bearer explicit",null]);
 });
-it("preserves provider HTTP errors and rejects unsupported native protocol before fetching", async () => {
+it("preserves provider HTTP status with safe diagnostics and rejects unsupported native protocol before fetching", async () => {
   const app = await fixture(); const fetchMock = vi.fn(async () => Response.json({error:{message:"Provider quota"}}, {status:429})); vi.stubGlobal("fetch",fetchMock);
   const rejected = await app.inject({method:"POST",url:"/api/backends/chat-completions/generate",payload:{messages:[{}],chat_completion_source:"claude"}});
   expect(rejected.statusCode).toBe(400); expect(fetchMock).not.toHaveBeenCalled();
   const result = await app.inject({method:"POST",url:"/api/backends/chat-completions/generate",payload:{messages:[{role:"user",content:"x"}]}});
-  expect(result.statusCode).toBe(429); expect(result.json().error.message).toBe("Provider quota");
+  expect(result.statusCode).toBe(429); expect(result.json().error.message).toContain("额度不足");
 });
 it("relays split SSE bytes without losing multi-choice, reasoning or tool fields", async () => {
   const app = await fixture(); const source = 'data: {"choices":[{"index":0,"delta":{"content":"你好","reasoning_content":"想","tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}\n\ndata: [DONE]\n\n';

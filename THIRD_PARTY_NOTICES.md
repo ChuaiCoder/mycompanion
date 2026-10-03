@@ -10,7 +10,7 @@ provenance. Each component remains subject to its own license.
 
 The standalone `@mycompanion/macro-engine` package contains adapted SillyTavern
 1.19.0 macro lexer/parser/walker/registry/engine/flags/environment builder and selected utility,
-conditional and character environment definitions, copyright SillyTavern contributors, licensed under
+conditional, character and world-info/Outlet environment definitions, copyright SillyTavern contributors, licensed under
 AGPL-3.0-only. Original source: https://github.com/SillyTavern/SillyTavern/tree/7e8663cd9c184a550b37238218bdd32c6efc68e9/public/scripts/macros
 The full AGPL text accompanies this application in LICENSE. File hashes and
 adaptations are listed in `packages/macro-engine/upstream.json` and its README.
@@ -50,6 +50,7 @@ public domain (or MIT if needed), https://github.com/bryc/code/blob/master/jshas
 | @highlightjs/cdn-assets | 11.12.0 | BSD-3-Clause | Locally bundled Highlight.js browser build for extension code highlighting; © 2006 Ivan Sagalaev; package LICENSE retained |
 | eventsource-parser | 4.1.1 | MIT | SSE parsing; project-owned MessageEvent/TransformStream adapter |
 | gpt-tokenizer | 4.0.0 | MIT | Local BPE counting for extension prompt/message budgets; © 2023–2024 Bazyli Brzoska; package LICENSE retained |
+| image-size header excerpts | e6e83a55 | MIT | Fixed, unchanged PNG/JPEG/GIF/WebP handlers and utilities; © 2013-Present Aditya Yadav; import/compiler adapters only; full license below |
 | yaml | 2.9.1 | ISC | Extension custom request body/header YAML parsing; © Eemeli Aro; package LICENSE retained |
 | sanitize-filename | 1.6.3 | MIT | Filename compatibility endpoint |
 | Font Awesome Free | 6.7.2 | MIT (code), OFL-1.1 (fonts), CC-BY-4.0 (icons) | Extension icons and picker; © Fonticons, Inc.; https://fontawesome.com |
@@ -68,6 +69,22 @@ Attribution is retained in `plugin-runtime-utils.ts`.
 
 ## Reused world-info scanner and effects
 
+`public/scripts/tool-calling.js` from the same fixed SillyTavern commit is served
+as one unchanged browser module, including ToolDefinition, ToolManager and its
+tool slash commands, under AGPL-3.0-only, copyright SillyTavern contributors.
+`apps/local-service/tool-calling-upstream.json` records both source/output hashes;
+`scripts/import-tool-calling.mjs` verifies or regenerates the module. The host
+effect/cancellation/continuation adapters are separate project-authored code.
+
+The world-info vector activation/query selection excerpts (`getQueryText`,
+`activateWorldInfo`, `multiQueryCollection`) are adapted from
+`public/scripts/extensions/vectors/index.js` and `src/endpoints/vectors.js` at the
+same fixed SillyTavern commit below, under AGPL-3.0-only, copyright SillyTavern
+contributors. `apps/local-service/world-info-vector-upstream.json` records the
+original hashes, generated hash and invocation-specific adapters;
+`scripts/import-world-info-vectors.mjs` generates the editable excerpt. The full
+upstream server, application and extension are not bundled.
+
 WorldInfoBuffer, WorldInfoTimedEffects, group scoring/weighted selection,
 decorator parsing and the scan loop are adapted from the same fixed SillyTavern
 1.19.0 commit under AGPL-3.0-only, copyright SillyTavern contributors.
@@ -84,6 +101,20 @@ attribution. This reuse does not embed the complete Tavern application.
 
 ## Reused prompt, Slash and CHARX components
 
+The Claude/Gemini message conversion and reasoning-budget declarations are
+adapted from `src/prompt-converters.js` at the same fixed SillyTavern commit,
+under AGPL-3.0-only, copyright SillyTavern contributors. Original declaration
+and generated hashes, including the explicit signed `provider_native` replay
+adaptation, are in `apps/local-service/provider-converters-upstream.json`;
+`scripts/import-provider-converters.mjs` verifies or regenerates those sources.
+
+The selected Quick Reply execution definitions (AutoExecuteHandler, QuickReply,
+QuickReplySet execution/defaults, loadSets and executeQuickReplyByName) are
+adapted from that fixed commit's `public/scripts/extensions/quick-reply/` under
+AGPL-3.0-only, copyright SillyTavern contributors. Original file hashes and
+execution-only changes are recorded in `apps/local-service/quick-reply-upstream.json`
+and its generator. The complete upstream editor and application are not bundled.
+
 Selected PromptManager and text-only chat-completion preparation/population
 functions are adapted from SillyTavern 1.19.0 at
 `7e8663cd9c184a550b37238218bdd32c6efc68e9`, copyright SillyTavern
@@ -99,6 +130,10 @@ utility and return-dispatch modules in `apps/local-service/upstream-slash`.
 Each file has a modification notice; original and adapted hashes and the
 specific changes appear in `apps/local-service/slash-upstream.json`.
 `scripts/import-slash-upstream.mjs` is the preferred generation source.
+The original `/input` (alias `/prompt`), `/popup` and `/buttons` registrations
+and callback text are preserved. A per-invocation dependency factory binds
+them to the native Popup and cancellable delay; this host adaptation and its
+desktop-theme button styles do not distribute the Tavern document or stylesheets.
 The readable modules and generated TypeScript asset map are included in
 corresponding source. Regeneration takes a separately obtained fixed upstream
 checkout; ordinary installation, tests and builds do not need the research cache.
@@ -133,6 +168,35 @@ commit above under AGPL-3.0-only; bounded archive and SQLite host adapters are
 MyCompanion changes. No upstream default image or complete application is shipped.
 
 Copyright (c) 2025 Ahoy Labs, Inc.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+## MIT License — Vectra vector metric methods
+
+Three unmodified `ItemSelector` method declarations are included from Vectra
+commit `dec2dadc3bb158b06ac72fa9097bee729429a271` in
+`apps/local-service/src/vector-metric-upstream.ts`. The surrounding class is
+renamed; the host validates dimensions and values. Source hashes and changes
+are in `apps/local-service/vector-upstream.json`; the editable importer is
+`scripts/import-vector-upstream.mjs`. No complete Vectra index/NLP stack is bundled.
+
+Copyright (c) 2023-2026 Steven Ickman
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -420,3 +484,18 @@ THE SOFTWARE.
    See the License for the specific language governing permissions and
    limitations under the License.
 
+
+## MIT License — image-size header excerpts
+
+Fixed source: https://codeberg.org/image-size/image-size/src/commit/e6e83a5578961de81f6d5834d90fb7430d8f29a5/lib/types
+Only PNG/JPEG/GIF/WebP handlers, types and utilities are reused. Generic detection and other format handlers are excluded. Import specifiers and compiler directives are adapted; function bodies remain unchanged. Source and output hashes are in apps/local-service/image-headers-upstream.json.
+
+The MIT License (MIT)
+
+Copyright © 2013-Present Aditya Yadav, http://netroy.in
+
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

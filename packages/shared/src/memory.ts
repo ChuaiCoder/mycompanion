@@ -61,6 +61,8 @@ export const memoryRetrievalResultSchema = z.object({
   type: memoryTypeSchema,
   scope: memoryScopeSchema,
   score: z.number().nonnegative(),
+  keywordScore: z.number().min(0).max(1).optional(),
+  semanticScore: z.number().min(-1).max(1).optional(),
   injected: z.boolean(),
   pinned: z.boolean().optional(),
   // 注入内容（宏已解析），供全局 Token 预算按得分裁剪（FR-PROMPT-003）。
@@ -80,6 +82,14 @@ export const memoryRetrievalReportSchema = z.object({
   pinnedBudgetTokens: z.number().int().nonnegative().optional(),
   injectedCount: z.number().int().nonnegative(),
   durationMs: z.number().nonnegative(),
+  retrieval: z.object({
+    mode: z.enum(["keyword", "hybrid"]),
+    embeddingModel: z.string().optional(),
+    indexedCount: z.number().int().nonnegative(),
+    pendingCount: z.number().int().nonnegative(),
+    threshold: z.number().min(-1).max(1),
+    diagnostics: z.array(z.string()),
+  }).optional(),
 });
 
 // 记忆中心（FR-MEM-007）筛选。

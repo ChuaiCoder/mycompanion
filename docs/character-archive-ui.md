@@ -28,4 +28,8 @@
 
 随后独立报告 `renderer-character-archives-c01-byaf-20261003-r5.json`，checkedAt 为 `2026-10-02T17:48:44.242Z`，十三阶段通过。新增实际 BYAF 文件预览和两个故事显示、确认前无故事写入、导入后在导航或重启之前 React 故事列表立即出现两条；分别打开两故事核对实际消息 DOM、宿主 `swipes`/`swipe_id`、原始 outputs/未知字段和场景提示词。原生完整备份后实际修改故事，再通过恢复界面覆盖恢复、加载两故事，核对候选回复与全部八个原始文件的 CHARX 字节。自编 BYAF fixture 是本项目回归证据，不能代替固定上游双向交换或原生候选切换 UI。
 
-尚需覆盖更多迁移格式、固定上游双向文件交换、实际发行 EXE 的实卡往返及完整 C01 清单。保存辅助文件不表示所有资源类型已经有消费它们的产品功能。
+BYAF r5 报告 SHA-256 为 `275fb4b5aae609d02c09fbb0575c24f427a0dbdda5f7ce8232d3d878117375a4`。
+
+随后独立报告 `renderer-character-archives-c01-inline-20261003-r6.json`，checkedAt 为 `2026-10-02T19:14:23.597Z`，SHA-256 为 `275a3858466ed8012a41224a21e79accb949c7e11f0dee2261311bf134ddb7e5`。十六阶段通过，前十三阶段重新执行；新增实际 data URI JSON 文件选择和角色头像解码、JSON 原 URI/CHARX 内嵌资产原字节/PNG 标准 asset chunk 往返、原生完整备份后实际修改角色并从 UI 覆盖恢复，以及完整关闭后换服务端口重启并从库中打开角色。两种内嵌资源逐字节一致，原始 data URI、未知字段和全部辅助附件保持。
+
+本报告使用最新源码 Electron，不代表旧正式 EXE 已含这些功能。固定上游格式函数双向交换由独立 `scripts/upstream-oracles/character-exchange.mjs` 报告记录，不能用本 UI fixture 代替上游实现。完整 C01 的最终 EXE/V5.3 实卡聊天、世界书和正则演练仍属 G02 的正式候选验收。保存辅助文件不表示所有资源类型已经有消费它们的产品功能。

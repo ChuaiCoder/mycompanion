@@ -3,7 +3,8 @@ import { extensionPromptSchema, worldInfoDocumentSchema, worldInfoSettingsSchema
 import type { WorldInfoRepository } from "./world-info-repository.js";
 import type { CharacterRepository } from "./character-repository.js";
 import type { RuntimeRepository } from "./runtime-repository.js";
-import { buildWorldInfoReport, finalizeWorldInfoRegex } from "./world-info-service.js";
+import { buildWorldInfoReport, finalizeWorldInfoRegex, collectWorldInfoEntries } from "./world-info-service.js";
+import { normalizeWorldInfoEntries } from "./worldbook-engine.js";
 import { MacroEvaluationSession } from "./prompt-macros.js";
 import { MacroVariableConflictError } from "./macro-variable-conflict.js";
 import { sendError } from "./http-errors.js";
@@ -11,11 +12,21 @@ import { TavernRegexExecutor } from "./tavern-regex-service.js";
 import { bindCharacterMacroEnvironment } from "./character-macros.js";
 import { completeMacroApi } from "./macro-boundary.js";
 import { commitWorldInfoEffects, getCommittedWorldInfoState } from "./world-info-effects.js";
+import { getWorldInfoActivatedEntries, getWorldInfoOutletEntries } from "./world-info-activation.js";
 
 export function registerWorldInfoRoutes(app: FastifyInstance, books: WorldInfoRepository, characters: CharacterRepository,
   runtime: RuntimeRepository): void {
   const regexExecutor = new TavernRegexExecutor();
   app.addHook("onClose", async () => regexExecutor.close());
+  app.post<{Body:{characterId?:string|null;conversationId?:string|null;metadata?:Record<string,unknown>;settings?:unknown}}>("/api/worldinfo/entries",async(request,reply)=>{
+    const body=request.body??{},conversation=body.conversationId?runtime.getConversation(body.conversationId):undefined;
+    const id=body.characterId??conversation?.characterId,character=id?characters.get(id):undefined;
+    if(id&&!character)return sendError(reply,404,"CHARACTER_NOT_FOUND","角色不存在。");
+    const settings=worldInfoSettingsSchema.safeParse(body.settings??books.settings());
+    if(!settings.success)return sendError(reply,400,"INVALID_WORLD_INFO_SETTINGS","世界书设置无效。");
+    const source=character??{id:"00000000-0000-4000-8000-000000000000",name:"",lorebookEnabled:[],rawExtensions:{},description:"",personality:"",scenario:"",creatorNotes:""};
+    return normalizeWorldInfoEntries(collectWorldInfoEntries(books,source,body.metadata??conversation?.chatMetadata??{},settings.data,runtime.getExtensionSettings()),source.id);
+  });
   app.get("/api/worldinfo/list", async (_request, reply) => reply.header("Cache-Control", "no-store").send({ world_names: books.names() }));
   const nameSchema = { type: "object", required: ["name"], properties: { name: { type: "string", minLength: 1, pattern: "^[^\\u0000]+$" } } };
   app.post<{ Body: { name: string } }>("/api/worldinfo/get", { schema: { body: nameSchema } }, async (request, reply) => {
@@ -106,11 +117,8 @@ export function registerWorldInfoRoutes(app: FastifyInstance, books: WorldInfoRe
       ...(signal ? { signal } : {}),
     });
     const macroChanges = macroSession.changes();
-    const selected = new Map(report.results.filter(result => result.status === "injected").map(result => [result.index, result]));
-    return { report, ...(body.commitVariables ? {macroChanges} : {}), activated: entries.filter(entry => selected.has(entry.index)).map(entry => ({
-      ...entry.worldInfo, key: entry.keys, keysecondary: entry.secondaryKeys, comment: entry.name,
-      content: selected.get(entry.index)!.content, constant: entry.constant, selective: entry.selective, order: entry.insertionOrder,
-    })) };
+    return { report, ...(body.commitVariables ? {macroChanges} : {}), activated: getWorldInfoActivatedEntries(report),
+      outletEntries: getWorldInfoOutletEntries(report) };
     }, result => {
       if (body.commitVariables || (!dryRun && conversation)) {
         try { runtime.withTransaction(() => {

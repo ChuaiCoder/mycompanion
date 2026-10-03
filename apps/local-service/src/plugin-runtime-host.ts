@@ -7,6 +7,7 @@ import { extension_settings, saveSettings, saveSettingsDebounced, onExtensionSet
 import { bindChatContext, applyChatContext, saveChatConditional, saveMetadata, saveMetadataDebounced } from '/plugin-runtime/chat.js';
 import { MacrosParser, substituteParams, substituteParamsExtended } from '/plugin-runtime/macros.js';
 import * as variableRuntime from '/plugin-runtime/variables.js';
+import {cancelInvocationScopesForContext} from '/plugin-runtime/invocation-scopes.js';
 export { substituteParams, substituteParamsExtended };
 export { saveChatConditional, saveMetadata, saveMetadataDebounced };
 export { extension_settings, saveSettings, saveSettingsDebounced };
@@ -56,18 +57,23 @@ export const event_types = Object.freeze({
   APP_READY: 'app_ready', APP_INITIALIZED: 'app_initialized', CHAT_CHANGED: 'chat_id_changed', MESSAGE_SENT: 'message_sent',
   ONLINE_STATUS_CHANGED: 'online_status_changed',
   MESSAGE_EDITED: 'message_edited', MESSAGE_UPDATED: 'message_updated', MESSAGE_DELETED: 'message_deleted',
+  MESSAGE_SWIPED: 'message_swiped', MORE_MESSAGES_LOADED: 'more_messages_loaded',
   MESSAGE_RECEIVED: 'message_received', CHARACTER_MESSAGE_RENDERED: 'character_message_rendered',
-  USER_MESSAGE_RENDERED: 'user_message_rendered', GENERATION_STARTED: 'generation_started', GENERATION_AFTER_COMMANDS: 'generation_after_commands',
+  USER_MESSAGE_RENDERED: 'user_message_rendered', GENERATION_STARTED: 'generation_started', GENERATION_AFTER_COMMANDS: 'GENERATION_AFTER_COMMANDS',
   GENERATION_ENDED: 'generation_ended', SETTINGS_UPDATED: 'settings_updated',
   GENERATION_STOPPED: 'generation_stopped',
+  IMPERSONATE_READY: 'impersonate_ready',
   CHAT_COMPLETION_PROMPT_READY: 'chat_completion_prompt_ready',
+  GENERATE_AFTER_DATA: 'generate_after_data',
   CHAT_COMPLETION_SETTINGS_READY: 'chat_completion_settings_ready',
   OAI_PRESET_CHANGED_BEFORE: 'oai_preset_changed_before', OAI_PRESET_CHANGED_AFTER: 'oai_preset_changed_after',
   PRESET_CHANGED: 'preset_changed', OAI_PRESET_IMPORT_READY: 'oai_preset_import_ready',
   EXTENSION_SETTINGS_LOADED: 'extension_settings_loaded',
   WORLDINFO_UPDATED: 'worldinfo_updated', WORLDINFO_SETTINGS_UPDATED: 'worldinfo_settings_updated',
   WORLD_INFO_ACTIVATED: 'world_info_activated',
-  CHARACTER_EDITED: 'character_edited', CHARACTER_DELETED: 'character_deleted', CHAT_DELETED: 'chat_deleted',
+  WORLDINFO_SCAN_DONE: 'worldinfo_scan_done', WORLDINFO_FORCE_ACTIVATE: 'worldinfo_force_activate',
+  TOOL_CALLS_PERFORMED: 'tool_calls_performed', TOOL_CALLS_RENDERED: 'tool_calls_rendered',
+  CHARACTER_EDITED: 'character_edited', CHARACTER_DELETED: 'characterDeleted', CHAT_DELETED: 'chat_deleted',
   PERSONA_CHANGED: 'persona_changed', PERSONA_CREATED: 'persona_created', PERSONA_UPDATED: 'persona_updated', PERSONA_DELETED: 'persona_deleted',
 });
 const stopSettingsListener = onExtensionSettingsSaved(() => eventSource.emit(event_types.SETTINGS_UPDATED));
@@ -82,7 +88,7 @@ export function setUserName(value, _options = {}) {
 }
 // Extras is a separate service, not our local model API.
 export const getApiUrl = () => extension_settings.apiUrl || 'http://localhost:5100';
-export const getRequestHeaders = () => ({ 'Content-Type': 'application/json' });
+export const getRequestHeaders = ({omitContentType=false}={}) => omitContentType ? {} : {'Content-Type':'application/json'};
 export function publishContributions(owner) {
   contributionPublisher?.(owner, {
     systemPrompt: '',
@@ -96,10 +102,23 @@ export function setOwnedPrompt(owner, key, value, position = 0, depth = 0, scan 
   publishContributions(owner);
 }
 export function setExtensionPrompt(key, value, position, depth, scan = false, role = 0, filter = null) { setOwnedPrompt(prompts.get(String(key))?.owner || extensionCaller(), key, value, Number(position), Number(depth), scan, role, filter); }
-export async function snapshotExtensionPrompts(macroOptions = {}, excludedKeys = [], { scanOnly = false, skipScan = false } = {}) {
+export function applyWorldInfoOutlets({ conversationId, branchId, outlets }) {
+  if ((context.conversationId ?? null) !== (conversationId ?? null) || (context.branchId ?? null) !== (branchId ?? null)) return false;
+  for (const key of Object.keys(extension_prompts)) if (key.startsWith('customWIOutlet_')) { delete extension_prompts[key]; prompts.delete(key); }
+  for (const [key, value] of Object.entries(outlets ?? {})) setOwnedPrompt('world-info', 'customWIOutlet_' + key, value, -1, 0);
+  return true;
+}
+export async function snapshotExtensionPrompts(macroOptions = {}, excludedKeys = [], { scanOnly = false, skipScan = false, signal } = {}) {
+  const target = JSON.stringify([context.conversationId ?? null,context.branchId ?? null]);
+  const assertActive = () => {
+    signal?.throwIfAborted();
+    if (target !== JSON.stringify([context.conversationId ?? null,context.branchId ?? null])) throw new DOMException('Story or branch changed during prompt preparation','AbortError');
+  };
+  assertActive();
   const entries = Object.entries(extension_prompts).filter(([key]) => !excludedKeys.includes(key)).map(([key, prompt]) => [key, { ...prompt }]);
   const result = [];
   for (const [key, prompt] of entries) {
+    assertActive();
     const scan = !!prompt.scan && !skipScan;
     if (!prompt.value || (scanOnly && !scan)) continue;
     let position = [-1, 0, 1, 2].includes(prompt.position) ? prompt.position : -1;
@@ -108,8 +127,9 @@ export async function snapshotExtensionPrompts(macroOptions = {}, excludedKeys =
       if (!scan) continue;
       position = -1; depth = 0;
     }
-    if (position === -1 && !scan) continue;
-    if (typeof prompt.filter === 'function' && !await prompt.filter()) continue;
+    if (position === -1 && !scan && !key.startsWith('customWIOutlet_')) continue;
+    if (typeof prompt.filter === 'function' && !await prompt.filter({signal})) { assertActive(); continue; }
+    assertActive();
     // Preserve raw values. Scanning and PromptManager's sorted depth/role
     // buckets own their separate substitution passes in the same request draft.
     result.push({ key, value: String(prompt.value), position, depth, scan,
@@ -144,6 +164,7 @@ export { renderExtensionTemplate, renderExtensionTemplateAsync } from '/plugin-r
 export const doExtrasFetch = (url, options = {}) => fetch(url, options);
 
 export function applyHostContext(next) {
+  cancelInvocationScopesForContext(next||{},context);
   const previousChat = context.chat.map(message => ({ ...message }));
   const previousChatId = context.conversationId;
   const { chat, chatMetadata, characters, variables, extensionTypes: types, ...fields } = next || {};
@@ -210,6 +231,10 @@ export { setUserName } from '/plugin-runtime/compat-runtime.js';
 export const default_user_avatar = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9rS3lGQAAAABJRU5ErkJggg==';
 // All native providers use the Chat Completion request path.
 export const main_api = 'openai';
+export const systemUserName = 'System';
+import {oai_settings,getChatCompletionModel} from '/plugin-runtime/openai-settings.js';
+export const getGeneratingApi = () => oai_settings.chat_completion_source || 'openai';
+export const getGeneratingModel = () => getChatCompletionModel();
 export { online_status } from '/plugin-runtime/provider-status.js';
 import { getContext, subscribeHostContext } from '/plugin-runtime/compat-runtime.js';
 export const characters = getContext().characters;

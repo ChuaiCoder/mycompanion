@@ -31,6 +31,7 @@ export function buildStoryExportJson(input: {
       title: conversation.title,
       activeBranchId: conversation.activeBranchId,
       ...(conversation.chatMetadata === undefined ? {} : { chatMetadata: conversation.chatMetadata }),
+      ...(conversation.chatHeader === undefined ? {} : { chatHeader: conversation.chatHeader }),
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     },

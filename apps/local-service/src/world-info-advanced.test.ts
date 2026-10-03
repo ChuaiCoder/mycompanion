@@ -16,6 +16,7 @@ import { CharacterRepository } from "./character-repository.js";
 import { MacroEvaluationSession, resolveMacroField } from "./prompt-macros.js";
 import { runMacroBoundary } from "./macro-boundary.js";
 import { buildWorldInfoReport, finalizeWorldInfoRegex } from "./world-info-service.js";
+import { getWorldInfoOutletEntries } from "./world-info-activation.js";
 import { TavernRegexExecutor } from "./tavern-regex-service.js";
 
 const characterId = "00000000-0000-4000-8000-000000000001";
@@ -245,6 +246,29 @@ describe("world-info accepted request persistence", () => {
       expect(createWorldInfoEffectsDraft(latest.chatMetadata ?? {}, latest.activeBranchId, latest.messages).timedWorldInfo.sticky).toEqual({});
     } finally { database.close(); rmSync(directory, { recursive: true, force: true }); }
   });
+  it("mounts the selected branch timers before raw extension edits and preserves each branch's outgoing edits",()=>{
+    const database=new DatabaseSync(":memory:");databases.push(database);const runtime=new RuntimeRepository(database),characters=new CharacterRepository(database);
+    const character=characters.import(parseCharacterCardDocument({spec:"chara_card_v2",spec_version:"2.0",data:{name:"Branch timers",first_mes:"hello",description:"",
+      personality:"",scenario:"",mes_example:"",creator_notes:"",system_prompt:"",post_history_instructions:"",alternate_greetings:[],tags:[],creator:"",character_version:"",extensions:{}}}),"branch-timers.json").character;
+    const story=runtime.createConversation(character),user=runtime.addMessage(story.id,"user","hit"),source=runtime.getConversation(story.id)!;
+    const report=matchLorebookEntries(character.id,[entry(0,{sticky:5})],character.name,"hit",1000,{dryRun:false,
+      effectsDraft:createWorldInfoEffectsDraft(source.chatMetadata??{},source.activeBranchId,source.messages)});
+    runtime.withTransaction(()=>commitWorldInfoEffects(runtime,story.id,source.activeBranchId,report));
+    const original=runtime.getConversation(story.id)!,timers=structuredClone(original.chatMetadata!.timedWorldInfo);
+    const edited=runtime.editMessage(story.id,user.id,"no keyword")!,branch=runtime.getConversation(story.id)!;
+    expect(branch.chatMetadata!.timedWorldInfo).toEqual({});
+    expect((branch.chatMetadata![WORLD_INFO_STATE_KEY] as any).activeBranchId).toBe(edited.branchId);
+    const external={sticky:{"test.0":{...(timers as any).sticky["test.0"],end:99}}};
+    database.prepare("UPDATE conversations SET metadata_json=json_set(metadata_json,'$.timedWorldInfo',json(?)) WHERE id=?").run(JSON.stringify(external),story.id);
+    const modified=runtime.getConversation(story.id)!;
+    expect(createWorldInfoEffectsDraft(modified.chatMetadata!,modified.activeBranchId,modified.messages).timedWorldInfo).toEqual(external);
+    const restored=runtime.activateBranch(story.id,original.activeBranchId)!;expect(restored.chatMetadata!.timedWorldInfo).toEqual(timers);
+    database.prepare("UPDATE conversations SET metadata_json=json_set(metadata_json,'$.timedWorldInfo',json('{}')) WHERE id=?").run(story.id);
+    expect(runtime.activateBranch(story.id,edited.branchId)!.chatMetadata!.timedWorldInfo).toEqual(external);
+    expect(runtime.activateBranch(story.id,original.activeBranchId)!.chatMetadata!.timedWorldInfo).toEqual({});
+    const before=runtime.getConversation(story.id)!;runtime.activateBranch(story.id,original.activeBranchId);
+    expect(runtime.getConversation(story.id)!.chatMetadata).toEqual(before.chatMetadata);
+  });
 });
 
 // This optional oracle reads pristine declarations, not the adapted scanner.
@@ -305,6 +329,11 @@ it.skipIf(!process.env.SILLYTAVERN_WORLD_INFO_ORACLE_ROOT)("compares native scan
     { name: "recursive-trigger", entries: [{ uid: 0, content: "second" }, { uid: 1, key: ["second"] }], settings: { world_info_recursive: true } },
     { name: "recursion-levels", entries: [{ uid: 0, delayUntilRecursion: 1 }, { uid: 1, delayUntilRecursion: 4 }], settings: { world_info_recursive: false } },
     { name: "probability", entries: [{ uid: 0, probability: 50 }, { uid: 1, probability: 90 }], roll: .7 },
+    { name: "outlet-descending-stable-activation-ties", entries: [
+      { uid: 2, order: 101, constant: true, content: "HIGH", position: 7, outletName: "story" },
+      { uid: 0, order: 100, key: ["second"], content: "LATE", position: 7, outletName: "story" },
+      { uid: 1, order: 100, constant: true, content: "second", position: 7, outletName: "story" },
+    ], messages: [], settings: { world_info_recursive: true } },
   ];
   const evidence: any[] = [];
   for (const fixture of fixtures) {
@@ -346,8 +375,11 @@ it.skipIf(!process.env.SILLYTAVERN_WORLD_INFO_ORACLE_ROOT)("compares native scan
       expect(productDraws, fixture.name).toEqual(draws); expect(productPhases, fixture.name).toEqual(phases); }
     const beforeEntries = fixture.entries.map(raw => entry(raw.uid, { ...raw, world: "oracle" }, {
       keys: raw.key ?? ["hit"], secondaryKeys: raw.keysecondary ?? [], constant: raw.constant ?? false,
-      content: raw.content ?? `CONTENT_${raw.uid}`, insertionOrder: 100 - raw.uid,
+      content: raw.content ?? `CONTENT_${raw.uid}`, insertionOrder: raw.order ?? 100 - raw.uid,
     }));
+    const adapterOutlets = fixture.entries.some(raw => raw.position === 7) ? getWorldInfoOutletEntries(matchLorebookEntries(characterId,
+      beforeEntries, "Char", "", 1000, { messages, recursive: settings.world_info_recursive, preservePriority: true })) : undefined;
+    if (adapterOutlets) expect(adapterOutlets).toEqual(JSON.parse(JSON.stringify(original.outletEntries)));
     const beforeSelected = beforeMatch ? selected(beforeMatch(characterId, beforeEntries, "Char", "", 1000, {
       messages, scanDepth: settings.world_info_depth, minActivations: settings.world_info_min_activations,
       minActivationsDepthMax: settings.world_info_min_activations_depth_max, recursive: settings.world_info_recursive,
@@ -358,6 +390,7 @@ it.skipIf(!process.env.SILLYTAVERN_WORLD_INFO_ORACLE_ROOT)("compares native scan
     evidence.push({ name: fixture.name, input: fixture, originalSelected, productSelected, beforeSelected, originalDraws: draws, productDraws,
       originalPhases: phases, productPhases, originalMetadata: metadata, productMetadata, intentionalRepair: fixture.repair || fixture.injectionRepair || false,
       ...(fixture.injectionRepair ? { adaptation: "Native explicit scan source remains eligible at zero chat depth; pristine upstream returns an empty buffer before injection assembly." } : {}) });
+    if (adapterOutlets) Object.assign(evidence.at(-1), { originalOutlets: original.outletEntries, adapterOutlets });
   }
   const reportDirectory = resolve(".cache/reports"); mkdirSync(reportDirectory, { recursive: true });
   const report = process.env.MYCOMPANION_WORLD_INFO_ORACLE_REPORT ?? join(reportDirectory, "w01-upstream-world-info-oracle-20261003.json");

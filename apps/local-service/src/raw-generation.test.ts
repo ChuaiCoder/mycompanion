@@ -48,7 +48,7 @@ it("rejects invalid requests before contacting the provider and propagates provi
   }
   expect(fetchMock).not.toHaveBeenCalled();
   const response = await app.inject({ method: "POST", url: "/api/extensions/generate-raw", payload: { messages: [{ role: "user", content: "x" }] } });
-  expect(response.statusCode).toBe(429); expect(response.body).toContain("Rate limited");
+  expect(response.statusCode).toBe(429); expect(response.body).toContain("额度不足");
 });
 
 it("service shutdown aborts an active raw request including response-body reads", async () => {

@@ -1,15 +1,16 @@
 /*! Adapted from SillyTavern 1.19.0, 7e8663cd9c184a550b37238218bdd32c6efc68e9. AGPL-3.0-only. See slash-upstream.json and THIRD_PARTY_NOTICES.md. */
-import { DOMPurify } from '/lib.js';
-import { slashMarkdown,sendSystemMessage } from '/plugin-runtime/slash-adapter.js';
+import { DOMPurify,toastr } from '/lib.js';
+import { slashMarkdown,sendSystemMessage as defaultSendSystemMessage } from '/plugin-runtime/slash-adapter.js';
 import { system_message_types } from '/script.js';
-import { callGenericPopup, POPUP_TYPE } from '../popup.js';
+import { callGenericPopup as defaultCallGenericPopup, POPUP_TYPE } from '../popup.js';
 import { escapeHtml } from '../utils.js';
 import { enumIcons } from './SlashCommandCommonEnumsProvider.js';
 import { enumTypes, SlashCommandEnumValue } from './SlashCommandEnumValue.js';
 
 /** @typedef {'pipe'|'object'|'chat-html'|'chat-text'|'popup-html'|'popup-text'|'toast-html'|'toast-text'|'console'|'none'} SlashCommandReturnType */
 
-export const slashCommandReturnHelper = {
+export function createSlashCommandReturnHelper({callGenericPopup=defaultCallGenericPopup,sendSystemMessage=defaultSendSystemMessage}={}) {
+const slashCommandReturnHelper = {
     // Without this, VSCode formatter fucks up JS docs. Don't ask me why.
     _: false,
 
@@ -81,3 +82,6 @@ export const slashCommandReturnHelper = {
         }
     },
 };
+return slashCommandReturnHelper;
+}
+export const slashCommandReturnHelper=createSlashCommandReturnHelper();

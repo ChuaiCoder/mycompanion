@@ -30,8 +30,10 @@ export function getCharacterCardFields({ chid } = {}) {
   return readCharacterMacroFields(getCharacterCardFieldsLazy({chid}));
 }
 let characterMacroSources;
-export function withCharacterMacroSources(sources,work) { const before=characterMacroSources;characterMacroSources=sources;
-  try{return work();}finally{characterMacroSources=before;} }
+export function beginCharacterMacroSources(sources) { const before=characterMacroSources;characterMacroSources=sources;let left=false;
+  return ()=>{if(!left){left=true;characterMacroSources=before;}}; }
+export function withCharacterMacroSources(sources,work) { const leave=beginCharacterMacroSources(sources);
+  try{return work();}finally{leave();} }
 export function getCharacterCardFieldsLazy({ chid } = {}) {
   if(characterMacroSources && chid===undefined)return createCharacterMacroFieldsLazy(characterMacroSources,text=>baseChatReplace(text));
   const context = getContext();

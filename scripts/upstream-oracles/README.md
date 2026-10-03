@@ -25,3 +25,13 @@ produce `character-import-upstream-reference.json`; unknown-field preservation,
 UUID identities, ISO dates and the upstream AI-only failure are documented host
 differences. Use the same `--upstream-dir`, `--report-dir` and opt-in `--write-fixtures`
 arguments. Included service tests consume this fixture without a research checkout.
+
+`character-exchange.mjs` performs real loopback HTTP PNG/CHARX exchanges with
+the built MyCompanion service and unmodified checksum-fixed upstream PNG
+read/write, CharXParser and ZIP extraction declarations. Run after building with
+`node scripts/upstream-oracles/character-exchange.mjs`. It uses the included
+self-authored card and generated archive/image bytes, never user content.
+Missing referenced assets are explicitly rejected; MyCompanion additionally
+keeps audio/unreferenced bytes that upstream CHARX does not promote to storage.
+Reports include exact upstream and compiled service hashes; VM/parser exchanges
+do not claim a complete upstream UI/server or final EXE acceptance.

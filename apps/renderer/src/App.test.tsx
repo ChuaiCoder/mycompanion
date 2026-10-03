@@ -48,7 +48,7 @@ describe("App", () => {
   it("shows the beginner onboarding path", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue(
+      vi.fn().mockImplementation(async () =>
         new Response(
           JSON.stringify({
             status: "ok",

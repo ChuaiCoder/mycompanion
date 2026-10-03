@@ -1,9 +1,11 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { WorldInfoDocument } from "@mycompanion/shared";
+import type { CharacterDetail, WorldInfoDocument } from "@mycompanion/shared";
 import { WorldInfoPanel } from "./WorldInfoPanel";
+vi.mock("./WorldInfoVectorSettings", () => ({ WorldInfoVectorSettings: () => null }));
 
-const state = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), drafts: new Map(), selected: "", flush: vi.fn() }));
+const state = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), openCharacter: vi.fn(), drafts: new Map(), selected: "", flush: vi.fn() }));
+vi.mock("../character-world-info-editor", () => ({ openCharacterWorldInfoEditor: state.openCharacter }));
 vi.mock("../world-info-runtime", () => ({ loadWorldInfoRuntime: async () => ({
   newWorldInfoEntryTemplate: { content: "", key: [] }, loadWorldInfo: state.load, saveWorldInfo: state.save,
   syncWorldInfoControls: vi.fn(), selectWorldInfoEditor: (name: string) => window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name } })),
@@ -77,4 +79,39 @@ it("canceling discard keeps the draft; confirmed discard removes it only after a
   fireEvent.click(screen.getByRole("button", { name: "放弃草稿" })); await screen.findByText("read failed"); expect(state.drafts.has("A")).toBe(true);
   fireEvent.click(screen.getByRole("button", { name: "放弃草稿" })); await waitFor(() => expect(state.drafts.has("A")).toBe(false));
   expect(screen.getByRole("textbox", { name: "内容" })).toHaveValue("A");
+});
+
+it("a late failed read cannot put the old selection's error onto a newer book", async () => {
+  await mounted(); await select("A", "A");
+  let reject!: (error: Error) => void;
+  state.load.mockImplementationOnce(() => new Promise((_resolve, failure) => { reject = failure; }));
+  act(() => { window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name: "slow" } })); });
+  await select("B", "B"); await act(async () => { reject(new Error("Old book failed")); });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "内容" })).toHaveValue("B");
+});
+
+it("canceling or failing a role copy leaves the unsaved named draft available for retry", async () => {
+  const role = { id: "role-A", name: "A", lorebookEntryCount: 1, rawExtensions: {} } as CharacterDetail;
+  render(<WorldInfoPanel open online character={role} onClose={() => {}} />); await act(async () => {}); await select("Existing", "Existing");
+  fireEvent.change(screen.getByRole("textbox", { name: "内容" }), { target: { value: "Keep named draft" } });
+  const button = screen.getByRole("button", { name: "编辑 A 的世界书" });
+  state.openCharacter.mockResolvedValueOnce(null); fireEvent.click(button); await waitFor(() => expect(button).toBeEnabled());
+  expect(screen.getByRole("textbox", { name: "内容" })).toHaveValue("Keep named draft");
+  state.openCharacter.mockRejectedValueOnce(new Error("Atomic copy failed")); fireEvent.click(button); await screen.findByText("Atomic copy failed");
+  expect(state.drafts.get("Existing").document.entries[1].content).toBe("Keep named draft"); expect(state.save).not.toHaveBeenCalled();
+  state.openCharacter.mockResolvedValueOnce("Role book"); fireEvent.click(button); await waitFor(() => expect(screen.getByRole("textbox", { name: "内容" })).toHaveValue("Role book"));
+  expect(state.drafts.get("Existing").document.entries[1].content).toBe("Keep named draft");
+});
+
+it("a copy response arriving after role navigation cannot switch the new role's editor", async () => {
+  const role = { id: "role-A", name: "A", lorebookEntryCount: 1, rawExtensions: {} } as CharacterDetail;
+  const { rerender } = render(<WorldInfoPanel open online character={role} onClose={() => {}} />); await act(async () => {}); await select("Existing", "Existing");
+  let resolve!: (name: string) => void;
+  state.openCharacter.mockImplementationOnce(() => new Promise(value => { resolve = value; }));
+  fireEvent.click(screen.getByRole("button", { name: "编辑 A 的世界书" }));
+  rerender(<WorldInfoPanel open online character={{ ...role, id: "role-B", name: "B" }} onClose={() => {}} />);
+  await act(async () => { resolve("Old role book"); });
+  expect(screen.getByRole("textbox", { name: "内容" })).toHaveValue("Existing");
+  expect(state.load.mock.calls.some(([name]) => name === "Old role book")).toBe(false);
 });

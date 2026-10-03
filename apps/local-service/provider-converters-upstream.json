@@ -1,0 +1,32 @@
+{
+  "repository": "https://github.com/SillyTavern/SillyTavern",
+  "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "license": "AGPL-3.0-only",
+  "path": "src/prompt-converters.js",
+  "sha256": "eadc6ccd7961273c887c0986c2ed1ffe61e2e7da03f83afeb8ba4dc5a5041a13",
+  "adaptedPath": "src/provider-converters-upstream.ts",
+  "adaptedSha256": "926f9dfb59c38aab665473223d5dfa1c14e01068a2e30fdb8bf8d348621eaeed",
+  "declarations": [
+    {
+      "name": "convertClaudeMessages",
+      "sha256": "f18016c91e7d03a09982c9117351080ed4a014aac47baae43bf5784780db8249"
+    },
+    {
+      "name": "convertGooglePrompt",
+      "sha256": "ceb29114f97bbd77243cb3ae8f6d4407ce61d309e3123f0661a82f60202b1c0b"
+    },
+    {
+      "name": "calculateClaudeBudgetTokens",
+      "sha256": "59089bb5916fad796bd01d2a065fa63ea3a1b0fc17e868488bc7b27416bc474d"
+    },
+    {
+      "name": "calculateGoogleBudgetTokens",
+      "sha256": "df2c8fe9db40565b3a859d8a2c760bfde5dd54ef856d2aca48f588e05e4482d3"
+    }
+  ],
+  "adaptations": [
+    "Extract four fixed function declarations; replace config/utility imports with pinned default constants and a local parse helper.",
+    "Google conversion adds one provider_native branch to replay original signed provider response Parts verbatim; other declaration bodies stay unchanged.",
+    "Typed service validates supported media/roles and clones inputs; existing SQLite/safeStorage/fetch/error boundaries replace upstream account service."
+  ]
+}

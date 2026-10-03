@@ -24,6 +24,7 @@ export function toExtensionMessage(message: ChatMessage, characterName: string):
     ...message.extensionData,
     id: message.id, mes: message.content, is_user: message.role === "user",
     role: message.role, content: message.content, status: message.status,
+    ...(message.generationMetadata ? {generationMetadata: structuredClone(message.generationMetadata)} : {}),
   };
 }
 export function toExtensionChatState(conversation: ConversationDetail): ExtensionChatState {

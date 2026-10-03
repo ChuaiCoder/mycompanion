@@ -1,4 +1,4 @@
-import type { ChatMessage, CharacterDetail, LorebookReport, LorebookEntryResult, ProviderSettings } from "@mycompanion/shared";
+import type { ChatMessage, CharacterDetail, LorebookReport, LorebookEntryResult, ProviderSettings, TokenAccounting } from "@mycompanion/shared";
 
 import { estimateTokens } from "./worldbook-engine.js";
 
@@ -48,6 +48,7 @@ export interface BudgetMemoryItem {
 }
 
 export interface PromptBudgetReport {
+  tokenAccounting?: TokenAccounting;
   contextLimitTokens: number;
   /** 回复上限 + 安全余量。 */
   reserveTokens: number;

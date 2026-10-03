@@ -77,6 +77,8 @@ export interface MemoryRetrievalInput {
   scanText: string;
   model?: string;
   now?: Date;
+  /** Only scores from current, visible, fingerprint-matching vectors. */
+  semanticScores?: ReadonlyMap<string, number>;
 }
 
 /**
@@ -125,7 +127,14 @@ export function retrieveMemories(input: MemoryRetrievalInput): MemoryRetrievalRe
       continue;
     }
 
-    const { score, matched } = keywordScore(memory, query);
+    const { score: lexical, matched } = keywordScore(memory, query);
+    const semantic = input.semanticScores?.get(memory.id);
+    const semanticScore = typeof semantic === "number" && Number.isFinite(semantic) ? Math.max(-1, Math.min(1, semantic)) : undefined;
+    const score = Math.max(lexical, semanticScore ?? 0);
+    if (input.semanticScores) {
+      base.keywordScore = lexical;
+      if (semanticScore !== undefined) base.semanticScore = semanticScore;
+    }
     base.score = Math.round(score * 100) / 100;
     if (score <= 0 && !memory.pinned) {
       base.diagnostics.push("本轮上下文未命中记忆内容。");
@@ -135,7 +144,8 @@ export function retrieveMemories(input: MemoryRetrievalInput): MemoryRetrievalRe
     // 得分 + 重要度加成：重要度 5 的记忆更容易进入预算。
     const recent = memory.lastUsedAt ? 0.08 * Math.exp(-Math.max(0, now - Date.parse(memory.lastUsedAt)) / (7 * 86_400_000)) : 0;
     base.score = Math.round((score + memory.importance * 0.02 + recent) * 100) / 100;
-    if (matched.length) base.diagnostics.push(`关键词命中：${matched.slice(0, 8).join("、")}；相关度 ${Math.round(score * 100)}%。`);
+    if (matched.length) base.diagnostics.push(`关键词命中：${matched.slice(0, 8).join("、")}；相关度 ${Math.round(lexical * 100)}%。`);
+    else if (semanticScore !== undefined && semanticScore > 0) base.diagnostics.push(`语义匹配：余弦相似度 ${semanticScore.toFixed(3)}；关键词未命中。`);
     else base.diagnostics.push("用户固定记忆：无需关键词命中，使用独立预算。");
     base.content = memory.content;
     base.tokens = estimateTokens(memory.content, input.model);
@@ -146,10 +156,10 @@ export function retrieveMemories(input: MemoryRetrievalInput): MemoryRetrievalRe
   // 固定记忆独立预算：优先按重要度保留（FR-MEM-005）。
   const pinned = matched
     .filter((result) => result.pinned)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score || a.memoryId.localeCompare(b.memoryId));
   const rest = matched
     .filter((result) => !result.pinned)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => b.score - a.score || a.memoryId.localeCompare(b.memoryId));
 
   const kept = [...pinned, ...rest];
   let injectedCount = 0;

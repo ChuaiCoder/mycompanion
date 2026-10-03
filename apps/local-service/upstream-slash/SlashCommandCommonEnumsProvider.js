@@ -1,5 +1,5 @@
 /*! Adapted from SillyTavern 1.19.0, 7e8663cd9c184a550b37238218bdd32c6efc68e9. AGPL-3.0-only. See slash-upstream.json and THIRD_PARTY_NOTICES.md. */
-import { chat_metadata,chat,extension_prompt_roles } from '/script.js';
+import { chat_metadata,chat,extension_prompt_roles,extension_prompt_types } from '/script.js';
 import { extension_settings } from '/scripts/extensions.js';
 import { SlashCommandEnumValue,enumTypes } from './SlashCommandEnumValue.js';
 export const enumIcons = {
@@ -151,6 +151,15 @@ messages: ({ allowIdAfter = false, allowVars = false } = {}) => (executor, scope
             ...allowIdAfter ? [new SlashCommandEnumValue(String(chat.length), '>> After Last Message >>', enumTypes.enum, '➕')] : [],
             ...allowVars ? commonEnumProviders.variables('all')(executor, scope) : [],
         ];
+    },
+injects: () => {
+        if (!chat_metadata.script_injects || !Object.keys(chat_metadata.script_injects).length) return [];
+        return Object.entries(chat_metadata.script_injects)
+            .map(([id, inject]) => {
+                const positionName = (Object.entries(extension_prompt_types)).find(([_, value]) => value === inject.position)?.[0] ?? 'unknown';
+                return new SlashCommandEnumValue(id, `${enumIcons.getRoleIcon(inject.role ?? extension_prompt_roles.SYSTEM)}[Inject](${positionName}, depth: ${inject.depth}, scan: ${inject.scan ?? false}) ${inject.value}`,
+                    enumTypes.enum, '💉');
+            });
     },
 types: () => [
         new SlashCommandEnumValue('string', null, enumTypes.type, enumIcons.string),

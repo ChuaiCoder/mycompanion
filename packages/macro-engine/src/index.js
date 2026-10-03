@@ -2,6 +2,7 @@ import { MacroEngine } from './engine/MacroEngine.js';
 import { MacroRegistry, MacroCategory, MacroValueType } from './engine/MacroRegistry.js';
 import { registerCoreMacros } from './definitions/core-macros.js';
 import { registerCharacterMacros } from './definitions/character-macros.js';
+import { registerWorldInfoMacros } from './definitions/world-info-macros.js';
 import { getStringHash } from './string-hash.js';
 export { MacroEngine, MacroRegistry, MacroCategory, MacroValueType };
 export { MacroLexer } from './engine/MacroLexer.js';
@@ -14,6 +15,7 @@ export * from './engine/MacroFlags.js';
 export function initRegisterMacros() {
 registerCoreMacros();
 registerCharacterMacros();
+registerWorldInfoMacros();
 // State is read from the invocation's environment, never from a shared chat.
 // Browser and service use this same bundle and bind their own data/functions.
 for (const name of ['user', 'char', 'group', 'groupNotMuted', 'notChar']) {

@@ -27,6 +27,7 @@ import {
 } from "./components";
 import { loadExtensionHost, flushLoadedExtensionHost } from "./ExtensionHost";
 import { flushWorldEditorDrafts } from "./world-editor-drafts";
+import { flushComposerDrafts } from "./composer-drafts";
 import { useCharacterImport } from "./hooks/useCharacterImport";
 import { useCharacterSelection } from "./hooks/useCharacterSelection";
 import { useChatGeneration } from "./hooks/useChatGeneration";
@@ -44,9 +45,10 @@ import { CharacterPanel } from "./views/CharacterPanel";
 import "./styles.css";
 import { useTranslation } from "react-i18next";
 import { initializeUiLanguage } from "./i18n";
+import { libraryText } from "./library-translations";
 
 export function App() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const resume = useRef(readExtensionResume());
   const [serviceState, setServiceState] = useState<ServiceState>("checking");
   const [runtimeError, setRuntimeError] = useState<string | null>(null);
@@ -68,7 +70,7 @@ export function App() {
   const navigationRevision = useRef(0);
   const characterRefreshRevision = useRef(0);
   useEffect(() => {
-    const flush = async () => { await flushWorldEditorDrafts(); await flushLoadedExtensionHost(); };
+    const flush = async () => { await flushWorldEditorDrafts(); await flushComposerDrafts(); await flushLoadedExtensionHost(); };
     window.__mycompanionFlushDrafts = flush;
     return () => { if (window.__mycompanionFlushDrafts === flush) delete window.__mycompanionFlushDrafts; };
   }, []);
@@ -193,6 +195,8 @@ export function App() {
     setEditingDraft,
     handleSendMessage,
     handleRegenerate,
+    handleContinue,
+    handleImpersonate,
     beginEditMessage,
     cancelEditMessage,
     saveEditMessage,
@@ -266,6 +270,8 @@ export function App() {
     handleStopGeneration: chat.handleStopGeneration,
     handleSendMessage,
     handleRegenerate,
+    handleContinue,
+    handleImpersonate,
     handleCodePluginStatus: pluginsState.handleCodePluginStatus,
     handleCodePluginContributions: pluginsState.handleCodePluginContributions,
   });
@@ -324,7 +330,7 @@ export function App() {
           <div className={`service-state service-state--${serviceState}`}><span aria-hidden="true" className="status-dot" /><span>{t("service." + serviceState)}</span></div>
           <button aria-label={t("nav.settings")} aria-pressed={workspaceView === "settings"} onClick={() => setWorkspaceView("settings")} type="button"><Icon name="settings" size={18} /></button>
         </footer>
-        <input ref={fileInputRef} multiple accept=".json,.png,.yaml,.yml,.charx,.zip,.byaf,.jpg,.jpeg,application/json,image/png,application/charx,application/zip,application/byaf,application/yaml,text/yaml" aria-label="选择角色卡文件" className="visually-hidden-input" disabled={isImporting || isSaving} onChange={(event) => void handleCardFile(event)} type="file" />
+        <input ref={fileInputRef} multiple accept=".json,.png,.yaml,.yml,.charx,.zip,.byaf,.jpg,.jpeg,application/json,image/png,application/charx,application/zip,application/byaf,application/yaml,text/yaml" aria-label={libraryText(i18n.language, "选择角色卡文件")} className="visually-hidden-input" disabled={isImporting || isSaving} onChange={(event) => void handleCardFile(event)} type="file" />
       </aside>
 
       {workspaceView === "library" ? <LibraryView
@@ -360,7 +366,7 @@ export function App() {
         characters={characters}
       /> : null}
       <div className="workspace-view" hidden={workspaceView !== "chat"}><ChatView
-        generationControlsBusy={generationControlsBusy}
+        generationControlsBusy={generationControlsBusy || conversationsState.branchBusy}
         activeCommands={activeCommands}
         activeConversation={activeConversation}
         chatInput={chatInput}
@@ -397,6 +403,9 @@ export function App() {
         onOpenConversation={(id) => void handleOpenConversation(id)}
         onOpenSettings={() => setWorkspaceView("settings")}
         onRegenerate={() => void handleRegenerate()}
+        onContinue={() => void handleContinue()}
+        onImpersonate={() => void handleImpersonate()}
+        onActivateBranch={conversationsState.handleActivateBranch}
         onSaveEdit={(id) => void saveEditMessage(id)}
         onSendMessage={(input) => void handleSendMessage(input)}
         onStopGeneration={() => { void loadExtensionHost().then(host => host.stopGeneration()).catch(error => setRuntimeError(String(error))); }}
@@ -454,7 +463,7 @@ export function App() {
         </section>
       </div>
       <div id="extensionsMenu" className="extension-menu" />
-      <WorldInfoPanel open={lorebookPanelOpen} online={serviceState === "online"} onClose={() => setLorebookPanelOpen(false)} />
+      <WorldInfoPanel open={lorebookPanelOpen} online={serviceState === "online"} character={selectedCharacter} onClose={() => setLorebookPanelOpen(false)} />
       <CharacterPanel open={characterPanelOpen} online={serviceState === "online"} onClose={() => setCharacterPanelOpen(false)} />
     </div>
   );

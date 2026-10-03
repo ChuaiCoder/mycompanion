@@ -5,6 +5,7 @@ import {oai_settings,refreshOpenAISettings,getChatCompletionModel,openai_max_sto
 import {markProviderConnected,getProviderRevision} from '/plugin-runtime/provider-status.js';
 import {getCustomStoppingStrings,power_user} from '/scripts/power-user.js';
 import {substituteParams} from '/plugin-runtime/macros.js';
+import {ToolManager,registerNativeTools} from '/plugin-runtime/tools.js';
 
 const multiswipeSources = ['openai','azure_openai','custom','xai','aimlapi','moonshot'];
 const canUseMultiSwipe = (type,settings) => Number(settings.n)>1 && !['quiet','impersonate','continue'].includes(type) && multiswipeSources.includes(settings.chat_completion_source);
@@ -24,6 +25,11 @@ export function buildChatCompletionRequest(type, messages, settings, responseLen
       user_name:context.name1,char_name:context.name2,include_reasoning:Boolean(settings.show_thoughts),
       ...(canUseMultiSwipe(type,settings) ? {n:Number(settings.n)} : {}),
       ...(jsonSchema ? {json_schema:structuredClone(jsonSchema)} : {})};
+    if(['claude','makersuite'].includes(source)){
+      request.use_sysprompt=settings.use_sysprompt!==false;
+      if(source==='claude'&&settings.assistant_prefill)request.assistant_prefill=substituteParams(settings.assistant_prefill);
+      if(Number(settings.top_k_openai)>0)request.top_k=Number(settings.top_k_openai);
+    }
     // OpenAI rejects top_k. Retain the existing custom-endpoint setting only
     // when explicitly enabled; backend-specific fields are not universal.
     if(source==='custom' && Number(settings.top_k_openai)>0)request.top_k=Number(settings.top_k_openai);
@@ -48,7 +54,8 @@ export async function createGenerationParameters(settings, model, type, messages
 
 export function tryParseStreamingError(response, decoded, {quiet = false} = {}) {
   let data; try { data = JSON.parse(decoded); } catch { return; }
-  if (!data || !(data.error || data.message || data.detail || data.quota_error || data.moderation_error)) return;
+  // Claude's normal message_start carries a structured message object.
+  if (!data || !(data.error || typeof data.message === 'string' || typeof data.detail === 'string' || data.quota_error || data.moderation_error)) return;
   const detail = data.error?.message || data.error || data.message || data.detail || (data.quota_error ? 'API quota exceeded' : 'API moderation error');
   const message = typeof detail === 'string' ? detail : JSON.stringify(detail);
   if (!quiet) globalThis.toastr?.error(message, 'Chat Completion API');
@@ -56,19 +63,29 @@ export function tryParseStreamingError(response, decoded, {quiet = false} = {}) 
 }
 export function getStreamingReply(data, state, {chatCompletionSource = null, overrideShowThoughts = null} = {}) {
   const source = chatCompletionSource ?? oai_settings.chat_completion_source, thoughts = overrideShowThoughts ?? oai_settings.show_thoughts;
-  state.reasoning ??= ''; state.images ??= []; state.signature ??= ''; state.toolSignatures ??= {};
+  state.reasoning ??= ''; state.images ??= []; state.media ??= []; state.signature ??= ''; state.toolSignatures ??= {};
   const choices = data?.choices || [], first = choices[0] || {}, delta = first.delta || {}, message = first.message || {};
   const addReasoning = value => { if (thoughts && typeof value === 'string') state.reasoning += value; };
   const text = value => typeof value === 'string' ? value : '';
-  if (source === 'claude') { addReasoning(data?.delta?.thinking); return text(data?.delta?.text); }
+  if (source === 'claude') {
+    if(data?.content_block?.type==='thinking')addReasoning(data.content_block.thinking);
+    addReasoning(data?.delta?.thinking);
+    if(data?.content_block?.signature)state.signature+=text(data.content_block.signature);
+    if(data?.delta?.type==='signature_delta')state.signature+=text(data.delta.signature);
+    return text(data?.delta?.text ?? (data?.content_block?.type==='text'?data.content_block.text:''));
+  }
   if (source === 'makersuite' || source === 'vertexai') {
     const parts = data?.candidates?.[0]?.content?.parts || [];
     for (const part of parts) {
-      if (!part.thought && part.inlineData?.mimeType && part.inlineData?.data) state.images.push('data:' + part.inlineData.mimeType + ';base64,' + part.inlineData.data);
+      if (!part.thought && part.inlineData?.mimeType && part.inlineData?.data) {
+        const url='data:' + part.inlineData.mimeType + ';base64,' + part.inlineData.data;
+        state.media.push({mimeType:part.inlineData.mimeType,url,...(part.thoughtSignature?{signature:part.thoughtSignature}:{})});
+        if(part.inlineData.mimeType.startsWith('image/'))state.images.push(url);
+      }
       if (part.thoughtSignature && typeof part.text === 'string') state.signature = part.thoughtSignature;
     }
-    addReasoning(parts.find(part => part.thought)?.text);
-    return text(parts.find(part => !part.thought && typeof part.text === 'string')?.text);
+    for(const part of parts)if(part.thought)addReasoning(part.text);
+    return parts.filter(part=>!part.thought).map(part=>text(part.text)).join('');
   }
   if (source === 'cohere') return text(data?.delta?.message?.content?.text ?? data?.delta?.message?.tool_plan);
   if (source === 'openrouter') {
@@ -101,6 +118,7 @@ export async function sendOpenAIRequest(type, messages, signal, {jsonSchema = nu
     const settings=structuredClone(await refreshOpenAISettings(controller.signal));
     controller.signal.throwIfAborted();
     const {generate_data:request} = await createGenerationParameters(settings,getChatCompletionModel(settings),type,messages,{responseLength,jsonSchema});
+    await registerNativeTools(type,request,settings,controller.signal);
     await eventSource.emitChecked(event_types.CHAT_COMPLETION_SETTINGS_READY, request);
     controller.signal.throwIfAborted();
     const response = await fetch('/api/backends/chat-completions/generate', {method:'POST',headers:getRequestHeaders(),body:JSON.stringify(request),signal:controller.signal});
@@ -120,21 +138,15 @@ export async function sendOpenAIRequest(type, messages, signal, {jsonSchema = nu
           const {done,value} = await reader.read(); if (done || value.data === '[DONE]') return;
           tryParseStreamingError(response,value.data);
           const parsed = JSON.parse(value.data);
+          const native=!Array.isArray(parsed.choices);
+          if(native)text+=getStreamingReply(parsed,state,{chatCompletionSource:request.chat_completion_source});
           for (const choice of parsed.choices || []) {
             const index = choice.index || 0;
-            const chunk = getStreamingReply({...parsed,choices:[choice]}, state, {chatCompletionSource:request.chat_completion_source,overrideShowThoughts:index === 0});
+            const chunk = getStreamingReply({...parsed,choices:[choice]}, state, {chatCompletionSource:request.chat_completion_source,overrideShowThoughts:index===0?null:false});
             if (index > 0) swipes[index - 1] = (swipes[index - 1] || '') + chunk; else text += chunk;
-            if (index === 0) for (const item of choice.delta?.tool_calls || []) {
-              const target = toolCalls[item.index ?? 0] ??= {id:'',type:'function',function:{name:'',arguments:''}};
-              if (item.id) target.id = item.id;
-              if (item.type) target.type = item.type;
-              if (item.function?.name) target.function.name += item.function.name;
-              if (item.function?.arguments) target.function.arguments += item.function.arguments;
-              if (item.signature) target.signature = item.signature;
-              if (state.toolSignatures[target.id]) target.signature = state.toolSignatures[target.id];
-            }
           }
-          for (const call of toolCalls) if (call && state.toolSignatures[call.id]) call.signature = state.toolSignatures[call.id];
+          ToolManager.parseToolCalls(toolCalls,parsed,state.toolSignatures);
+          for (const calls of toolCalls) for (const call of calls || []) if (call && state.toolSignatures[call.id]) call.signature = state.toolSignatures[call.id];
           const probabilities = parsed.choices?.[0]?.logprobs?.content;
           const logprobs = Array.isArray(probabilities) ? probabilities.map(item => {
             const topLogprobs = (item.top_logprobs || []).map(candidate => [candidate.token,candidate.logprob]);

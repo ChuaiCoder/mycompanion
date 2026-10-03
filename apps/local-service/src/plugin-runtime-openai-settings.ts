@@ -1,4 +1,8 @@
-export const openAISettingsSource = String.raw`
+import {isModelImageInliningSupported} from "./model-prompt-image.js";
+
+// Embed a parenthesized, dependency-free function expression so the browser
+// and native request snapshot use the same capability rule after compilation.
+export const openAISettingsSource = `const isModelImageInliningSupported = (${isModelImageInliningSupported.toString()});\n` + String.raw`
 import {extension_settings,loadExtensionSettings,registerSettingsParticipant} from '/plugin-runtime/settings.js';
 import {chatCompletionPromptDefaults} from '/plugin-runtime/prompt-manager-core.js';
 const storageKey = '__mycompanion_openai';
@@ -13,12 +17,14 @@ export const chat_completion_sources = Object.freeze({
   WORKERS_AI:'workers_ai', MINIMAX:'minimax',
 });
 export const openai_max_stop_strings = 4;
+export const custom_prompt_post_processing_types = Object.freeze({NONE:'',CLAUDE:'claude',MERGE:'merge',MERGE_TOOLS:'merge_tools',SEMI:'semi',SEMI_TOOLS:'semi_tools',STRICT:'strict',STRICT_TOOLS:'strict_tools',SINGLE:'single'});
+export let model_list = [];
 export const oai_settings = {
   chat_completion_source:'custom', stream_openai:true, show_thoughts:true, media_inlining:true, inline_image_quality:'auto',
   temp_openai:0.8, freq_pen_openai:0, pres_pen_openai:0, top_p_openai:1, top_k_openai:0,
   openai_max_tokens:1024, openai_max_context:32768, custom_model:'', openai_model:'', custom_url:'',
   custom_include_body:'',custom_exclude_body:'',custom_include_headers:'',reverse_proxy:'',proxy_password:'',
-  seed:-1,n:1,...chatCompletionPromptDefaults,squash_system_messages:false,
+  seed:-1,n:1,function_calling:false,custom_prompt_post_processing:'',...chatCompletionPromptDefaults,squash_system_messages:false,
   prompts:[],prompt_order:[],extensions:{},
 };
 export const proxies = [];
@@ -32,11 +38,17 @@ export function getChatCompletionModel(settings = null) {
   return source.chat_completion_source === 'openrouter' && value === 'OR_Website' ? null : value;
 }
 function mapping() {
-  return {...fields,...(['custom','openai'].includes(oai_settings.chat_completion_source) ? {model:modelField(oai_settings.chat_completion_source)} : {}),
-    ...(oai_settings.chat_completion_source==='custom'?{baseUrl:'custom_url'}:{})};
+  return {...fields,...(['custom','openai','claude','makersuite'].includes(oai_settings.chat_completion_source) ? {model:modelField(oai_settings.chat_completion_source)} : {}),
+    ...(oai_settings.chat_completion_source==='custom'?{baseUrl:'custom_url'}:['claude','makersuite'].includes(oai_settings.chat_completion_source)?{baseUrl:'reverse_proxy'}:{})};
 }
 function projection() {return Object.fromEntries(Object.entries(mapping()).map(([key,property])=>[key,oai_settings[property]]));}
 function applyProvider(provider, captured, mapped=mapping()) {
+  if(!mirror.kind || provider.kind!==mirror.kind){
+    if(provider.kind==='anthropic')oai_settings.chat_completion_source='claude';
+    else if(provider.kind==='gemini')oai_settings.chat_completion_source='makersuite';
+    else if(['claude','makersuite'].includes(oai_settings.chat_completion_source))oai_settings.chat_completion_source='custom';
+    mapped=mapping();captured=null;
+  }
   for(const [key,property] of Object.entries(mapped)) if(!captured || oai_settings[property]===captured[key]) oai_settings[property]=provider[key];
   mirror={...provider};
 }
@@ -78,9 +90,6 @@ registerSettingsParticipant('openai',()=>{
   };
 });
 export function isImageInliningSupported() {
-  if(!oai_settings.media_inlining)return false;
-  if(oai_settings.chat_completion_source==='custom')return true;
-  if(['gpt-4-turbo-preview','o1-mini','o3-mini'].some(model=>String(getChatCompletionModel()||'').includes(model)))return false;
-  return /^(gpt-4o|gpt-4\.1|gpt-4\.5|gpt-4-turbo|gpt-4-vision|gpt-5|gpt-6|chatgpt-4o|o1|o3|o4-mini|claude-3|claude-(?:opus|sonnet|haiku)-[45]|gemini-|gemma-[34]|pixtral|mistral-(?:small|medium|large)|grok-)/i.test(String(getChatCompletionModel()||''));
+  return isModelImageInliningSupported(oai_settings.chat_completion_source,getChatCompletionModel(),oai_settings.media_inlining);
 }
 `;

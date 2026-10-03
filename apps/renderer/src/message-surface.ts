@@ -22,8 +22,23 @@ export class MessageSurface {
   private scope: string | undefined;
   private sequence = 0;
   private previous = new Map<string, string>();
+  private source: ChatMessage[] = [];
+  private name = "";
+  private firstIndex = 0;
+  private order: string[] = [];
+  readonly more = document.createElement("button");
 
-  constructor() { this.auxiliary.style.display = "contents"; }
+  constructor() {
+    this.auxiliary.style.display = "contents";
+    this.more.id = "show_more_messages"; this.more.type = "button";
+    this.more.className = "button button--quiet";
+    this.more.addEventListener("click", () => {
+      const container = this.container, height = container?.scrollHeight ?? 0, top = container?.scrollTop ?? 0;
+      flushSync(() => this.loadMore());
+      if (container) container.scrollTop = top + container.scrollHeight - height;
+      window.dispatchEvent(new CustomEvent("mycompanion:more-messages-loaded"));
+    });
+  }
   bind(element: HTMLElement, notify: () => void): () => void {
     this.container = element; this.notify = notify; current = this;
     element.append(this.auxiliary);
@@ -52,36 +67,71 @@ export class MessageSurface {
   }
   sync(conversation: ConversationDetail | null) {
     const scope = conversation ? `${conversation.id}/${conversation.activeBranchId}` : "";
+    this.reconcile(conversation?.messages ?? [], conversation?.characterName ?? "", scope);
+  }
+  loadMore() {
+    this.firstIndex = Math.max(0, this.firstIndex - 100);
+    this.reconcile(this.source, this.name, this.scope ?? "");
+  }
+  ensureVisible(messageId: string) {
+    const index = this.source.findIndex(message => message.id === messageId);
+    if (index < 0 || index >= this.firstIndex) return;
+    this.firstIndex = Math.max(0, index - index % 100);
+    this.reconcile(this.source, this.name, this.scope ?? "");
+  }
+  private reconcile(incoming: ChatMessage[], name: string, scope: string, reset = false) {
     const switched = scope !== this.scope;
-    if (switched) { this.container?.replaceChildren(); this.rows = []; this.previous.clear(); this.scope = scope; }
-    const incoming = conversation?.messages ?? [], ids = new Set(incoming.map(message => message.id));
-    let changed = switched;
+    const firstId = this.source[this.firstIndex]?.id;
+    const indices = new Map(incoming.map((message, index) => [message.id, index]));
+    if (switched || reset) {
+      this.container?.replaceChildren(); this.rows = []; this.previous.clear(); this.order = []; this.scope = scope;
+      this.firstIndex = Math.max(0, incoming.length - 100);
+    } else if (incoming !== this.source && firstId && indices.has(firstId)) this.firstIndex = indices.get(firstId)!;
+    this.source = incoming; this.name = name;
+    const ids = new Set(indices.keys());
+    let changed = switched || reset;
     this.rows = this.rows.filter(row => {
       if (row.element.parentNode !== this.container || (this.previous.has(row.message.id) && !ids.has(row.message.id))) {
         row.element.remove(); changed = true; return false;
       }
       return true;
     });
-    for (const [index, message] of incoming.entries()) {
-      const name = conversation!.characterName, signature = JSON.stringify([message, name]);
-      const row = this.rows.find(row => row.message.id === message.id);
+    // Removal needs the last synchronized IDs. Dropping them first makes a
+    // deleted persisted row indistinguishable from a pending extension add.
+    for (const id of this.previous.keys()) if (!ids.has(id)) this.previous.delete(id);
+    const rows = new Map(this.rows.map(row => [row.message.id, row]));
+    // Explicit extension add/swipe may reveal an older message. Preserve that
+    // capability while the default window stays at the recent 100 messages.
+    const requested = new Set(this.rows.map(row => row.message.id));
+    const visible = incoming.filter((message, index) => index >= this.firstIndex || requested.has(message.id));
+    for (const message of visible) {
+      const index = indices.get(message.id)!, signature = JSON.stringify([message, name]);
+      const row = rows.get(message.id);
       if (!row && !this.previous.has(message.id)) {
         const created = this.row(message, index, name);
-        const after = this.rows.find(row => row.index > index && row.element.parentNode === this.container);
-        this.container?.insertBefore(created.element, after?.element ?? (this.auxiliary.parentNode === this.container ? this.auxiliary : null));
+        rows.set(message.id, created);
+        this.container?.insertBefore(created.element, this.auxiliary.parentNode === this.container ? this.auxiliary : null);
         changed = true;
-      } else if (row && (this.previous.get(message.id) !== signature || row.index !== index)) {
+      } else if (row && (JSON.stringify([row.message, row.name]) !== signature || row.index !== index)) {
         row.message = message; row.index = index; row.name = name; this.attributes(row); changed = true;
       }
+      this.previous.set(message.id, signature);
     }
-    if ([...this.previous.keys()].join('/') !== incoming.map(message => message.id).join('/')) {
-      for (const message of incoming) {
-        const row = this.rows.find(row => row.message.id === message.id && row.element.parentNode === this.container);
-        if (row) this.container?.insertBefore(row.element, this.auxiliary.parentNode === this.container ? this.auxiliary : null);
+    const order = visible.map(message => message.id);
+    if (order.length !== this.order.length || order.some((id, index) => id !== this.order[index])) {
+      const fragment = document.createDocumentFragment();
+      for (const message of visible) {
+        const row = rows.get(message.id);
+        if (row) fragment.append(row.element);
       }
+      this.container?.insertBefore(fragment, this.auxiliary.parentNode === this.container ? this.auxiliary : null);
     }
-    this.previous = new Map(incoming.map(message => [message.id, JSON.stringify([message, conversation!.characterName])]));
-    if (switched) this.container?.append(this.auxiliary);
+    this.order = order;
+    if (this.firstIndex > 0) {
+      this.more.textContent = `加载更早消息（${this.firstIndex} 条）`;
+      this.more.dataset.remaining = String(this.firstIndex); this.container?.prepend(this.more);
+    } else this.more.remove();
+    if (switched || reset) this.container?.append(this.auxiliary);
     this.last(); if (changed) this.notify();
   }
   private project(raw: ExtensionChatMessage, context: SurfaceContext): ChatMessage {
@@ -92,9 +142,7 @@ export class MessageSurface {
       createdAt: typeof raw.send_date === "string" ? raw.send_date : new Date().toISOString(), extensionData };
   }
   print(messages: ExtensionChatMessage[], context: SurfaceContext) {
-    this.container?.replaceChildren(); this.rows = [];
-    messages.forEach((raw, index) => this.container?.append(this.row(this.project(raw, context), index, context.name2 ?? "").element));
-    this.container?.append(this.auxiliary); this.last(); this.notify();
+    this.reconcile(messages.map(raw => this.project(raw, context)), context.name2 ?? "", `${context.conversationId ?? ""}/${context.branchId ?? ""}`, true);
   }
   add(raw: ExtensionChatMessage, index: number, options: AddOptions, context: SurfaceContext): HTMLElement {
     const existing = options.type === "swipe" ? this.rows.find(row => row.element.parentNode === this.container && Number(row.element.getAttribute("mesid")) === index) : undefined;

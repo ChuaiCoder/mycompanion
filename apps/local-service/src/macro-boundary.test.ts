@@ -1,12 +1,35 @@
 import { expect, it, vi } from "vitest";
 import { MacroEvaluationSession } from "./prompt-macros.js";
-import { runMacroBoundary, type BrowserMacroCall } from "./macro-boundary.js";
+import { runMacroBoundary, type BrowserMacroCall, type BrowserEffectCall } from "./macro-boundary.js";
 import { assembleModelPrompt } from "./model-client.js";
 import type { PromptAssemblyOptions } from "./model-client.js";
 import { productCardForTests } from "./macro-boundary-test-helper.js";
 import { matchLorebookEntries } from "./worldbook-engine.js";
+import { browserMacroHarness } from "./browser-macro-test-helper.js";
 
 const context = { characterName: "Actor", userName: "User", model: "gpt-4o" };
+it.each([false, true])("sends dynamic continue macros through the actual served browser responder with experimental=%s",async experimentalMacroEngine=>{
+  const harness=browserMacroHarness(),session=new MacroEvaluationSession({variables:{count:0}});
+  session.bindCharacterEnvironment({characterFieldSources:{description:"card"}});
+  const dynamicMacros={lastChatMessage:"{{incvar::count}} {{char}} {{maxResponse}}",description:"{{char}}",char:"Override"};
+  const options={...context,experimentalMacroEngine,dynamicMacros,contextLimitTokens:1024,maxResponseTokens:128};
+  const calls:BrowserMacroCall[]=[];
+  const result=await runMacroBoundary(session,new AbortController().signal,async call=>{
+    calls.push(call);
+    expect(call.context.dynamicMacros).toEqual(dynamicMacros);
+    expect(call.context.dynamicMacros).not.toBe(dynamicMacros);
+    return harness.evaluateBrowserMacro({conversationId:null,branchId:null,evaluation:call});
+  },()=>[session.evaluate("{{incvar::count}}/{{lastChatMessage}}",options),session.evaluate("{{description}}",options)]);
+  expect(result).toEqual(["1/{{incvar::count}} {{char}} "+(experimentalMacroEngine?"{{maxResponse}}":"128"),experimentalMacroEngine?"{{char}}":"Override"]);
+  expect(calls).toHaveLength(2);expect(session.local.count).toBe(1);
+  expect(harness.context.chatMetadata.variables).toBeUndefined();expect(harness.localSave).not.toHaveBeenCalled();
+});
+it("rejects changed dynamic input during boundary replay",async()=>{
+  const session=new MacroEvaluationSession(),dynamicMacros={lastChatMessage:"before"};
+  await expect(runMacroBoundary(session,new AbortController().signal,async call=>{
+    dynamicMacros.lastChatMessage="after";return {content:"before",local:call.local,global:call.global};
+  },()=>session.evaluate("{{lastChatMessage}}",{...context,dynamicMacros}))).rejects.toThrow("宏求值阶段在等待期间发生变化");
+});
 it("cancels a resolver that ignores its signal and observes its late rejection", async () => {
   const session = new MacroEvaluationSession({variables:{count:1}}), controller = new AbortController();
   let reject!: (error:Error)=>void;
@@ -43,6 +66,30 @@ it("executes identical raw text separately by ordinal without replaying callback
   expect(result).toEqual(["value-1", "value-2"]); expect(resolver).toHaveBeenCalledTimes(2);
   expect(resolver.mock.calls.map(([call]) => call.ordinal)).toEqual([0, 1]);
   expect(session.local).toEqual({ count: 2 });
+});
+it("awaits invocation effects once per ordinal across later macro replay, preserving the same variable draft", async () => {
+  const session = new MacroEvaluationSession({ variables: { count: 0 } });
+  const effects = vi.fn(async (call: BrowserEffectCall) => ({ payload: { step: call.ordinal }, local: { count: Number(call.local.count) + 1 }, global: call.global }));
+  const macros = vi.fn(async (call: BrowserMacroCall) => ({ content: String(call.local.count), local: call.local, global: call.global }));
+  const value = await runMacroBoundary(session, new AbortController().signal, macros, () => {
+    const first = session.invokeEffect("world-info-scan", { loop: 1 });
+    const middle = session.evaluate("macro after listener", context);
+    const second = session.invokeEffect("world-info-scan", { loop: 2 });
+    const last = session.evaluate("macro after next listener", context);
+    return { first, middle, second, last };
+  }, effects);
+  expect(value).toEqual({ first: { step: 0 }, middle: "1", second: { step: 1 }, last: "2" });
+  expect(effects).toHaveBeenCalledTimes(2); expect(macros).toHaveBeenCalledTimes(2);
+  expect(session.local).toEqual({ count: 2 }); expect(session.invokeEffect("after phase", {})).toBeUndefined();
+});
+it("discards native invocation drafts when an awaited effect is cancelled and observes its late rejection", async () => {
+  const session = new MacroEvaluationSession({ variables: { count: 1 } }), controller = new AbortController();
+  let rejectLate!:(reason: Error)=>void;
+  const running = runMacroBoundary(session, controller.signal, async call => ({ content: call.content, local: call.local, global: call.global }),
+    () => session.invokeEffect("world-info-scan", { loop: 1 }), () => new Promise((_resolve, reject) => { rejectLate = reject; }));
+  controller.abort(new Error("effect cancelled"));
+  await expect(running).rejects.toThrow("effect cancelled"); rejectLate(new Error("late resolver failure"));
+  await Promise.resolve(); expect(session.local).toEqual({ count: 1 }); expect(session.changes()).toEqual([]);
 });
 
 it.each(["error", "cancel"])("discards an uncommitted browser draft when the phase ends with %s", async mode => {

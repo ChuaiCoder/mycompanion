@@ -1,4 +1,4 @@
-import { type NativeCompletionRequest } from "@mycompanion/shared";
+import { type NativeCompletionRequest, type ProviderTokenUsage, type TokenAccounting } from "@mycompanion/shared";
 import { measureChatCompletionRequest, assertChatCompletionBudget } from "./chat-completion-budget.js";
 import { normalizeChatCompletionRequest } from "./chat-completion-request.js";
 import { ModelRequestError } from "./model-request-error.js";
@@ -18,11 +18,22 @@ import type { PromptBudgetReport } from "./prompt-budget.js";
 import { getPersonaUserName } from "./power-user-core.js";
 import { macroVariableStores, MacroEvaluationSession } from "./prompt-macros.js";
 import type { RawChatRequest } from "./raw-generation.js";
-import { createParser } from "eventsource-parser";
 import { readPromptManagerSettings } from "./prompt-manager-core.js";
 import { assembleManagedModelPrompt } from "./managed-prompt-assembly.js";
+import { providerHttpError, providerPayloadError } from "./provider-errors.js";
+import { accountCompletionTokens } from "./token-accounting.js";
+import { replayProviderResponseMessages, requestProviderCompletion } from "./provider-transport.js";
+import { decodeProviderReply, readProviderJson, readProviderStream, tavernProviderReply } from "./provider-response.js";
+import type { ModelCandidateSnapshot, ModelResponseState, ModelToolRound } from "@mycompanion/shared";
+import { createToolContinuation } from "./tool-generation.js";
+import { isModelImageInliningSupported, materializePromptImage } from "./model-prompt-image.js";
+import { readProviderTokenUsage } from "./provider-usage.js";
 
 export interface ModelCompletionEnd {
+  responseState?: ModelResponseState;
+  toolRounds?: ModelToolRound[];
+  usage?: ProviderTokenUsage;
+  candidates?: ModelCandidateSnapshot[];
   finishReason: string;
   completionOutcome: "complete" | "truncated" | "incomplete";
 }
@@ -36,6 +47,10 @@ export interface ModelMessage {
   role: "system" | "user" | "assistant";
   content: string;
   name?: string;
+  image?: string;
+  imageDetail?: string;
+  responseState?: ModelResponseState;
+  toolRounds?: ModelToolRound[];
 }
 
 function endpoint(baseUrl: string, path: string): URL {
@@ -65,24 +80,25 @@ function headers(apiKey?: string): Record<string, string> {
   };
 }
 
-async function errorMessage(response: Response): Promise<string> {
-  try {
-    const body = await response.json() as {
-      error?: { message?: unknown } | string;
-      message?: unknown;
-    };
-    const value = typeof body.error === "string"
-      ? body.error
-      : typeof body.error?.message === "string"
-        ? body.error.message
-        : typeof body.message === "string"
-          ? body.message
-          : "";
-    if (value) return value.slice(0, 500);
-  } catch {
-    // Provider responses are untrusted; fall back to the status line.
-  }
-  return `${response.status} ${response.statusText}`.trim();
+/** Text macros/regex remain in the managed string phase; only the final wire
+ * copy replays provider-native signed blocks and generated media. */
+function replayModelResponse(message: ModelMessage):NativeCompletionRequest["messages"][number] {
+  const {responseState:state,toolRounds,...textMessage}=message;
+  const canonical=materializePromptImage(textMessage);
+  if(message.role!=="assistant")return canonical;
+  // The preflight listener can replace the model/source. Materialize signed
+  // blocks only after that listener and custom-body overrides have finished.
+  return {...canonical,...(state?{responseState:structuredClone(state)}:{}),...(toolRounds?.length?{toolRounds:structuredClone(toolRounds)}:{})};
+}
+
+async function providerJson(response: Response): Promise<Record<string, unknown>> {
+  let data: unknown;
+  try { data = await response.json(); }
+  catch { throw new ModelRequestError("模型返回了不兼容的响应格式。", 502); }
+  const error = providerPayloadError(data);
+  if (error) throw error;
+  if (!data || typeof data !== "object" || Array.isArray(data)) throw new ModelRequestError("模型返回了不兼容的响应格式。", 502);
+  return data as Record<string, unknown>;
 }
 
 async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number): Promise<Response> {
@@ -102,9 +118,7 @@ async function fetchWithTimeout(url: URL, init: RequestInit, timeoutMs: number):
 }
 
 export function requestChatCompletion(baseUrl: string, body: Record<string, unknown>, signal: AbortSignal, apiKey?: string, extraHeaders: Record<string, string> = {}): Promise<Response> {
-  const requestHeaders = new Headers(headers(apiKey));
-  for (const [name, value] of Object.entries(extraHeaders)) requestHeaders.set(name, value);
-  return fetch(endpoint(baseUrl, "chat/completions"), { method: "POST", headers: requestHeaders, signal, body: JSON.stringify(body) });
+  return requestProviderCompletion({baseUrl,body,apiKey,extraHeaders,protocol:"openai"},signal);
 }
 
 export async function testProviderConnection(
@@ -116,9 +130,10 @@ export async function testProviderConnection(
     headers: headers(apiKey),
   }, 15_000);
   if (!response.ok) {
-    throw new ModelRequestError(`模型服务拒绝连接：${await errorMessage(response)}`, response.status);
+    void response.body?.cancel().catch(() => {});
+    throw providerHttpError(response.status);
   }
-  const data = await response.json() as { data?: Array<{ id?: unknown }> };
+  const data = await providerJson(response) as { data?: Array<{ id?: unknown }> };
   const models = Array.isArray(data.data)
     ? data.data.flatMap((item) => typeof item.id === "string" ? [item.id] : []).slice(0, 500)
     : [];
@@ -140,33 +155,32 @@ export async function completeText(options: {
   signal?: AbortSignal;
   messages: ModelMessage[];
 }): Promise<string> {
-  const response = await fetchWithTimeout(
-    endpoint(options.settings.baseUrl, "chat/completions"),
-    {
-      method: "POST",
-      headers: headers(options.apiKey),
-      ...(options.signal ? { signal: options.signal } : {}),
-      body: JSON.stringify({
+  const timeout=AbortSignal.timeout(60_000),signal=options.signal?AbortSignal.any([options.signal,timeout]):timeout;
+  try {
+    const transport=normalizeChatCompletionRequest({
         model: options.settings.model,
         messages: options.messages,
         temperature: 0.2,
         max_tokens: Math.min(options.settings.maxTokens, 1_024),
         stream: false,
-      }),
-    },
-    60_000,
-  );
+    },options.settings,options.apiKey);
+  const response=await requestProviderCompletion(transport,signal);
   if (!response.ok) {
-    throw new ModelRequestError(`模型补全失败：${await errorMessage(response)}`, response.status);
+    void response.body?.cancel().catch(() => {});
+    throw providerHttpError(response.status);
   }
-  const data = await response.json() as {
-    choices?: Array<{ message?: { content?: unknown } }>;
-  };
-  const content = data.choices?.[0]?.message?.content;
-  if (typeof content !== "string" || !content.trim()) {
+  const decoded=decodeProviderReply(transport.protocol,await readProviderJson(response));
+  const content=decoded.text;
+  if (!content.trim() || !["stop","response","length"].includes(decoded.finishReason)) {
     throw new ModelRequestError("模型返回了空内容或不兼容的响应格式。", 502);
   }
   return content.trim();
+  } catch(error) {
+    if(options.signal?.aborted)throw options.signal.reason;
+    if(timeout.aborted)throw new ModelRequestError("模型请求超时。",504);
+    if(error instanceof ModelRequestError)throw error;
+    throw new ModelRequestError("无法连接或读取模型服务。",502);
+  }
 }
 
 // Unlike memory extraction, raw generation uses the configured sampling and
@@ -178,21 +192,17 @@ export async function completeRawChat(options: RawChatRequest & {
   const signal = AbortSignal.any([options.signal, timeout]);
   try {
     const schema = options.jsonSchema;
-    const response = await fetch(endpoint(options.settings.baseUrl, "chat/completions"), {
-      method: "POST", headers: headers(options.apiKey), signal,
-      body: JSON.stringify({ model: options.settings.model, messages: options.messages,
+    const transport=normalizeChatCompletionRequest({ model: options.settings.model, messages: options.messages,
         temperature: options.settings.temperature, max_tokens: options.responseLength ?? options.settings.maxTokens, stream: false,
         ...(schema ? { response_format: { type: "json_schema", json_schema: {
           name: schema.name, schema: schema.value,
           ...(schema.description !== undefined ? { description: schema.description } : {}),
           ...(schema.strict !== undefined ? { strict: schema.strict } : {}),
         } } } : {}),
-      }),
-    });
-    if (!response.ok) throw new ModelRequestError(`模型生成失败：${await errorMessage(response)}`, response.status);
-    const data: unknown = await response.json();
-    if (!data || typeof data !== "object" || Array.isArray(data)) throw new ModelRequestError("模型返回了不兼容的响应格式。", 502);
-    return data as Record<string, unknown>;
+      },options.settings,options.apiKey);
+    const response = await requestProviderCompletion(transport,signal);
+    if (!response.ok) { void response.body?.cancel().catch(() => {}); throw providerHttpError(response.status); }
+    return tavernProviderReply(transport.protocol,await readProviderJson(response),transport.body);
   } catch (error) {
     if (options.signal.aborted) throw options.signal.reason;
     if (timeout.aborted) throw new ModelRequestError("模型请求超时。", 504);
@@ -244,8 +254,11 @@ function redact(text: string, apiKey?: string): { text: string; redactions: numb
 }
 
 export interface PromptAssemblyOptions {
+  cyclePrompt?: string;
   generationType?: string;
   quietPrompt?: string;
+  quietImage?: string | null;
+  imageQuality?: string;
   bias?: string;
   messageExamples?: ModelMessage[][];
   macroSession?: MacroEvaluationSession;
@@ -314,6 +327,7 @@ export function buildPromptPreview(options: PromptAssemblyOptions & {
   draft?: string;
   apiKey?: string;
 }): {
+  tokenAccounting: TokenAccounting;
   messages: Array<{ role: "system" | "user" | "assistant"; content: string }>;
   regions: Pick<PromptBudgetReport["regions"][number], "key" | "label" | "tokens">[];
   totalTokens: number;
@@ -342,6 +356,7 @@ export function buildPromptPreview(options: PromptAssemblyOptions & {
     return { role: message.role, content: result.text, ...(message.name ? { name: message.name } : {}) };
   });
   return {
+    tokenAccounting: accountCompletionTokens({model:options.settings.model,messages:messages.map(message=>({...message}))}),
     messages: preview,
     regions: budget.regions.map((region) => ({ key: region.key, label: region.label, tokens: region.tokens })),
     totalTokens: budget.totalTokens,
@@ -360,9 +375,12 @@ export function buildPromptPreview(options: PromptAssemblyOptions & {
  * - 120 秒总超时或网络故障时抛 ModelRequestError，调用方按失败处理。
  */
 export async function streamReply(options: {
+  cyclePrompt?: string;
   preparePrompt?: (assemble: () => ReturnType<typeof assembleModelPrompt>) => Promise<ReturnType<typeof assembleModelPrompt>>;
   generationType?: string;
   quietPrompt?: string;
+  quietImage?: string | null;
+  imageQuality?: string;
   bias?: string;
   macroSession?: MacroEvaluationSession;
   /** Structured output callers handle empty output and preserve invalid text. */
@@ -389,6 +407,11 @@ export async function streamReply(options: {
   dryRun?: boolean;
   onDelta: (delta: string) => void;
   onFinish?: (end: ModelCompletionEnd) => void;
+  onUsage?: (usage: ProviderTokenUsage) => void;
+  onResponseState?: (state: ModelResponseState) => void;
+  onCandidates?: (candidates:ModelCandidateSnapshot[])=>void;
+  onToolCalls?: (state:ModelResponseState,signal:AbortSignal,assistantText:string)=>Promise<unknown>;
+  onToolRound?: (rounds:ModelToolRound[])=>void;
   // 预算诊断的接收方（FR-PROMPT-003）：调用方据此下发 prompt_budget 事件。
   onBudget?: (budget: PromptBudgetReport) => void;
 }): Promise<string> {
@@ -411,78 +434,101 @@ export async function streamReply(options: {
 
   let full = "";
   try {
-    let request: NativeCompletionRequest = { model: options.settings.model, messages: messages.map(message => ({ ...message })),
-      temperature: options.settings.temperature, max_tokens: options.settings.maxTokens, stream: true };
+    let request: NativeCompletionRequest = { model: options.settings.model, messages: messages.map(replayModelResponse),
+      temperature: options.settings.temperature, max_tokens: options.settings.maxTokens, stream: true,
+      ...(new URL(options.settings.baseUrl).hostname === "api.openai.com" ? {stream_options:{include_usage:true}} : {}) };
+    const toolRounds:ModelToolRound[]=[];
+    for(let depth=0;;depth++) {
     if (options.onRequest) request = await options.onRequest(request, controller.signal);
     controller.signal.throwIfAborted();
     const transport = normalizeChatCompletionRequest(request, options.settings, options.apiKey);
+    if (options.quietImage && Array.isArray(transport.body.messages) && transport.body.messages.some(message =>
+      Array.isArray(message.content) && message.content.some((part: Record<string, any>) => part.type === "image_url" && part.image_url?.url === options.quietImage))) {
+      const source = request.chat_completion_source ?? (transport.protocol === "claude" ? "claude" : transport.protocol === "gemini" ? "makersuite" : "custom");
+      if (!isModelImageInliningSupported(source, transport.body.model, readPromptManagerSettings(options.extensionSettings ?? {}).media_inlining))
+        throw new ModelRequestError("本次模型不支持后台图片输入。", 400);
+    }
     // Count the actual outgoing payload after extension and custom-body changes.
     // Never expand macros twice or silently discard an extension's replacement.
-    const measured = measureChatCompletionRequest(transport.body, options.settings, budget.contextLimitTokens);
+    const measured = measureChatCompletionRequest({...transport.body,messages:replayProviderResponseMessages(
+      transport.body.messages,transport.protocol,String(transport.body.model??""))}, options.settings, budget.contextLimitTokens);
     const finalRequest = measured.request;
     budget.reserveTokens = measured.reserveTokens;
     budget.availableTokens = measured.availableTokens;
     budget.totalTokens = measured.totalTokens;
+    budget.tokenAccounting = measured.tokenAccounting;
+    budget.diagnostics.push("Token 为本地预算估算；消息封装、工具及媒体与提供商计费可能不同。");
+    if (!measured.tokenAccounting.complete) budget.diagnostics.push("部分媒体无法完整计量；请以提供商返回用量为准。");
     if (options.onRequest) budget.diagnostics.push("总量按扩展处理后的实际请求重新计数；区域明细为处理前组装结果。");
     options.onBudget?.(budget);
     assertChatCompletionBudget(budget);
     if (options.dryRun) return "";
     controller.signal.throwIfAborted();
     options.onReady?.(finalRequest);
-    const response = await requestChatCompletion(transport.baseUrl, transport.body, controller.signal, transport.apiKey, transport.extraHeaders);
+    if(depth>0&&transport.protocol==="openai"&&Number(finalRequest.n)>1)full="";
+    const response = await requestProviderCompletion(transport, controller.signal);
     if (!response.ok) {
-      throw new ModelRequestError(`模型生成失败：${await errorMessage(response)}`, response.status);
+      void response.body?.cancel().catch(() => {});
+      throw providerHttpError(response.status);
     }
-    if (!finalRequest.stream) {
-      const result = await response.json() as { choices?: Array<{ message?: { content?: unknown }; finish_reason?: unknown }> };
-      const text = result.choices?.[0]?.message?.content;
-      if (typeof text !== "string" || (!options.preserveOutput && !text.trim())) throw new ModelRequestError("模型返回了空内容或不兼容的响应格式。", 502);
-      full = text;
-      options.onDelta(text);
-      const finish = completionEnd(typeof result.choices?.[0]?.finish_reason === "string" ? result.choices[0].finish_reason : "response");
-      options.onFinish?.(finish);
-      if (finish.completionOutcome === "incomplete") throw new ModelRequestError("模型未正常完成回复，已保留接收的文本。", 502);
-      return options.preserveOutput ? text : text.trim();
-    }
-    if (!response.body) {
-      throw new ModelRequestError("模型服务没有提供流式响应。", 502);
-    }
-
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let terminal = false;
-    let finishReason: string | undefined;
-    const parser = createParser({ onEvent: event => {
-      if (terminal) return;
-      if (event.data.trim() === "[DONE]") { terminal = true; return; }
-      let chunk: { choices?: Array<{ delta?: { content?: unknown }; finish_reason?: unknown }> };
-      try { chunk = JSON.parse(event.data) as typeof chunk; }
-      catch { return; } // Ignore an individual malformed provider event.
-      const choice = chunk.choices?.[0];
-      if (typeof choice?.finish_reason === "string" && choice.finish_reason) finishReason = choice.finish_reason;
-      const delta = choice?.delta?.content;
-      if (typeof delta === "string" && delta.length > 0) {
-        full += delta;
-        options.onDelta(delta);
+    const responseData=finalRequest.stream?undefined:await readProviderJson(response);
+    // Report a parsed request's billing even if a later candidate is malformed.
+    // Like SSE usage, it belongs to the response rather than one choice.
+    if(responseData){const usage=readProviderTokenUsage(responseData,undefined,transport.protocol);if(usage)options.onUsage?.(usage);}
+    const result = finalRequest.stream ? await readProviderStream(transport.protocol,response,{
+      onDelta:delta=>{full+=delta;options.onDelta(delta);},
+      model:finalRequest.model,
+      ...(typeof finalRequest.n==="number"?{n:finalRequest.n}:{}),
+      ...(options.onCandidates?{onCandidates:options.onCandidates}:{}),
+      ...(options.onResponseState?{onState:options.onResponseState}:{}),...(options.onUsage?{onUsage:options.onUsage}:{}),
+    }) : decodeProviderReply(transport.protocol,responseData!,transport.body,options.onCandidates);
+    if (!finalRequest.stream && result.candidates) options.onCandidates?.(structuredClone(result.candidates));
+    if (!finalRequest.stream) { full+=result.text;if(result.text)options.onDelta(result.text);options.onResponseState?.(result.state); }
+    if(result.finishReason==="missing_choice") throw new ModelRequestError("模型未返回序号为 0 的候选回复。",502);
+    const schema=request.json_schema??(request.response_format as {type?:unknown}|undefined)?.type==="json_schema";
+    if(result.state.toolCalls.length&&!schema){
+      // A partial argument stream must never dispatch a real callback. Validate
+      // every call before any tool in this response is allowed to execute.
+      if(!["tool_calls","stop","done","response"].includes(result.finishReason))
+        throw new ModelRequestError("模型工具调用未正常完成，已停止执行。",502);
+      for(const call of result.state.toolCalls){
+        try{JSON.parse(call.function.arguments||"{}");}
+        catch{throw new ModelRequestError("模型返回了无效的工具参数，已停止执行。",502);}
       }
-    } });
-    try {
-      while (!terminal) {
-        const { done, value } = await reader.read();
-        if (done) { parser.feed(decoder.decode()); break; }
-        parser.feed(decoder.decode(value, { stream: true }));
+      if(!options.onToolCalls||["quiet","continue","impersonate"].includes(options.generationType??"normal"))
+        throw new ModelRequestError("本次生成没有可执行的工具运行环境。",502);
+      if(depth>=5)throw new ModelRequestError("工具调用达到酒馆的 5 轮上限，已停止后续执行。",502);
+      controller.signal.throwIfAborted();
+      const executed=await options.onToolCalls(result.state,controller.signal,result.text);
+      controller.signal.throwIfAborted();
+      const continuation=createToolContinuation(result.state,result.text,executed);
+      if(continuation.invocations.length){
+        toolRounds.push({content:result.text,responseState:result.state,...(result.usage?{usage:result.usage}:{}),
+          tokenAccounting:measured.tokenAccounting,invocations:continuation.invocations});
+        options.onToolRound?.(structuredClone(toolRounds));
       }
-    } finally {
-      try { await reader.cancel(); } catch { /* Preserve the provider/read error. */ }
-      reader.releaseLock();
+      if(continuation.shouldContinue){
+        const followup=continuation.messages.map(message=>({...message,provider_response_model:finalRequest.model,provider_response_protocol:transport.protocol}));
+        request={...request,...finalRequest,messages:[...(transport.body.messages as NativeCompletionRequest["messages"]),...followup] as NativeCompletionRequest["messages"]};
+        continue;
+      }
+      // Stealth callbacks run, but Tavern does not request a visible follow-up.
+      result.finishReason="stop";
     }
-    const finish = completionEnd(finishReason ?? (terminal ? "done" : "eof"));
+    const finish = completionEnd(result.finishReason);
+    if(result.candidates)finish.candidates=result.candidates;
+    if(toolRounds.length)finish.toolRounds=toolRounds;
+    if(result.state.protocol!=="openai"||result.state.reasoning||result.state.signature||result.state.toolCalls.length||result.state.media.length||result.state.providerContent.length)
+      finish.responseState=result.state;
+    if (result.usage) finish.usage=result.usage;
     options.onFinish?.(finish);
     if (!stopped && finish.completionOutcome === "incomplete") throw new ModelRequestError("模型流在正常结束前中断，已保留接收的文本。", 502);
-    if (!options.preserveOutput && !full.trim()) {
+    const visible=toolRounds.length?result.text:full;
+    if (!options.preserveOutput && !visible.trim() && !result.state.media.length && !result.state.toolCalls.length) {
       throw new ModelRequestError("模型返回了空内容或不兼容的响应格式。", 502);
     }
-    return options.preserveOutput ? full : full.trim();
+    return options.preserveOutput ? visible : visible.trim();
+    }
   } catch (error) {
     if (stopped) {
       // 用户停止：保留已接收文本（可能为空），交给上层标记为 stopped。

@@ -1,0 +1,26 @@
+{
+  "repository": "https://github.com/SillyTavern/SillyTavern",
+  "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+  "license": "AGPL-3.0-only",
+  "files": [
+    {
+      "path": "src/world-info-vector-upstream.ts",
+      "adaptedSha256": "14f0560ca1ce8686f67ec8b6ade462ff59f4685d5e9e41677d43ef30fefee0a8",
+      "upstreamPath": "public/scripts/extensions/vectors/index.js",
+      "upstreamSha256": "f107cef68090ac3981a5330cd10db8bb20ca4b9118e5ed5acb2b519e244dba4d",
+      "components": [
+        "getQueryText",
+        "activateWorldInfo"
+      ],
+      "adaptation": "Invocation-local adapters bind current selected raw entries, same-profile embedding collections, real macro substitution and FORCE_ACTIVATE. An already prepared queryText prevents repeating macro side effects during later native scan replay. Retain content-hash synchronization and all-selected-entry activation semantics."
+    },
+    {
+      "upstreamPath": "src/endpoints/vectors.js",
+      "upstreamSha256": "0884e92c4402488bd5cd088e6e5f73f88551b95b9873e173fec660e6debee388",
+      "components": [
+        "multiQueryCollection"
+      ],
+      "adaptation": "Bind getVector/getIndex to the shared validated embedding client and SQLite VectorStore. Keep descending score, threshold then total top-K across all collections; do not copy single-query hashes ignoring the threshold."
+    }
+  ]
+}

@@ -38,6 +38,8 @@ import { characterFieldsSource } from "./plugin-runtime-character-fields.js";
 import { reasoningRuntimeSource } from "./plugin-runtime-reasoning.js";
 import { localeRuntimeSource, templateRuntimeSource } from "./plugin-runtime-templates.js";
 import { popupRuntimeSource } from "./plugin-runtime-popup.js";
+import { slashPopupSource } from "./plugin-runtime-slash-popup.js";
+import { slashInjectSource } from "./plugin-runtime-slash-inject.js";
 import { worldInfoRuntimeSource, worldInfoDataSource, worldInfoShimSource } from "./plugin-runtime-world-info.js";
 import { authorNoteCoreSource, authorNoteRuntimeSource } from "./plugin-runtime-authors-note.js";
 import { powerUserRuntimeSource } from "./plugin-runtime-power-user.js";
@@ -55,6 +57,14 @@ import { macroApiSource } from "./plugin-runtime-macro-api.js";
 import { characterRuntimeSource } from "./plugin-runtime-characters.js";
 import { characterEditorSource } from "./plugin-runtime-character-editor.js";
 import { macroDraftSource, macroBoundaryBrowserSource } from "./plugin-runtime-macro-draft.js";
+import { invocationScopesBrowserSource } from "./plugin-runtime-invocation-scopes.js";
+import { worldInfoGraphBrowserSource } from "./world-info-event-graph.js";
+import { worldInfoScannerBrowserSource, worldInfoEventsBrowserSource } from "./plugin-runtime-world-info-events.js";
+import { toolCallingRuntimeSource } from "./tool-calling-upstream.js";
+import { toolRuntimeAdapterSource } from "./plugin-runtime-tools.js";
+import {quickReplyUpstreamSource} from "./quick-reply-upstream.js";
+import {quickReplyRuntimeSource} from "./plugin-runtime-quick-reply.js";
+import {quickReplyDocumentSource} from "./plugin-runtime-quick-reply-document.js";
 import { Prompt, PromptCollection, PromptManager, chatCompletionDefaultPrompts, promptManagerDefaultPromptOrder,
   promptManagerRecord, readPromptManagerSettings, prepareCompletionPrompts, parseCompletionExample, chatCompletionPromptDefaults } from "./prompt-manager-core.js";
 
@@ -67,9 +77,19 @@ export function registerPluginRuntimeAssets(app: FastifyInstance): void {
   }
 
   const runtimeModules: Record<string, string> = {
+    "/plugin-runtime/slash-inject.js": slashInjectSource,
+    "/plugin-runtime/scripts/tool-calling.js": toolCallingRuntimeSource,
+    "/plugin-runtime/tools.js": toolRuntimeAdapterSource,
     "/plugin-runtime/macro-draft.js": macroDraftSource,
+    "/plugin-runtime/invocation-scopes.js": invocationScopesBrowserSource,
+    "/plugin-runtime/world-info-graph.js": worldInfoGraphBrowserSource,
+    "/plugin-runtime/world-info-scanner.js": worldInfoScannerBrowserSource,
+    "/plugin-runtime/world-info-events.js": worldInfoEventsBrowserSource,
+    "/plugin-runtime/quick-reply-upstream.js": quickReplyUpstreamSource,
+    "/plugin-runtime/quick-reply.js": quickReplyRuntimeSource,
+    "/plugin-runtime/quick-reply-document.js": quickReplyDocumentSource,
     "/plugin-runtime/macro-boundary.js": macroBoundaryBrowserSource,
-    "/plugin-runtime/prompt-manager-core.js": `export const INJECTION_POSITION={RELATIVE:0,ABSOLUTE:1};\nexport ${Prompt.toString()}\nexport ${PromptCollection.toString()}\nexport ${PromptManager.toString()}\n` +
+    "/plugin-runtime/prompt-manager-core.js": `export const INJECTION_POSITION={RELATIVE:0,ABSOLUTE:1};\nexport const Prompt=${Prompt.toString()};\nexport const PromptCollection=${PromptCollection.toString()};\nexport const PromptManager=${PromptManager.toString()};\n` +
       `export const chatCompletionDefaultPrompts=${JSON.stringify(chatCompletionDefaultPrompts)};\nexport const promptManagerDefaultPromptOrder=${JSON.stringify(promptManagerDefaultPromptOrder)};\nexport const chatCompletionPromptDefaults=${JSON.stringify(chatCompletionPromptDefaults)};\n` +
       `const promptManagerRecord=${promptManagerRecord.toString()};\nexport ${readPromptManagerSettings.toString()}\nexport ${prepareCompletionPrompts.toString()}\nexport ${parseCompletionExample.toString()}`,
     "/plugin-runtime/character-macro-fields.js": `export ${createCharacterMacroFieldsLazy.toString()}\nexport ${readCharacterMacroFields.toString()}`,
@@ -105,6 +125,7 @@ export function registerPluginRuntimeAssets(app: FastifyInstance): void {
     "/plugin-runtime/i18n.js": localeRuntimeSource,
     "/plugin-runtime/templates.js": templateRuntimeSource,
     "/plugin-runtime/popup.js": popupRuntimeSource,
+    "/plugin-runtime/slash-popup.js": slashPopupSource,
     "/plugin-runtime/scripts/templates.js": "export { renderTemplate, renderTemplateAsync } from '/plugin-runtime/templates.js';",
     "/plugin-runtime/message-rendering.js": messageRenderingSource,
     "/plugin-runtime/regex-core.js": regexCoreSource,
@@ -127,7 +148,7 @@ export function registerPluginRuntimeAssets(app: FastifyInstance): void {
     ...slashUpstreamAssets,
     "/plugin-runtime/scripts/tokenizers.js": tokenizersSource,
     "/plugin-runtime/scripts/PromptManager.js": promptCollectionsSource,
-    "/plugin-runtime/scripts/openai.js": completionCollectionsSource + "\nexport { createGenerationParameters, sendOpenAIRequest, getStreamingReply, tryParseStreamingError } from '/plugin-runtime/openai-transport.js';\nexport { oai_settings, proxies, chat_completion_sources, openai_max_stop_strings, getChatCompletionModel, isImageInliningSupported } from '/plugin-runtime/openai-settings.js';\nexport { getChatCompletionPreset, getPresetApplicationPromise } from '/plugin-runtime/scripts/preset-manager.js';\nexport { setOpenAIMessages, setOpenAIMessageExamples } from '/plugin-runtime/openai-conversion.js';\nexport { prepareOpenAIMessages, promptManager, setupChatCompletionPromptManager } from '/plugin-runtime/openai-prompt.js';",
+    "/plugin-runtime/scripts/openai.js": completionCollectionsSource + "\nexport { createGenerationParameters, sendOpenAIRequest, getStreamingReply, tryParseStreamingError } from '/plugin-runtime/openai-transport.js';\nexport { oai_settings, proxies, chat_completion_sources, openai_max_stop_strings, getChatCompletionModel, isImageInliningSupported, custom_prompt_post_processing_types, model_list } from '/plugin-runtime/openai-settings.js';\nexport { getChatCompletionPreset, getPresetApplicationPromise } from '/plugin-runtime/scripts/preset-manager.js';\nexport { setOpenAIMessages, setOpenAIMessageExamples } from '/plugin-runtime/openai-conversion.js';\nexport { prepareOpenAIMessages, promptManager, setupChatCompletionPromptManager } from '/plugin-runtime/openai-prompt.js';",
     "/plugin-runtime/openai-settings.js": openAISettingsSource,
     "/plugin-runtime/presets.js": presetManagerSource,
     "/plugin-runtime/scripts/preset-manager.js": "export { getPresetManager, getChatCompletionPreset, getPresetApplicationPromise, loadPresets, mountPresetSelect, flushPresetWrites } from '/plugin-runtime/presets.js';",
@@ -159,7 +180,7 @@ export function registerPluginRuntimeAssets(app: FastifyInstance): void {
     for (const alias of aliases) {
       // Reused classes and their static command registry must have one ESM
       // identity, including when the desktop imports the runtime-prefixed URL.
-      const slashAlias = path === "/plugin-runtime/scripts/slash-commands.js" || path.startsWith("/plugin-runtime/scripts/slash-commands/");
+      const slashAlias = path === "/plugin-runtime/scripts/slash-commands.js" || path.startsWith("/plugin-runtime/scripts/slash-commands/") || path === "/plugin-runtime/scripts/tool-calling.js";
       const servedSource = slashAlias && alias === path ? `export * from '${path.replace("/plugin-runtime", "")}';` : source;
       app.get(alias, async (_request, reply) => reply
         .type("text/javascript; charset=utf-8")

@@ -153,10 +153,17 @@ export async function flushChatSaves() {
   }
   await queue;
 }
-export async function reloadCurrentChat() {
+export async function reloadCurrentChat({ discardFailedSaves = false } = {}) {
   const target = { id: context.conversationId, branchId: context.branchId };
   if (!target.id) return;
-  await flushChatSaves();
+  const observedQueue = queue;
+  try { await flushChatSaves(); }
+  catch (error) {
+    // Explicit recovery reads durable state after an optimistic UI operation
+    // failed. Never acknowledge a different/newer write or a pending draft.
+    if (!discardFailedSaves || pending || queue !== observedQueue) throw error;
+    queue = Promise.resolve();
+  }
   const conversation = await read(await fetch('/api/conversations/' + encodeURIComponent(target.id)));
   if (!same(target)) return;
   const loaded = project(conversation);

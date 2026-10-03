@@ -51,13 +51,20 @@ function prepareAvatar(file) {
   const revision = (avatarRevisions.get(avatar) ?? 0) + 1; avatarRevisions.set(avatar, revision);
   setAvatarFile(target, drafts.get(avatar)?.value.avatar); status('正在读取头像…');
   const operation = (async () => {
-    const converted = await normalizePortrait(file), data = await fileData(converted);
-    if (avatarRevisions.get(avatar) !== revision) return;
-    if (form === target && editorAvatar === avatar) {
-      setAvatarFile(target, converted); target.querySelector('#avatar_load_preview').src = 'data:image/png;base64,' + data; markEdited();
-    } else {
-      const draft = drafts.get(avatar) ?? { base, value: captured }; draft.value.avatar = converted;
-      drafts.set(avatar, draft); await persistDraft(avatar, draft);
+    try {
+      const converted = await normalizePortrait(file), data = await fileData(converted);
+      if (avatarRevisions.get(avatar) !== revision) return;
+      if (form === target && editorAvatar === avatar) {
+        setAvatarFile(target, converted); target.querySelector('#avatar_load_preview').src = 'data:image/png;base64,' + data; markEdited();
+      } else {
+        const draft = drafts.get(avatar) ?? { base, value: captured }; draft.value.avatar = converted;
+        drafts.set(avatar, draft); await persistDraft(avatar, draft);
+      }
+    } catch (error) {
+      // A superseded file or a different role owns its current error/status.
+      // Ignore an old decoder failure just as we ignore its late success.
+      if (avatarRevisions.get(avatar) !== revision || form !== target || editorAvatar !== avatar) return;
+      throw error;
     }
   })();
   avatarPreparations.add(operation); void operation.finally(() => avatarPreparations.delete(operation)).catch(() => {});
@@ -66,21 +73,26 @@ function prepareAvatar(file) {
 async function cropAvatar() {
   const target = form, avatar = editorAvatar, revision = avatarRevisions.get(avatar) ?? 0;
   if (!target || !avatar) return;
-  await Promise.all([...avatarPreparations]);
-  if (form !== target || editorAvatar !== avatar || (avatarRevisions.get(avatar) ?? 0) !== revision) return;
-  const selectedFile = target.elements.namedItem('avatar').files[0];
-  const response = selectedFile ? null : await fetch('/characters/' + encodeURIComponent(avatar));
-  if (response && !response.ok) throw new Error('头像读取失败，请重新选择图片。');
-  const blob = response ? await response.blob() : null;
-  const file = selectedFile ?? new File([blob], 'portrait.png', { type: blob.type });
-  const data = await portraitImage(file, () => fileData(file)); let cropped;
-  if (form !== target || editorAvatar !== avatar || (avatarRevisions.get(avatar) ?? 0) !== revision) return;
-  const popup = new Popup('选择头像裁剪区域', POPUP_TYPE.CROP, '', { cropImage: 'data:image/' + (file.type.includes('jpeg') ? 'jpeg' : file.type.includes('webp') ? 'webp' : 'png') + ';base64,' + data,
-    okButton: '应用裁剪', cancelButton: '取消', onClosing: async dialog => {
-      if (dialog.result >= 1) cropped = await canvasFile(dialog.cropper.getCroppedCanvas(), file.name); return true;
-    } });
-  await popup.show();
-  if (cropped && form === target && editorAvatar === avatar && (avatarRevisions.get(avatar) ?? 0) === revision) await prepareAvatar(cropped);
+  try {
+    await Promise.all([...avatarPreparations]);
+    if (form !== target || editorAvatar !== avatar || (avatarRevisions.get(avatar) ?? 0) !== revision) return;
+    const selectedFile = target.elements.namedItem('avatar').files[0];
+    const response = selectedFile ? null : await fetch('/characters/' + encodeURIComponent(avatar));
+    if (response && !response.ok) throw new Error('头像读取失败，请重新选择图片。');
+    const blob = response ? await response.blob() : null;
+    const file = selectedFile ?? new File([blob], 'portrait.png', { type: blob.type });
+    const data = await portraitImage(file, () => fileData(file)); let cropped;
+    if (form !== target || editorAvatar !== avatar || (avatarRevisions.get(avatar) ?? 0) !== revision) return;
+    const popup = new Popup('选择头像裁剪区域', POPUP_TYPE.CROP, '', { cropImage: 'data:image/' + (file.type.includes('jpeg') ? 'jpeg' : file.type.includes('webp') ? 'webp' : 'png') + ';base64,' + data,
+      okButton: '应用裁剪', cancelButton: '取消', onClosing: async dialog => {
+        if (dialog.result >= 1) cropped = await canvasFile(dialog.cropper.getCroppedCanvas(), file.name); return true;
+      } });
+    await popup.show();
+    if (cropped && form === target && editorAvatar === avatar && (avatarRevisions.get(avatar) ?? 0) === revision) await prepareAvatar(cropped);
+  } catch (error) {
+    if (form !== target || editorAvatar !== avatar || (avatarRevisions.get(avatar) ?? 0) !== revision) return;
+    throw error;
+  }
 }
 function persistDraft(avatar, draft) {
   const revision = (draftRevisions.get(avatar) ?? 0) + 1; draftRevisions.set(avatar, revision);

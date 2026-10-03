@@ -659,6 +659,9 @@ class WorldInfoTimedEffects {
             buffer.splice(0, buffer.length);
         }
     }
+
+    __snapshotForBridge() { return { chat: this.#chat, entries: this.#entries, isDryRun: this.#isDryRun, buffer: this.#buffer }; }
+    __restoreForBridge(state) { this.#chat = state.chat; this.#entries = state.entries; this.#isDryRun = state.isDryRun; this.#buffer = state.buffer; }
 }
 
 function filterGroupsByScoring(groups, buffer, removeEntry, scanState, hasStickyMap) {

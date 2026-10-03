@@ -524,6 +524,14 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .chat-composer textarea { min-height: 72px; resize: vertical; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; outline: none; color: var(--text); background: var(--surface); font: 12px/1.55 inherit; }
 .chat-composer textarea:focus { border-color: #7ca6d2; box-shadow: 0 0 0 3px var(--accent-soft); }
 .chat-composer .button { align-self: end; min-width: 76px; }
+.chat-composer__actions { grid-column: 1 / -1; display: flex; gap: 8px; flex-wrap: wrap; }
+.generation-details details { margin: 8px 0; }
+.generation-details pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; }
+.model-media { display: flex; gap: 12px; flex-wrap: wrap; }
+.model-media-item { margin: 8px 0; min-width: 0; max-width: 100%; }
+.model-media-item img { display: block; max-width: 100%; max-height: 480px; object-fit: contain; }
+.model-media-item audio { display: block; max-width: 100%; }
+.model-media-item figcaption { display: flex; gap: 8px; align-items: center; margin-top: 6px; }
 .chat-command-hint { grid-column: 1 / -1; color: var(--text-faint); font-size: 9px; }
 .settings-workspace { min-width: 0; height: 100vh; overflow-y: auto; padding: clamp(32px,6vw,76px); background: var(--surface-muted); }
 .settings-card { width: min(720px,100%); margin: 0 auto; padding: clamp(24px,4vw,42px); border: 1px solid var(--line); border-radius: 14px; background: var(--surface); box-shadow: 0 14px 40px rgba(35,38,42,.06); }

@@ -1,48 +1,18 @@
 import type { CharacterDetail, CharacterLorebookEntry, ChatMessage, ExtensionPrompt, LorebookReport, WorldInfoSettings } from "@mycompanion/shared";
 import type { WorldInfoRepository } from "./world-info-repository.js";
-import { matchLorebookEntries } from "./worldbook-engine.js";
+import { matchLorebookEntries, type ScanEntry } from "./worldbook-engine.js";
 import { macroVariableStores, resolveMacroField, MacroEvaluationSession } from "./prompt-macros.js";
 import { collectNativeRegexScripts, type TavernRegexExecutor } from "./tavern-regex-service.js";
 import { countTextTokens } from "./tokenizer-service.js";
 import { createWorldInfoEffectsDraft, transferWorldInfoEffects } from "./world-info-effects.js";
+import { transferWorldInfoActivations } from "./world-info-activation.js";
 
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 const number = (value: unknown, fallback: number): number => typeof value === "number" && Number.isFinite(value) ? value : fallback;
 export type WorldInfoCharacter = Pick<CharacterDetail, "id" | "avatar" | "name" | "lorebookEnabled" | "rawExtensions" | "description" | "personality" | "scenario" | "creatorNotes">;
 
-export function buildWorldInfoReport(
-  books: WorldInfoRepository, character: WorldInfoCharacter, messages: ChatMessage[],
-  metadata: Record<string, unknown>, maxContext: number,
-  context: { chat?: string[]; settings?: WorldInfoSettings; globalScanData?: Record<string, string>; userName?: string;
-    macroSession?: MacroEvaluationSession;
-    model?: string;
-    maxResponseTokens?: number;
-    extensionSettings?: Record<string, unknown>;
-    extensionScanText?: string;
-    extensionScanTextResolved?: boolean;
-    extensionScanPrompts?: ExtensionPrompt[];
-    dryRun?: boolean;
-    trigger?: string;
-    worldInfoSourceMessages?: ChatMessage[];
-    worldInfoBranchId?: string;
-    onEntries?: (entries: CharacterLorebookEntry[]) => void } = {},
-): LorebookReport {
-  const variables = macroVariableStores(metadata, context.extensionSettings ?? {});
-  const macroSession = context.macroSession ?? new MacroEvaluationSession(metadata, context.extensionSettings);
-  const scanMacroContext = { characterName: character.name, userName: context.userName ?? "User",
-    macroSession,
-    contextLimitTokens: maxContext,
-    ...(context.model === undefined ? {} : { model: context.model }),
-    ...(context.maxResponseTokens === undefined ? {} : { maxResponseTokens: context.maxResponseTokens }),
-    ...variables };
-  const extensionScanText = context.extensionScanPrompts
-    ? context.extensionScanPrompts.map(prompt => prompt.macrosResolved ? prompt.value
-      : macroSession.evaluate(prompt.value, scanMacroContext)).join("\n")
-    : context.extensionScanText
-      ? context.extensionScanTextResolved ? context.extensionScanText
-        : resolveMacroField(context.extensionScanText, scanMacroContext, "extension:scanText")
-      : "";
-  const settings = context.settings ?? books.settings();
+export function collectWorldInfoEntries(books: WorldInfoRepository, character: WorldInfoCharacter, metadata: Record<string, unknown>,
+  settings: WorldInfoSettings = books.settings(), extensionSettings: Record<string, unknown> = {}): CharacterLorebookEntry[] {
   const visited = new Set<string>();
   let index = character.lorebookEnabled.reduce((max, entry) => Math.max(max, entry.index + 1), 0);
   function load(names: string[]): CharacterLorebookEntry[] {
@@ -63,7 +33,7 @@ export function buildWorldInfoReport(
   const sort = (entries: CharacterLorebookEntry[]) => entries.sort((a, b) => b.insertionOrder - a.insertionOrder);
   const globals = settings.world_info.globalSelect;
   const chatName = typeof metadata.world_info === "string" ? metadata.world_info : "";
-  const powerUser = context.extensionSettings?.__mycompanion_power_user;
+  const powerUser = extensionSettings?.__mycompanion_power_user;
   const power = powerUser && typeof powerUser === "object" && !Array.isArray(powerUser) ? powerUser as Record<string, unknown> : {};
   const personas = power.personas && typeof power.personas === "object" ? power.personas as Record<string, unknown> : {};
   const selectedPersona = typeof metadata.persona === "string" && personas[metadata.persona] ? metadata.persona
@@ -91,9 +61,47 @@ export function buildWorldInfoReport(
   else {
     general = settings.world_info_character_strategy === 0 ? sort([...globalEntries, ...local]) : [...sort(local), ...sort(globalEntries)];
   }
+  const entries = [...sort(chat), ...sort(persona), ...general];
+  return entries;
+}
+
+export function buildWorldInfoReport(
+  books: WorldInfoRepository, character: WorldInfoCharacter, messages: ChatMessage[],
+  metadata: Record<string, unknown>, maxContext: number,
+  context: { chat?: string[]; settings?: WorldInfoSettings; globalScanData?: Record<string, string>; userName?: string;
+    macroSession?: MacroEvaluationSession;
+    model?: string;
+    maxResponseTokens?: number;
+    extensionSettings?: Record<string, unknown>;
+    extensionScanText?: string;
+    extensionScanTextResolved?: boolean;
+    extensionScanPrompts?: ExtensionPrompt[];
+    dryRun?: boolean;
+    trigger?: string;
+    worldInfoSourceMessages?: ChatMessage[];
+    worldInfoBranchId?: string;
+    forcedEntries?: ScanEntry[];
+    onEntries?: (entries: CharacterLorebookEntry[]) => void } = {},
+): LorebookReport {
+  const variables = macroVariableStores(metadata, context.extensionSettings ?? {});
+  const macroSession = context.macroSession ?? new MacroEvaluationSession(metadata, context.extensionSettings);
+  const scanMacroContext = { characterName: character.name, userName: context.userName ?? "User",
+    macroSession,
+    contextLimitTokens: maxContext,
+    ...(context.model === undefined ? {} : { model: context.model }),
+    ...(context.maxResponseTokens === undefined ? {} : { maxResponseTokens: context.maxResponseTokens }),
+    ...variables };
+  const extensionScanText = context.extensionScanPrompts
+    ? context.extensionScanPrompts.map(prompt => prompt.macrosResolved ? prompt.value
+      : macroSession.evaluate(prompt.value, scanMacroContext)).join("\n")
+    : context.extensionScanText
+      ? context.extensionScanTextResolved ? context.extensionScanText
+        : resolveMacroField(context.extensionScanText, scanMacroContext, "extension:scanText")
+      : "";
+  const settings = context.settings ?? books.settings();
+  const entries = collectWorldInfoEntries(books,character,metadata,settings,context.extensionSettings);
   let budget = Math.round(settings.world_info_budget * maxContext / 100) || 1;
   if (settings.world_info_budget_cap > 0) budget = Math.min(budget, settings.world_info_budget_cap);
-  const entries = [...sort(chat), ...sort(persona), ...general];
   context.onEntries?.(entries);
   const sourceMessages = context.worldInfoSourceMessages ?? messages;
   const effectsDraft = createWorldInfoEffectsDraft(metadata, context.worldInfoBranchId ?? character.id, sourceMessages,
@@ -115,6 +123,7 @@ export function buildWorldInfoReport(
     userName: context.userName ?? "User",
     ...variables,
     effectsDraft,
+    ...(context.forcedEntries?{forcedEntries:context.forcedEntries}:{}),
     dryRun: context.dryRun ?? true,
     ...(context.trigger === undefined ? {} : { trigger: context.trigger }),
     characterFilename: character.avatar?.replace(/\.png$/i, "") ?? character.id,
@@ -143,6 +152,7 @@ export async function finalizeWorldInfoRegex(report: LorebookReport, executor: T
     ...(context.maxResponseTokens === undefined ? {} : { maxResponseTokens: context.maxResponseTokens }) };
   const result = structuredClone(report);
   transferWorldInfoEffects(report, result);
+  transferWorldInfoActivations(report, result);
   for (const entry of result.results.filter(entry => entry.status === "injected")
     .sort((a, b) => (b.insertionOrder ?? 0) - (a.insertionOrder ?? 0))) {
     entry.content = await executor.run(entry.content, 5, scripts, macroContext.characterName, {

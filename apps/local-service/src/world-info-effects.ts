@@ -21,6 +21,7 @@ export interface WorldInfoEffectsDraft {
   hadTimedEffects: boolean;
 }
 const effects = new WeakMap<LorebookReport, WorldInfoEffectsDraft>();
+const candidates = new WeakMap<LorebookReport, WorldInfoEffectsDraft>();
 const committed = new WeakMap<LorebookReport, string>();
 const record = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value)
   ? value as Record<string, unknown> : {};
@@ -71,15 +72,48 @@ export function createWorldInfoEffectsDraft(metadata: Record<string, unknown>, b
     timedWorldInfo: structuredClone(timedWorldInfo),
     hadTimedEffects: hasTimedEffects(metadata.timedWorldInfo) || checkpoints.some(point => hasTimedEffects(point.timedWorldInfo)) };
 }
+/** A user branch navigation mounts its own timers before extensions can edit
+ * the public map. Internal generation forks remain owned by onReady commit. */
+export function restoreWorldInfoStateForBranch(metadata:Record<string,unknown>,branchId:string,messages:ChatMessage[],
+  previousBranch?:{branchId:string;messages:ChatMessage[]}):Record<string,unknown>|undefined {
+  const stored=record(metadata[WORLD_INFO_STATE_KEY]);
+  if(previousBranch&&previousBranch.branchId!==branchId&&(stored.version!==1||stored.activeBranchId===previousBranch.branchId)){
+    const prior=createWorldInfoEffectsDraft(metadata,previousBranch.branchId,previousBranch.messages);
+    if(prior.hadTimedEffects){
+      // Preserve deliberate raw-map edits on the branch being left, even when
+      // no subsequent generation was needed to commit a scanner draft.
+      const checkpoint:WorldInfoCheckpoint={branchId:previousBranch.branchId,sourceCount:prior.sources.length,
+        sourceFingerprint:prefixFingerprints(prior.sources).at(-1)!,timedWorldInfo:structuredClone(record(metadata.timedWorldInfo))};
+      const state=structuredClone(prior.state),index=state.checkpoints.findIndex(point=>point.branchId===checkpoint.branchId&&point.sourceCount===checkpoint.sourceCount&&point.sourceFingerprint===checkpoint.sourceFingerprint);
+      if(index>=0)state.checkpoints.splice(index,1);state.checkpoints.push(checkpoint);
+      metadata={...metadata,[WORLD_INFO_STATE_KEY]:state};
+    }
+  }
+  const draft=createWorldInfoEffectsDraft(metadata,branchId,messages);
+  if(!draft.hadTimedEffects)return undefined;
+  const previous=record(metadata[WORLD_INFO_STATE_KEY]);
+  if(previous.activeBranchId===branchId&&hash(metadata.timedWorldInfo??{})===hash(draft.timedWorldInfo))return undefined;
+  const checkpoint:WorldInfoCheckpoint={branchId,sourceCount:draft.sources.length,sourceFingerprint:prefixFingerprints(draft.sources).at(-1)!,timedWorldInfo:draft.timedWorldInfo};
+  const state=structuredClone(draft.state),existing=state.checkpoints.findIndex(point=>point.branchId===branchId&&point.sourceCount===checkpoint.sourceCount&&point.sourceFingerprint===checkpoint.sourceFingerprint);
+  if(existing>=0)state.checkpoints.splice(existing,1);state.checkpoints.push(checkpoint);state.revision++;
+  return {timedWorldInfo:draft.timedWorldInfo,[WORLD_INFO_STATE_KEY]:state};
+}
 export function attachWorldInfoEffects(report: LorebookReport, draft: WorldInfoEffectsDraft): void {
+  candidates.set(report, draft);
   // Upstream normalizes empty timer containers while scanning. This has no
   // durable effect until a real timer exists. Keep cleanup/branch checkpoints
   // for existing effects, including the scan that clears their last timer.
   if (draft.hadTimedEffects || hasTimedEffects(draft.timedWorldInfo)) effects.set(report, draft);
+  else effects.delete(report);
+}
+export function getWorldInfoTimerSnapshot(report: LorebookReport): Record<string, unknown> { return structuredClone(candidates.get(report)?.timedWorldInfo ?? {}); }
+export function replaceWorldInfoTimerSnapshot(report: LorebookReport, timedWorldInfo: Record<string, unknown>): void {
+  const draft = candidates.get(report); if (draft) attachWorldInfoEffects(report, { ...draft, timedWorldInfo: structuredClone(timedWorldInfo) });
 }
 export function getWorldInfoEffects(report: LorebookReport): WorldInfoEffectsDraft | undefined { return effects.get(report); }
 export function transferWorldInfoEffects(from: LorebookReport, to: LorebookReport): void {
   const draft = effects.get(from); if (draft) effects.set(to, draft);
+  const candidate = candidates.get(from); if (candidate) candidates.set(to, candidate);
 }
 export function getCommittedWorldInfoState(runtime: RuntimeRepository, conversationId: string,
   report?: LorebookReport): Record<string, unknown> | undefined {

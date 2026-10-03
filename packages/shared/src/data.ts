@@ -3,6 +3,7 @@ import { worldInfoDocumentSchema } from "./world-info.js";
 import { messageGenerationMetadataSchema } from "./runtime.js";
 import { memoryClaimSchema, memoryReconciliationSchema } from "./memory.js";
 import { characterCardFormatSchema } from "./character-card.js";
+import { providerProfilesSchema } from "./providers.js";
 
 // 数据导入、导出和备份（FR-DATA-001…004）。
 
@@ -22,6 +23,7 @@ export const storyExportJsonSchema = z.object({
     title: z.string(),
     activeBranchId: z.string().uuid(),
     chatMetadata: z.record(z.string(), z.unknown()).optional(),
+    chatHeader: z.record(z.string(), z.unknown()).optional(),
     createdAt: z.string().datetime(),
     updatedAt: z.string().datetime(),
   }),
@@ -119,6 +121,7 @@ const backupConversationSchema = z.object({
   title: z.string(),
   activeBranchId: z.string().uuid(),
   chatMetadata: z.record(z.string(), z.unknown()).optional(),
+  chatHeader: z.record(z.string(), z.unknown()).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
   // 全部分支的完整消息树。
@@ -217,6 +220,8 @@ const backupCodePluginSchema = z.object({
   enabled: z.boolean(),
   installedAt: z.string().datetime(),
   sourceUrl: z.string().url().optional(),
+  extensionName: z.string().min(1).max(255).regex(/^[^/\\\u0000]+$/).optional(),
+  installationScope: z.enum(["local", "global"]).optional(),
   sourceRef: z.string().max(200).optional(),
   sourceRevision: z.string().regex(/^[a-f0-9]{40}$/i).optional(),
   contributions: z.object({
@@ -228,7 +233,7 @@ const backupCodePluginSchema = z.object({
 
 const backupSettingsSchema = z.object({
   // 非秘密设置（FR-DATA-003）：kind/地址/模型/参数；API Key 以 hasApiKey 占位，不含密文。
-  kind: z.enum(["openai-compatible", "ollama"]),
+  kind: z.enum(["openai-compatible", "ollama", "anthropic", "gemini"]),
   baseUrl: z.string(),
   model: z.string(),
   hasApiKey: z.boolean(),
@@ -266,6 +271,7 @@ const backupPayloadSchema = z.object({
   worldInfoSettings: z.record(z.string(), z.unknown()).optional(),
   retainedCharacterChats: z.array(retainedCharacterChatsSchema).optional(),
   providerSettings: backupSettingsSchema.nullable(),
+  providerProfiles: providerProfilesSchema.optional(),
 });
 
 export const backupPayloadSchemaShared = backupPayloadSchema;
@@ -293,6 +299,7 @@ export const backupRestorePreviewResponseSchema = z.object({
     worldbooks: backupSectionPreviewSchema,
     worldInfoSettings: backupSectionPreviewSchema,
     retainedCharacterChats: backupSectionPreviewSchema,
+    providerProfiles: backupSectionPreviewSchema.optional(),
   }),
   totals: backupSectionPreviewSchema,
 });
@@ -315,6 +322,7 @@ export const backupRestoreResponseSchema = z.object({
     worldbooks: z.number().int().nonnegative(),
     worldInfoSettings: z.number().int().nonnegative(),
     retainedCharacterChats: z.number().int().nonnegative(),
+    providerProfiles: z.number().int().nonnegative().optional(),
   }),
   skipped: z.object({
     characters: z.number().int().nonnegative(),
@@ -327,6 +335,7 @@ export const backupRestoreResponseSchema = z.object({
     worldbooks: z.number().int().nonnegative(),
     worldInfoSettings: z.number().int().nonnegative(),
     retainedCharacterChats: z.number().int().nonnegative(),
+    providerProfiles: z.number().int().nonnegative().optional(),
   }),
 });
 

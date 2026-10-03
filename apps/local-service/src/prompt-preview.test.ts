@@ -342,7 +342,7 @@ describe("提示词预览 (FR-PROMPT-004)", () => {
     expect(quietText).toContain("聊天级示例。");
   });
 
-  it("preserves extension overrides and rejects unimplemented media before model transport", async () => {
+  it("preserves extension overrides and pictures while rejecting unimplemented tool history before model transport", async () => {
     const { app, conversation } = await setupPreview();
     const url = `/api/conversations/${conversation.id}/extension-prompt-assembly`;
     const response = await app.inject({ method: "POST", url, payload: {
@@ -361,8 +361,16 @@ describe("提示词预览 (FR-PROMPT-004)", () => {
       messageExamples: [], extensionPrompts: [], type: "normal",
     } });
     expect(emptyReasoning.statusCode).toBe(200);
-    const unsupported = await app.inject({ method: "POST", url, payload: {
+    const picture = await app.inject({ method: "POST", url, payload: {
       messages: [{ role: "user", content: "看看图片", image: "data:image/png;base64,AAAA" }],
+      messageExamples: [], extensionPrompts: [], type: "normal",
+    } });
+    expect(picture.statusCode,picture.body).toBe(200);
+    expect(picture.json().messages.find((message:{role:string})=>message.role==="user").content).toEqual([
+      {type:"text",text:"看看图片"},{type:"image_url",image_url:{url:"data:image/png;base64,AAAA",detail:"auto"}},
+    ]);
+    const unsupported = await app.inject({ method: "POST", url, payload: {
+      messages: [{ role: "assistant", content: "Tool history", tool_calls:[] }],
       messageExamples: [], extensionPrompts: [], type: "normal",
     } });
     expect(unsupported.statusCode).toBe(422);

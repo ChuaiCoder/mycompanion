@@ -9,6 +9,21 @@ import Fastify from "fastify";
 import { registerPluginRuntimeAssets } from "./plugin-runtime-assets.js";
 
 describe("reused Tavern slash execution",()=>{
+  it("executes original text/regex commands, aliases, global captures and regex failure semantics",async()=>{
+    const h=await createSlashFixture();try{
+      const run=(text:string)=>h.api.executeSlashCommandsWithOptions(text,{handleParserErrors:false});
+      expect((await run('/to-upper Abc | /lower {{pipe}}')).pipe).toBe("abc");
+      expect((await run('/substring start=-3 end=-1 morning')).pipe).toBe("in");
+      expect((await run('/replace pattern=blue replacer=red Blue house blue car')).pipe).toBe("Blue house red car");
+      expect((await run('/re mode=regex pattern="/blue/gi" replacer=red Blue house blue car')).pipe).toBe("red house red car");
+      expect((await run('/match pattern="/x([0-9])/g" x1x2')).pipe).toBe('[["x1","1"],["x2","2"]]');
+      expect((await run('/match pattern=orange blue')).pipe).toBe("");
+      expect((await run('/match pattern="/orange/g" blue')).pipe).toBe("[]");
+      expect((await run('/test pattern="/foo/gg" foo')).pipe).toBe("false");
+      expect((await run('/test pattern="/foo/gg" /foo/gg')).pipe).toBe("true");
+      expect(await h.api.executeSlashCommandsWithOptions('/test pattern="/[ /" text',{handleExecutionErrors:true})).toMatchObject({isError:true});
+    }finally{h.close();}
+  });
   it("serves runtime aliases as canonical re-exports instead of instantiating duplicate classes",async()=>{
     const app=Fastify();registerPluginRuntimeAssets(app);try{
       for(const path of ['slash-commands.js','slash-commands/SlashCommandParser.js','slash-commands/SlashCommandClosure.js']){
@@ -129,6 +144,32 @@ describe("reused Tavern slash execution",()=>{
       await h.api.applyHostContext({branchId:'generation-branch'});expect(await stopped).toMatchObject({isAborted:true});
     }finally{h.close();}
   });
+});
+
+it.skipIf(!process.env.SILLYTAVERN_SLASH_ORACLE_ROOT)("compares text and regex command descriptors/callbacks against untouched fixed declarations",async()=>{
+  const root=resolve(process.env.SILLYTAVERN_SLASH_ORACLE_ROOT!),source=readFileSync(resolve(root,"public/scripts/slash-commands.js"),"utf8"),utils=readFileSync(resolve(root,"public/scripts/utils.js"),"utf8");
+  const sha=(value:string)=>createHash("sha256").update(value).digest("hex");
+  const product=await createSlashFixture(),original=await createSlashFixture(root),rows:any[]=[];
+  const commands=["/upper Abc","/to-lower MIXED","/substr start=-3 end=-1 morning","/replace pattern=blue replacer=red Blueblue",
+    '/replace mode=regex pattern="/blue/gi" replacer=red Blue house blue car','/match pattern="/x([0-9])/g" x1x2',
+    '/match pattern="/none/g" x1','/match pattern=none x1','/test pattern="/foo/gg" foo','/test pattern="/foo/gg" /foo/gg',
+    '/test pattern="/BLUE/i" blue','/test pattern="/[ /" text','/replace mode=unknown pattern=foo foo'];
+  try{
+    for(const text of commands){
+      const projection=(result:any)=>({pipe:result.pipe,isError:result.isError,errorMessage:result.errorMessage,isAborted:result.isAborted});
+      const a=projection(await original.api.executeSlashCommandsWithOptions(text,{handleParserErrors:false,handleExecutionErrors:true}));
+      const b=projection(await product.api.executeSlashCommandsWithOptions(text,{handleParserErrors:false,handleExecutionErrors:true}));
+      expect(b,text).toEqual(a);rows.push({text,original:a,product:b});
+    }
+    for(const name of ["upper","lower","substr","replace","test","match"]){
+      const a=original.api.SlashCommandParser.commands[name],b=product.api.SlashCommandParser.commands[name];
+      expect(a,`original descriptor ${name}`).toBeTruthy();expect(b,`product descriptor ${name}`).toBeTruthy();
+      expect(b.aliases).toEqual(a.aliases);expect(b.namedArgumentList.map((item:any)=>({name:item.name,types:item.typeList,default:item.defaultValue})))
+        .toEqual(a.namedArgumentList.map((item:any)=>({name:item.name,types:item.typeList,default:item.defaultValue})));
+    }
+    const report=process.env.MYCOMPANION_SLASH_TEXT_ORACLE_REPORT;
+    if(report)writeFileSync(resolve(report),JSON.stringify({passed:true,commit:"7e8663cd9c184a550b37238218bdd32c6efc68e9",slashSourceSha256:sha(source),utilsSourceSha256:sha(utils),rows},null,2));
+  }finally{product.close();original.close();}
 });
 
 const oracleRoot=process.env.SILLYTAVERN_SLASH_ORACLE_ROOT;

@@ -5,6 +5,7 @@ import { messageFormatting,addOneMessage } from '/plugin-runtime/message-renderi
 import { saveChatConditional } from '/plugin-runtime/chat.js';
 import { power_user } from '/scripts/power-user.js';
 const activeExecutions = new Set();
+let generationStopOrigin;
 let contextKey = JSON.stringify([getContext().conversationId,getContext().branchId]);
 let acceptedGenerationBranch;
 window.addEventListener('mycompanion:generation-branch-accepted', event => {
@@ -21,8 +22,33 @@ export function trackSlashExecution(controller) {
   activeExecutions.add(controller);
   return () => activeExecutions.delete(controller);
 }
-export function abortSlashExecutions(reason = 'Command execution stopped') {
-  for (const controller of activeExecutions) if (!controller.signal.aborted) controller.abort(reason, true);
+export function abortSlashExecutions(reason = 'Command execution stopped', except = null) {
+  for (const controller of activeExecutions) if (controller !== except && !controller.signal.aborted) controller.abort(reason, true);
+}
+export function bindSlashGenerationStop(command) {
+  const callback = command.callback;
+  // The fixed upstream stop callback is synchronous. Capture its controller
+  // only while it calls the native stop API; the original callback stays intact.
+  command.callback = (args, value) => {
+    const previous = generationStopOrigin;
+    generationStopOrigin = args._abortController;
+    try { return callback(args, value); }
+    finally { generationStopOrigin = previous; }
+  };
+}
+const generationStopped = () => abortSlashExecutions();
+export function takeSlashGenerationStopOrigin() {
+  const origin = generationStopOrigin;
+  generationStopOrigin = undefined;
+  return origin;
+}
+export async function emitNativeGenerationStopped(origin = null) {
+  // Cancel operations active at the stop request, excluding the /stop pipeline
+  // which must receive Tavern's boolean result. Do not send private metadata
+  // as event arguments or cancel scripts started by later extension listeners.
+  try { abortSlashExecutions(undefined, origin); }
+  catch (error) { console.error(error); }
+  await eventSource.dispatch(event_types.GENERATION_STOPPED, [], false, generationStopped);
 }
 subscribeHostContext(context => {
   const next = JSON.stringify([context.conversationId,context.branchId]);
@@ -32,7 +58,7 @@ subscribeHostContext(context => {
     if (!accepted) abortSlashExecutions('Story or branch changed');
   }
 });
-eventSource.on(event_types.GENERATION_STOPPED, () => abortSlashExecutions());
+eventSource.on(event_types.GENERATION_STOPPED, generationStopped);
 window.addEventListener('pagehide', () => abortSlashExecutions('Window closed'));
 export function abortableSlashDelay(amount, controller) {
   if (controller?.signal.aborted) return Promise.resolve();

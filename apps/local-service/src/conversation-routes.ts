@@ -20,7 +20,6 @@ import {
 import { buildCharacterGreeting } from "./character-greeting.js";
 import type { CharacterRepository } from "./character-repository.js";
 import type { GenerationPipeline } from "./generation-pipeline.js";
-import { retrieveMemories } from "./memory-engine.js";
 import type { RuntimeRepository } from "./runtime-repository.js";
 import { sendError } from "./http-errors.js";
 import type { IdParams } from "./route-types.js";
@@ -56,8 +55,10 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
     return reply.status(201).send(conversationDetailSchema.parse(conversation));
   });
 
-  app.get<{ Params: IdParams }>("/api/conversations/:id", async (request, reply) => {
-    const conversation = runtime.getConversation(request.params.id);
+  app.get<{ Params: IdParams; Querystring: { messageLimit?: number } }>("/api/conversations/:id", {
+    schema: { querystring: { type: "object", properties: { messageLimit: { type: "integer", minimum: 1, maximum: 1000 } }, additionalProperties: false } },
+  }, async (request, reply) => {
+    const conversation = runtime.getConversation(request.params.id, request.query.messageLimit);
     if (!conversation) {
       return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
     }
@@ -92,11 +93,13 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
         return sendError(reply, 400, "INVALID_REQUEST", "示例文本无效或过长。");
       }
       return memoryRetrievalReportSchema.parse(
-        retrieveMemories({
+        await pipeline.retrieveMemory({
           conversationId: request.params.id,
           memories: runtime.listMemories(request.params.id),
           model: runtime.getProvider().model,
           scanText: parsed.data.input,
+          semanticQuery: parsed.data.input,
+          signal: pipeline.memoryShutdown.signal,
         }),
       );
     },

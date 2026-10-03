@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const { join } = require('node:path');
 const { existsSync, readdirSync, readFileSync } = require('node:fs');
 const { listPackage } = require('@electron/asar');
+const verifyPackagedSource = require('./packaged-source-integrity.cjs');
 
 // Workspace dependencies can contain local databases and test card archives.
 // Refuse to produce a distributable if packaging filters let them through.
@@ -28,6 +29,10 @@ module.exports = async function verifyPackage({ appOutDir }) {
   assert(!files.some(file => /(?:sillytavern|js-slash-runner|[\\/]dist[\\/]tavern-(?:engine|child|profile|secrets|shell|extension-git|network|runtime))/i.test(file)), 'Independent ASAR contains reference runtime or third-party helper');
   assert(!readdirSync(join(resources, 'source')).includes('SillyTavern-source.tar.gz'), 'Reference engine archive was packaged as a runtime source');
   assert.deepEqual(readdirSync(join(resources, 'source')).sort(), ['LICENSE.txt', 'MyCompanion-source.tar.gz', 'THIRD_PARTY_NOTICES.md', 'source-manifest.json'], 'Unexpected corresponding source resources');
+  verifyPackagedSource(join(resources, 'source'), {
+    archiveSha256: process.env.MYCOMPANION_CANDIDATE_SOURCE_SHA256,
+    manifestSha256: process.env.MYCOMPANION_CANDIDATE_SOURCE_MANIFEST_SHA256,
+  });
   for (const dependencyFile of ['handlebars/LICENSE', 'handlebars/dist/handlebars.min.js', 'cropperjs/LICENSE', 'cropperjs/dist/cropper.min.js', 'cropperjs/dist/cropper.min.css', 'yazl/LICENSE']) {
     assert(files.some(file => file.replaceAll('\\', '/').endsWith('/node_modules/' + dependencyFile)), 'Missing dialog/template dependency or license: ' + dependencyFile);
   }
@@ -42,5 +47,9 @@ module.exports = async function verifyPackage({ appOutDir }) {
     assert(notices.includes('MIT License — Toastr 2.1.4') && notices.includes('Permission is hereby granted, free of charge'), 'Full Toastr license notice must accompany this dependency');
   }
   assert(notices.includes('Copyright (c) 2025 Ahoy Labs, Inc.') && notices.includes('BYAF'), 'Missing full official BYAF schema license notice');
+  assert(notices.includes('Copyright (c) 2023-2026 Steven Ickman') && notices.includes('MIT License — Vectra'), 'Missing full Vectra metric license notice');
+  assert(notices.includes('MIT License — image-size header excerpts') && notices.includes('Copyright © 2013-Present Aditya Yadav'), 'Missing full image header MIT attribution/license');
+  assert(!files.some(file => /[\\/]node_modules[\\/]image-size[\\/]/.test(file)), 'Generic vulnerable image-size package must not be bundled');
+  for (const name of ['png', 'jpg', 'gif', 'webp', 'utils']) assert(files.some(file => file.replaceAll('\\', '/').endsWith('/dist/image-header-upstream/' + name + '.js')), 'Missing fixed image header handler: ' + name);
   console.log('Package verified: own renderer/service and corresponding source; no Tavern engine, standalone Node, helper or user data.');
 };

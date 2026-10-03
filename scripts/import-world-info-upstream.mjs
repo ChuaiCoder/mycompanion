@@ -18,7 +18,14 @@ function extract(source, name) {
 }
 const components = ['WorldInfoBuffer', 'WorldInfoTimedEffects', 'filterGroupsByScoring',
   'filterGroupsByTimedEffects', 'filterByInclusionGroups', 'parseDecorators'];
-let bodies = components.map(name => extract(world, name)).join('\n\n');
+let bodies = components.map(name => {
+  const body = extract(world, name);
+  if (name !== 'WorldInfoTimedEffects') return body;
+  return body.slice(0, body.lastIndexOf('}')) + `
+    __snapshotForBridge() { return { chat: this.#chat, entries: this.#entries, isDryRun: this.#isDryRun, buffer: this.#buffer }; }
+    __restoreForBridge(state) { this.#chat = state.chat; this.#entries = state.entries; this.#isDryRun = state.isDryRun; this.#buffer = state.buffer; }
+}`;
+}).join('\n\n');
 // Keep groups independent of any extension/application singleton. The upstream
 // removeEntry could splice(-1,1) for overlapping groups; removal is idempotent.
 bodies = bodies.replace('const removeEntry = (entry) => newEntries.splice(newEntries.indexOf(entry), 1);',
@@ -83,12 +90,37 @@ export function createWorldInfoRuntime(deps: any): any {
 }
 `;
 const sha256 = source => createHash('sha256').update(source).digest('hex');
+const macroPath = 'public/scripts/macros/definitions/core-macros.js';
+const macros = readFileSync(join(root, macroPath), 'utf8');
+const macroFunction = ast(macros).body.map(unwrap).find(node => node?.id?.name === 'registerCoreMacros');
+const outletNode = macroFunction.body.body.find(node => node.type === 'ExpressionStatement'
+  && node.expression?.callee?.object?.name === 'MacroRegistry' && node.expression?.arguments?.[0]?.value === 'outlet');
+if (!outletNode) throw new Error('Missing fixed-upstream outlet registration');
+const outlet = macros.slice(outletNode.start, outletNode.end)
+  .replace('handler: ({ unnamedArgs: [outlet] })', 'handler: ({ unnamedArgs: [outlet], env })')
+  .replace('extension_prompts[inject_ids.CUSTOM_WI_OUTLET(outlet)]?.value', 'env.extra.getOutletPrompt?.(outlet)');
+const outletSource = `// Extracted from SillyTavern 1.19.0, ${commit}.
+// SPDX-License-Identifier: AGPL-3.0-only
+// Bind the upstream outlet read to this invocation's prompt map.
+import { MacroRegistry, MacroCategory } from '../engine/MacroRegistry.js';
+export function registerWorldInfoMacros() {
+  ${outlet}
+}
+`;
+writeFileSync(resolve('packages/macro-engine/src/definitions/world-info-macros.js'), outletSource);
+const macroManifestPath = resolve('packages/macro-engine/upstream.json');
+const macroManifest = JSON.parse(readFileSync(macroManifestPath, 'utf8'));
+macroManifest.files = macroManifest.files.filter(file => file.path !== 'src/definitions/world-info-macros.js');
+macroManifest.files.push({ path: 'src/definitions/world-info-macros.js', upstreamPath: macroPath,
+  upstreamSha256: sha256(macros), adaptedSha256: sha256(outletSource),
+  adaptation: 'Extract the exact outlet registration, including metadata and typed parser arguments. Bind only the extension prompt getter to env.extra.getOutletPrompt; do not recursively substitute its returned value.' });
+writeFileSync(macroManifestPath, JSON.stringify(macroManifest, null, 2) + '\n');
 writeFileSync(resolve('apps/local-service/src/world-info-upstream-runtime.ts'), source);
 writeFileSync(resolve('apps/local-service/world-info-upstream.json'), JSON.stringify({
   repository: 'https://github.com/SillyTavern/SillyTavern', commit, license: 'AGPL-3.0-only',
   files: [{ path: 'src/world-info-upstream-runtime.ts', upstreamPath: worldPath,
     upstreamSha256: sha256(world), adaptedSha256: sha256(source), components: [...components, 'checkWorldInfo (scan phase only)'],
-    adaptation: 'Invocation-local dependencies and metadata; synchronous native tokenizer/macro adapter; injection text already prepared; presentation/regex is a separate existing native stage. Weighted/probability draws use the request session. An idempotent removeEntry repairs splice(-1) deletion for overlapping groups. At zero chat depth, explicit extension scan injections remain eligible while chat/character/recursive text stay excluded. Scanner selection/state transitions/timer algorithms otherwise retained. Async extension scan listeners are not part of this synchronous native tranche.' },
+    adaptation: 'Invocation-local dependencies and metadata; synchronous native tokenizer/macro traversal yields through an awaited browser effect RPC at each original scan event. Ordinal replay caches listener results and graph transport preserves shared entry/array/Map/Set identities across loops. Two state snapshot/restore methods bridge private TimedEffects fields to the identical extracted class in the extension realm. Injection text is already prepared; presentation/regex stays a separate native stage. Weighted/probability draws use the request session. An idempotent removeEntry repairs splice(-1) deletion for overlapping groups. At zero chat depth, explicit extension scan injections remain eligible while chat/character/recursive text stay excluded. Scanner selection/state transitions/timer algorithms otherwise retained.' },
   { upstreamPath: utilsPath, upstreamSha256: sha256(utils), components: ['getStringHash','escapeRegex'],
     attribution: 'cyrb53, bryc 2018, Public domain (or MIT); attribution preserved in the generated source. escapeRegex remains under the upstream AGPL-3.0-only license.' }],
 }, null, 2) + '\n');

@@ -1,0 +1,43 @@
+{
+  "reviewedAt": "2026-10-02T18:18:19.903Z",
+  "inputs": [
+    {
+      "repository": "https://github.com/Stevenic/vectra",
+      "commit": "dec2dadc3bb158b06ac72fa9097bee729429a271",
+      "path": "src/ItemSelector.ts",
+      "license": "MIT",
+      "sha256": "fe5f4d58b34b5c7c0f734c1e58580d574c0de43cf9bd6498889c280bf1f79bd8",
+      "licenseSha256": "e9a3b46a68e82bcd41fe15bfecc3a353b126e7f9cd06a766ae4fde39e0d6d1f9",
+      "adaptedPath": "src/vector-metric-upstream.ts",
+      "adaptedSha256": "d8f8101a420dcb87945fcaa19e1fbdc3e130b6a72c3c277d86d5a9acaa08f753",
+      "adaptations": [
+        "Select three unmodified metric methods; rename containing class, omit unrelated metadata and filesystem index.",
+        "Require matching dimensions and finite nonzero vectors in the host; do not compare truncated dimensions."
+      ]
+    },
+    {
+      "repository": "https://github.com/SillyTavern/SillyTavern",
+      "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+      "path": "src/vectors/openai-vectors.js",
+      "license": "AGPL-3.0-only",
+      "sha256": "cfae6c8fa604eb7d07a318342dffb91e2c52c341118f90a09d1d9fa92d09a12a",
+      "adaptations": [
+        "Reference HTTP request body and indexed-response ordering; existing MyCompanion fetch/credential boundary replaces upstream user secret/extra header lookup.",
+        "Ollama proxy path is retained instead of resetting pathname to root; disable redirects; bound response bytes and validate every index/dimension/value.",
+        "Provider errors are fixed safe codes, never raw body text or credential-bearing URLs."
+      ]
+    },
+    {
+      "repository": "https://github.com/SillyTavern/SillyTavern",
+      "commit": "7e8663cd9c184a550b37238218bdd32c6efc68e9",
+      "path": "src/vectors/ollama-vectors.js",
+      "license": "AGPL-3.0-only",
+      "sha256": "8916c03d036fa8f60d583f61d1e93edd39b96733cd4dd5bc100d168150efb7aa",
+      "adaptations": [
+        "Reference HTTP request body and indexed-response ordering; existing MyCompanion fetch/credential boundary replaces upstream user secret/extra header lookup.",
+        "Ollama proxy path is retained instead of resetting pathname to root; disable redirects; bound response bytes and validate every index/dimension/value.",
+        "Provider errors are fixed safe codes, never raw body text or credential-bearing URLs."
+      ]
+    }
+  ]
+}

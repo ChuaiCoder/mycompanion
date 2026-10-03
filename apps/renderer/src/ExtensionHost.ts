@@ -16,7 +16,7 @@ export interface PluginHostContext {
   generationControlsBusy: boolean;
   chat: ExtensionChatMessage[];
   characters: Array<{ id: string; name: string; updatedAt: string }>;
-  extensionTypes: Record<string, "local">;
+  extensionTypes: Record<string, "local" | "global">;
 }
 interface HostCallbacks {
   syncMacroMetadata(conversationId: string, metadata: Record<string, unknown>): void;
@@ -24,6 +24,8 @@ interface HostCallbacks {
   stopGeneration(): boolean;
   generateNative(value: string, options?: NativeGenerationOptions): Promise<string | undefined>;
   regenerateNative(options?: NativeGenerationOptions): Promise<string | undefined>;
+  continueNative(options?: NativeGenerationOptions): Promise<string | undefined>;
+  impersonateNative(options?: NativeGenerationOptions): Promise<string | undefined>;
   generateQuietNative(options: QuietGenerationOptions): Promise<string | undefined>;
   clearCharacterSelection(): Promise<void>;
   selectCharacter(id: string, switchMenu: boolean): Promise<void>;
@@ -75,6 +77,8 @@ export function useExtensionHost(context: PluginHostContext, callbacks: HostCall
         stopGeneration: () => current.current.callbacks.stopGeneration(),
         generateNative: (value, options) => current.current.callbacks.generateNative(value, options),
         regenerateNative: options => current.current.callbacks.regenerateNative(options),
+        continueNative: options => current.current.callbacks.continueNative(options),
+        impersonateNative: options => current.current.callbacks.impersonateNative(options),
         generateQuietNative: options => current.current.callbacks.generateQuietNative(options),
         clearCharacterSelection: () => current.current.callbacks.clearCharacterSelection(),
         selectCharacter: (id, switchMenu) => current.current.callbacks.selectCharacter(id, switchMenu),

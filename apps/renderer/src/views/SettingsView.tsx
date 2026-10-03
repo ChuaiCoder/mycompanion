@@ -7,6 +7,8 @@ import { MAX_CONTEXT_TOKENS, type ProviderConnectionResponse, type ProviderSetti
 import { Notice } from "../components";
 import { PresetSettings } from "./PresetSettings";
 import { BackupPanel } from "./BackupPanel";
+import { ProviderProfiles } from "./ProviderProfiles";
+import { providerCopy } from "../provider-translations";
 
 export interface SettingsViewProps {
   provider: ProviderSettings | null;
@@ -39,13 +41,14 @@ export function SettingsView({
   providerIssue, isConnectionReady, selectedCharacterName, onContinue,
 }: SettingsViewProps) {
   const { t, i18n } = useTranslation();
+  const copy = providerCopy(i18n.language);
   const [languageError, setLanguageError] = useState("");
   const handleKindChange = (event: ChangeEvent<HTMLSelectElement>): void => {
     const kind = event.target.value as ProviderSettings["kind"];
     onProviderField({
       kind,
-      baseUrl: kind === "ollama" ? "http://127.0.0.1:11434/v1" : "https://api.openai.com/v1",
-      model: kind === "ollama" ? "llama3.2" : "gpt-4o-mini",
+      baseUrl: kind === "ollama" ? "http://127.0.0.1:11434/v1" : kind === "anthropic" ? "https://api.anthropic.com/v1" : kind === "gemini" ? "https://generativelanguage.googleapis.com/v1beta" : "https://api.openai.com/v1",
+      model: kind === "ollama" ? "llama3.2" : kind === "anthropic" ? "claude-sonnet-4-6" : kind === "gemini" ? "gemini-2.5-flash" : "gpt-4o-mini",
     });
   };
   const handleSubmit = (event: FormEvent<HTMLFormElement>): void => {
@@ -57,6 +60,7 @@ export function SettingsView({
       <section className="settings-card"><label>{t("language.label")}<select aria-label={t("language.label")} value={i18n.language === "en" ? "en" : "zh"} onChange={event => {
         setLanguageError(""); void changeUiLanguage(event.target.value as UiLanguage).catch(() => setLanguageError(t("language.failed")));
       }}><option value="zh">简体中文</option><option value="en">English</option></select></label>{languageError ? <p role="alert">{languageError}</p> : null}</section>
+      <ProviderProfiles disabled={Boolean(applicationBusy || isSavingProvider)} />
       <section className="settings-card" aria-labelledby="provider-title">
         <header><p className="eyebrow">{t("settings.step")}</p><h1 id="provider-title">{t("settings.title")}</h1><p>{selectedCharacterName ? t("settings.roleReady", { name: selectedCharacterName }) : t("settings.importFirst")}{t("settings.intro")}</p></header>
         {runtimeError ? <Notice tone="error">{runtimeError}</Notice> : null}
@@ -67,7 +71,7 @@ export function SettingsView({
         }}>{t(providerIssue.field === "apiKey" ? "settings.fixKey" : providerIssue.field === "model" ? "settings.fixModel" : "settings.fixAddress")}</button></div> : null}
         {provider ? (
           <form className="settings-form" onSubmit={handleSubmit}>
-            <label><span>{t("settings.source")}</span><select value={provider.kind} onChange={handleKindChange}><option value="openai-compatible">{t("settings.online")}</option><option value="ollama">{t("settings.local")}</option></select></label>
+            <label><span>{t("settings.source")}</span><select value={provider.kind} onChange={handleKindChange}><option value="openai-compatible">{t("settings.online")}</option><option value="ollama">{t("settings.local")}</option><option value="anthropic">{copy.anthropic}</option><option value="gemini">{copy.gemini}</option></select></label>
             <label><span>{t("settings.address")}</span><input id="provider-base-url" onChange={(event) => onProviderField({ baseUrl: event.target.value })} placeholder="https://api.openai.com/v1" required type="url" value={provider.baseUrl} /></label>
             <small>{t(provider.kind === "ollama" ? "settings.ollamaHelp" : "settings.onlineHelp")}</small>
             <label><span>{t("settings.model")}</span><input id="provider-model" onChange={(event) => onProviderField({ model: event.target.value })} placeholder={provider.kind === "ollama" ? "llama3.2" : "gpt-4o-mini"} required value={provider.model} /></label>

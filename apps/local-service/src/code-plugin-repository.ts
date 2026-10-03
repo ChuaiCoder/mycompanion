@@ -99,7 +99,7 @@ function slugify(source: string, errorMessage: string): string {
   return slug;
 }
 
-function repositoryName(url: URL): string {
+export function repositoryName(url: URL): string {
   let decodedPath: string;
   try {
     decodedPath = decodeURIComponent(url.pathname);

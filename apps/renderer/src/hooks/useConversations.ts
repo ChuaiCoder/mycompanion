@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { ConversationDetail, ConversationSummary } from "@mycompanion/shared";
 
-import { ApiRequestError, createConversation, fetchConversation } from "../api";
+import { ApiRequestError, activateBranch, createConversation, fetchConversation } from "../api";
+import { flushLoadedExtensionHost } from "../ExtensionHost";
 import type { WorkspaceView } from "./useExtensionResume";
 
 // 故事会话：创建/打开与当前激活会话，和角色选中共用 navigationRevision 防竞态。
@@ -22,6 +23,8 @@ export function useConversations(deps: {
   } = deps;
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
   const [activeConversation, setActiveConversation] = useState<ConversationDetail | null>(null);
+  const [branchBusy, setBranchBusy] = useState(false);
+  const branchOperation = useRef(false);
 
   useEffect(() => {
     if (!resumeConversationId) return;
@@ -65,6 +68,25 @@ export function useConversations(deps: {
     }
   };
 
+  const handleActivateBranch = async (conversationId: string, branchId: string): Promise<void> => {
+    if (branchOperation.current || activeConversation?.id !== conversationId) return;
+    branchOperation.current = true;
+    const revision = ++navigationRevision.current;
+    setBranchBusy(true); setRuntimeError(null);
+    try {
+      await flushLoadedExtensionHost();
+      if (revision !== navigationRevision.current) return;
+      const conversation = await activateBranch(conversationId, branchId);
+      if (revision !== navigationRevision.current) return;
+      setActiveConversation(conversation);
+      setConversations(current => current.map(item => item.id === conversationId ? { ...item,
+        activeBranchId: conversation.activeBranchId, updatedAt: conversation.updatedAt,
+        lastMessagePreview: conversation.lastMessagePreview, messageCount: conversation.messageCount } : item));
+    } catch (error) {
+      if (revision === navigationRevision.current) setRuntimeError(error instanceof Error ? error.message : "无法切换回复分支。");
+    } finally { branchOperation.current = false; setBranchBusy(false); }
+  };
+
   return {
     conversations,
     setConversations,
@@ -72,5 +94,7 @@ export function useConversations(deps: {
     setActiveConversation,
     handleStartConversation,
     handleOpenConversation,
+    handleActivateBranch,
+    branchBusy,
   };
 }

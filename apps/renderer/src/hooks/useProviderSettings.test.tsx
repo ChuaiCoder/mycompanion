@@ -64,3 +64,11 @@ it.each(["success", "failure"])("ignores a late connection test %s after another
     expect(result.current.providerNotice).not.toBe("old connection OK");
   } finally { window.removeEventListener("mycompanion:provider-tested", onConnection); }
 });
+
+it("clears a transient key when a saved profile is selected so the old draft cannot be saved to its new endpoint", () => {
+  const { result } = renderHook(() => useProviderSettings({ setRuntimeError: vi.fn() }));
+  act(() => { result.current.setProvider(configured); result.current.setApiKeyDraft("old-profile-transient-key"); });
+  act(() => window.dispatchEvent(new CustomEvent("mycompanion:provider-saved", { detail: { ...configured, baseUrl: "https://another.test/v1", model: "another" } })));
+  expect(result.current.provider?.baseUrl).toBe("https://another.test/v1");
+  expect(result.current.apiKeyDraft).toBe(""); expect(result.current.isConnectionReady).toBe(false);
+});

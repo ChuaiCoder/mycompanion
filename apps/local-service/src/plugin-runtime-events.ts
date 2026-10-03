@@ -48,8 +48,22 @@ class EventBus {
   async emitChecked(name, ...args) {
     await this.dispatch(name, args, true);
   }
-  async dispatch(name, args, checked) {
+  async emitWithSignal(signal,name,...args) {
+    for(const callback of [...(this.events[name]||[])]) {
+      signal.throwIfAborted();
+      const pending=Promise.resolve().then(()=>{signal.throwIfAborted();return callback.apply(this,args);});
+      await new Promise((resolve,reject)=>{
+        const aborted=()=>{signal.removeEventListener('abort',aborted);reject(signal.reason);};
+        signal.addEventListener('abort',aborted,{once:true});
+        pending.then(resolve,error=>{console.error(error);resolve();}).finally(()=>signal.removeEventListener('abort',aborted));
+        if(signal.aborted)aborted();
+      });
+      signal.throwIfAborted();
+    }
+  }
+  async dispatch(name, args, checked, excludedListener = null) {
     for (const callback of [...(this.events[name] || [])]) {
+      if (callback === excludedListener) continue;
       try { await callback.apply(this, args); }
       catch (error) { if (checked) throw error; console.error(error); }
     }

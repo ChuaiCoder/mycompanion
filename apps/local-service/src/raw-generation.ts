@@ -41,7 +41,7 @@ export function registerRawGeneration(app: FastifyInstance, runtime: RuntimeRepo
         ...(apiKey ? { apiKey } : {}), signal: controller.signal });
     } catch (error) {
       return reply.status(controller.signal.aborted ? 499 : error instanceof ModelRequestError ? error.statusCode : 502).send({
-        error: { code: "RAW_GENERATION_FAILED", message: error instanceof Error ? error.message : "模型生成失败。" },
+        error: { code: "RAW_GENERATION_FAILED", message: error instanceof ModelRequestError ? error.message : "模型生成失败。" },
       });
     } finally {
       active.delete(controller);

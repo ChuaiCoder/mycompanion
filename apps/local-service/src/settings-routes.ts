@@ -12,10 +12,12 @@ import { sendError } from "./http-errors.js";
 import type { SecretCodec } from "./route-types.js";
 import { probeProvider } from "./provider-probe.js";
 import { sameProviderCredentialScope } from "./provider-credential-scope.js";
+import {quickReplyPresets} from "./quick-reply-repository.js";
 
 export function registerSettingsRoutes(app: FastifyInstance, runtime: RuntimeRepository, secretCodec?: SecretCodec): void {
   // The helper also refreshes world names through Tavern's settings endpoint.
   app.post("/api/settings/get", async (_request, reply) => reply.header("Cache-Control", "no-store").send({
+    quickReplyPresets:quickReplyPresets(runtime),
     world_names: runtime.worldInfo.names(), settings: JSON.stringify({ ...runtime.worldInfo.settings(), extension_settings: runtime.getExtensionSettings() }),
   }));
 

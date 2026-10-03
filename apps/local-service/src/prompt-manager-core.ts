@@ -131,6 +131,8 @@ export const chatCompletionPromptDefaults = {
   scenario_format: "{{scenario}}", personality_format: "{{personality}}", group_nudge_prompt: "[Write the next reply only as {{char}}.]",
   impersonation_prompt: "[Write your next reply from the point of view of {{user}}, using the chat history so far as a guideline for the writing style of {{user}}. Don't write as {{char}} or system. Don't describe actions of {{char}}.]",
   send_if_empty: "", names_behavior: 0,
+  continue_nudge_prompt: "[Continue your last message without repeating its original content.]",
+  continue_prefill: false, continue_postfix: " ",
 };
 
 export class PromptManager {

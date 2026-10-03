@@ -32,11 +32,15 @@ export {
 
 export * from "./regex.js";
 export * from "./runtime.js";
+export * from "./providers.js";
+export * from "./tokens.js";
+export * from "./tools.js";
 export * from "./memory.js";
 export * from "./worldbook.js";
 export * from "./world-info.js";
 export * from "./world-info-compat.js";
 export * from "./data.js";
 export * from "./extension-chat.js";
+export * from "./native-candidates.js";
 export * from "./reasoning.js";
 export * from "./character-macro-fields.js";

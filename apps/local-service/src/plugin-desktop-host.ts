@@ -10,7 +10,8 @@ import { generateRaw } from '/plugin-runtime/raw-generation.js';
 import { executeSlashCommandsWithOptions } from '/plugin-runtime/scripts/slash-commands.js';
 import {loadOpenAISettings,oai_settings,refreshOpenAISettings} from '/plugin-runtime/openai-settings.js';
 import {buildChatCompletionRequest} from '/plugin-runtime/openai-transport.js';
-export {respondToMacroRequest,readMacroResult} from '/plugin-runtime/macro-boundary.js';
+import {initializeToolRuntime,registerNativeTools} from '/plugin-runtime/tools.js';
+export {respondToMacroRequest,respondToEffectRequest,endEffectInvocation,readMacroResult} from '/plugin-runtime/macro-boundary.js';
 import {syncAuthorNote} from '/scripts/authors-note.js';
 import {loadPowerUser} from '/scripts/power-user.js';
 import {loadPresets,flushPresetWrites} from '/plugin-runtime/scripts/preset-manager.js';
@@ -20,6 +21,8 @@ export { stopGeneration } from '/plugin-runtime/generation-controls.js';
 import { loadWorldInfoState, flushWorldInfoWrites } from '/plugin-runtime/world-info.js';
 import { connectCharacterState, syncCharacterSummaries, loadCharacterState } from '/plugin-runtime/characters.js';
 import { connectCharacterEditorHost, flushCharacterSaves, selectCharacterById } from '/plugin-runtime/character-editor.js';
+import {loadQuickReplies} from '/plugin-runtime/quick-reply.js';
+import {connectQuickReplyDocument} from '/plugin-runtime/quick-reply-document.js';
 let callbacks;
 let started;
 let descriptors = [];
@@ -33,8 +36,9 @@ function status(id, value) { statuses.set(id, value); callbacks?.status(id, valu
 export const getStatuses = () => Object.fromEntries(statuses);
 export function connect(next) {
   callbacks = next;
+  connectQuickReplyDocument({input:value=>callbacks.input(value),send:value=>callbacks.generateNative(value),error:error=>status('host','快捷回复失败：'+error.message)});
   runtime.getContext().generateRaw = generateRaw;
-  runtime.getContext().nativeGenerate = { send: (value, options) => callbacks.generateNative(value, options), regenerate: options => callbacks.regenerateNative(options), quiet: options => callbacks.generateQuietNative(options) };
+  runtime.getContext().nativeGenerate = { send: (value, options) => callbacks.generateNative(value, options), regenerate: options => callbacks.regenerateNative(options), continue: options => callbacks.continueNative(options), impersonate: options => callbacks.impersonateNative(options), quiet: options => callbacks.generateQuietNative(options) };
   runtime.getContext().oaiSettings = oai_settings;
   connectMessageRendering({...next,regexDisplayKey:getRegexDisplayKey});
   next.configureRegexFormatting(formatRegexDisplay);
@@ -47,6 +51,11 @@ export function connect(next) {
     changed: id => runtime.eventSource.emit(runtime.event_types.CHAT_CHANGED, id),
   });
   for (const [id, value] of statuses) callbacks.status(id, value);
+}
+export async function completeNativeImpersonation(conversationId, text, signal) {
+  signal.throwIfAborted();
+  if (runtime.getContext().conversationId !== conversationId) return;
+  await runtime.eventSource.emitWithSignal(signal, runtime.event_types.IMPERSONATE_READY, text);
 }
 export function updateContext(context) {
   const { characters, characterId, ...fields } = context;
@@ -94,13 +103,28 @@ export async function beginNativeGeneration(type, options = {}) {
   await runtime.eventSource.emitChecked(runtime.event_types.GENERATION_AFTER_COMMANDS, type, options, Boolean(options.dryRun));
   options.signal?.throwIfAborted();
 }
-export async function prepareNativeCompletion(request, dryRun, signal, type = 'normal') {
+export async function prepareNativeCompletion(request, dryRun, signal, type = 'normal', providerSnapshot) {
   const settings = structuredClone(await refreshOpenAISettings(signal));
+  if(providerSnapshot){
+    settings.temp_openai=providerSnapshot.temperature;settings.openai_max_tokens=providerSnapshot.maxTokens;
+    settings.openai_max_context=providerSnapshot.contextLimitTokens;
+    if(providerSnapshot.kind==='anthropic'){settings.chat_completion_source='claude';settings.claude_model=providerSnapshot.model;settings.reverse_proxy=providerSnapshot.baseUrl;}
+    else if(providerSnapshot.kind==='gemini'){settings.chat_completion_source='makersuite';settings.google_model=providerSnapshot.model;settings.reverse_proxy=providerSnapshot.baseUrl;}
+    else if(['claude','makersuite'].includes(settings.chat_completion_source))settings.chat_completion_source='custom';
+    if(settings.chat_completion_source==='custom'){settings.custom_model=providerSnapshot.model;settings.custom_url=providerSnapshot.baseUrl;}
+    else if(settings.chat_completion_source==='openai'){settings.openai_model=providerSnapshot.model;settings.reverse_proxy=providerSnapshot.baseUrl;}
+  }
   signal.throwIfAborted();
   const event = {chat: request.messages, dryRun};
   await runtime.eventSource.emitChecked(runtime.event_types.CHAT_COMPLETION_PROMPT_READY, event);
   signal.throwIfAborted();
-  const completion = buildChatCompletionRequest(type, event.chat, settings, request.max_tokens, request.json_schema);
+  // ST emits this after PromptManager and before building provider parameters.
+  // The original Helper uses this stage for its >=1.13.5 MacroLike listener.
+  const generateData = {prompt:event.chat};
+  await runtime.eventSource.emitChecked(runtime.event_types.GENERATE_AFTER_DATA, generateData, dryRun);
+  signal.throwIfAborted();
+  const completion = buildChatCompletionRequest(type, generateData.prompt, settings, request.max_tokens, request.json_schema);
+  await registerNativeTools(type,completion,settings,signal);
   if (!dryRun) await runtime.eventSource.emitChecked(runtime.event_types.CHAT_COMPLETION_SETTINGS_READY, completion);
   signal.throwIfAborted();
   // Listener writes must reach storage before the native draft is committed;
@@ -124,7 +148,7 @@ function generationMacroOptions(options) {
 export function prepareQuietPrompt(value, _options) { return String(value??''); }
 export async function prepareExtensionPrompts(options = {}) {
   await started; await flushWorldInfoWrites(); await saveSettings(); await flushContributions();
-  return runtime.snapshotExtensionPrompts(generationMacroOptions(options), options.skipWIAN ? ['2_floating_prompt'] : [], { skipScan: !!options.skipWIAN });
+  return runtime.snapshotExtensionPrompts(generationMacroOptions(options), options.skipWIAN ? ['2_floating_prompt'] : [], { skipScan: !!options.skipWIAN, signal:options.signal });
 }
 export async function editCharacter(id) {
   await loadCharacterState();
@@ -159,7 +183,7 @@ async function loadModule(descriptor) {
   if (modules.has(descriptor.id)) return modules.get(descriptor.id);
   const promise = (async () => {
     const start = performance.now();
-    const base = '/scripts/extensions/third-party/' + encodeURIComponent(descriptor.id) + '/';
+    const base = '/scripts/extensions/third-party/' + encodeURIComponent(descriptor.extensionName || descriptor.id) + '/';
     try {
       status(descriptor.id, '正在加载…');
       if (descriptor.css) await addStyle(descriptor.id, base + descriptor.css);
@@ -208,9 +232,11 @@ export function start() {
     await loadPowerUser();
     syncAuthorNote();
     await loadOpenAISettings();
+    initializeToolRuntime();
     await loadPresets();
     await loadWorldInfoState();
     await loadCharacterState();
+    await loadQuickReplies();
     globalThis.SillyTavern = { getContext: runtime.getContext, eventSource: runtime.eventSource,
       eventTypes: runtime.event_types, extensionSettings: runtime.extension_settings,
       getRequestHeaders: runtime.getRequestHeaders, getApiUrl: runtime.getApiUrl };

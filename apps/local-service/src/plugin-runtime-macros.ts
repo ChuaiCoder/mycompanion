@@ -13,6 +13,21 @@ import {power_user} from '/scripts/power-user.js';
 import {getLocalVariable,getGlobalVariable,variableStores} from '/plugin-runtime/variables.js';
 const escapeRegex=value=>String(value).replace(/[.*+?^$\{\}()|[\]\\]/g,'\\$&');
 const keyName=key=>{if(typeof key!=='string'||!key.trim())throw new Error('Macro key must be a nonempty string');return key.trim();};
+export function getOutletPrompt(key){return getContext().extensionPrompts?.['customWIOutlet_'+key]?.value||'';}
+export function withWorldInfoOutlets(outlets,work){
+  if(outlets===undefined)return work();
+  const prompts=getContext().extensionPrompts, prefix='customWIOutlet_',before={};
+  if(!prompts)return work();
+  for(const key of Object.keys(prompts))if(key.startsWith(prefix)){
+    Object.defineProperty(before,key,{value:Object.getOwnPropertyDescriptor(prompts,key),enumerable:true});delete prompts[key];
+  }
+  for(const [key,value] of Object.entries(outlets))Object.defineProperty(prompts,prefix+key,
+    {value:{value,position:-1,depth:0,scan:false,role:0},writable:true,enumerable:true,configurable:true});
+  try{return work();}finally{
+    for(const key of Object.keys(prompts))if(key.startsWith(prefix))delete prompts[key];
+    Object.defineProperties(prompts,before);
+  }
+}
 export class MacrosParser{
   static #values=new Map();
   static #descriptions=new Map();
@@ -85,6 +100,7 @@ export function evaluateMacros(content,env,postProcessFn,macroEnv){
     ...['time','date','weekday','isotime','isodate'].map(key=>({regex:new RegExp('{{'+key+'}}','gi'),replace:()=>tavernTimeValue(key,now,locale)})),
     {regex:/{{reverse:(.+?)}}/gi,replace:(_,value)=>Array.from(value).reverse().join('')},
     {regex:/\{\{\/\/([\s\S]*?)\}\}/gm,replace:()=>''},
+    {regex:/{{outlet::(.+?)}}/gi,replace:(_,key)=>getOutletPrompt(key.trim())||''},
   ];
   for(const step of steps){
     if(!content)break;
@@ -147,6 +163,7 @@ MacroEnvBuilder.registerProvider(env=>{
       ...Object.fromEntries(['date','time','weekday','isodate','isotime'].map(key=>[key,()=>tavernTimeValue(key,now,locale)])),
       // The desktop provider uses chat completion (main_api = 'openai').
       parseMesExamples,isInstruct:false,
+      getOutletPrompt,
       readVariable:(key,global)=>(global?getGlobalVariable:getLocalVariable)(key),variables:variableStores,
   });
 },env_provider_order.EARLIEST);

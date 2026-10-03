@@ -1,6 +1,9 @@
 import { verifyHelperPromptViewer } from './verify-helper-prompt-viewer.mjs';
 import { verifyHelperMacroLifecycle } from './verify-helper-macro-lifecycle.mjs';
 import { verifyHelperSlash } from './verify-helper-slash.mjs';
+import { helperPublicAudioFixtures, verifyHelperPublicDomains } from './verify-helper-public-domains.mjs';
+import { verifyHelperHttp } from './verify-helper-http.mjs';
+import { installDesktopCloseGuard } from '../dist/desktop-close.js';
 // Runs the cached, byte-unchanged Tavern Helper in an isolated Electron profile.
 // This is a compatibility test only; helper files are never part of packaging.
 import assert from 'node:assert/strict';
@@ -31,9 +34,13 @@ const promptViewer = process.env.MYCOMPANION_VERIFY_PROMPT_VIEWER === '1';
 const scriptScopes = process.env.MYCOMPANION_VERIFY_SCOPES === '1';
 const macroLifecycle = process.env.MYCOMPANION_VERIFY_MACRO_LIFECYCLE === '1';
 const slashExecution = process.env.MYCOMPANION_VERIFY_SLASH === '1';
+const publicDomains = process.env.MYCOMPANION_VERIFY_PUBLIC_DOMAINS === '1';
+const httpCompatibility = process.env.MYCOMPANION_VERIFY_HTTP === '1';
+const lateWrites = process.env.MYCOMPANION_VERIFY_LATE_WRITES === '1';
 const profile = mkdtempSync(join(tmpdir(), 'mycompanion-untouched-helper-'));
 app.setPath('userData', profile);
 app.disableHardwareAcceleration();
+if (publicDomains || lateWrites || httpCompatibility) app.on('window-all-closed', () => {});
 const reportLabel = process.env.MYCOMPANION_VERIFY_REPORT_LABEL;
 if (reportLabel && !/^[a-z0-9-]+$/i.test(reportLabel)) throw new Error('Invalid verification report label');
 const reportPath = join(root, '.cache/reports', reportLabel ? reportLabel + '.json' : promptViewer ? 'untouched-helper-prompt-viewer-runtime.json' : scriptScopes ? 'untouched-helper-scopes-runtime.json' : scriptLifecycle
@@ -52,6 +59,8 @@ let service, window;
 const providerRequests = [];
 let providerFirstChunk = false, providerDisconnects = 0;
 const provider = createServer(async (request, response) => {
+  const audio = publicDomains ? helperPublicAudioFixtures.get(request.url?.split('/').at(-1)) : undefined;
+  if (audio) {response.writeHead(200,{'Content-Type':'audio/wav','Content-Length':audio.length,'Cache-Control':'no-store'});response.end(audio);return;}
   if (request.url?.endsWith('/models')) {
     response.setHeader('Content-Type', 'application/json');
     response.end(JSON.stringify({data:[{id:'helper-fixture-model'}]}));
@@ -59,6 +68,12 @@ const provider = createServer(async (request, response) => {
   }
   let raw = ''; for await (const part of request) raw += part;
   const body = JSON.parse(raw); providerRequests.push(body);
+  if (publicDomains) {
+    const value = body.contents ? {candidates:[{content:{role:'model',parts:[{text:'原版助手回复'}]},finishReason:'STOP'}]}
+      : String(body.model).startsWith('claude-') ? {id:'e02-fixture',type:'message',role:'assistant',content:[{type:'text',text:'原版助手回复'}],stop_reason:'end_turn',usage:{input_tokens:4,output_tokens:3}}
+      : {choices:[{message:{role:'assistant',content:'原版助手回复'},finish_reason:'stop'}],usage:{prompt_tokens:4,completion_tokens:3,total_tokens:7}};
+    response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify(value)); return;
+  }
   if (body.stream) {
     response.setHeader('Content-Type', 'text/event-stream');
     response.on('close', () => { providerDisconnects++; });
@@ -152,20 +167,35 @@ async function main() {
     try {
       const runtime = new RuntimeRepository(database);
       runtime.installCodePlugin({manifest, files, plugin:{id:'js-slash-runner',kind:'sillytavern-js',
+        extensionName:'JS-Slash-Runner',installationScope:'local',
         displayName:manifest.display_name,version:manifest.version,author:manifest.author,
         license:'PolyForm Noncommercial 1.0.0',js:manifest.js,css:manifest.css,warnings:[],
         fileCount:files.size,totalBytes:[...files.values()].reduce((total, file) => total + file.length, 0)}});
     } finally { database.close(); }
     const origin = await service.listen({host:'127.0.0.1',port:0});
     window = new BrowserWindow({show:false,webPreferences:{sandbox:true,nodeIntegration:false,contextIsolation:true,backgroundThrottling:false}});
-    result.networkFailures = [];
+    result.networkFailures = []; result.consoleDiagnostics = []; result.fontResponses = [];result.fontRequests=[];result.navigations=[];
+    window.webContents.session.webRequest.onBeforeRequest((details,callback) => {
+      if(details.url.includes('/fontawesome/'))result.fontRequests.push({id:details.id,url:details.url,resourceType:details.resourceType,referrer:details.referrer,timestamp:details.timestamp,webContentsId:details.webContentsId});
+      callback({cancel:false});
+    });
     window.webContents.session.webRequest.onErrorOccurred(details => {
-      result.networkFailures.push({url:details.url,error:details.error});
+      result.networkFailures.push({id:details.id,url:details.url,error:details.error,resourceType:details.resourceType,timestamp:details.timestamp,webContentsId:details.webContentsId});
     });
-    window.webContents.on('console-message', details => {
-      if (details.level === 'error') result.errors.push(String(details.message).slice(0, 400));
+    window.webContents.session.webRequest.onCompleted(details => {
+      if(details.url.includes('/fontawesome/'))result.fontResponses.push({id:details.id,url:details.url,statusCode:details.statusCode,fromCache:details.fromCache,resourceType:details.resourceType,timestamp:details.timestamp,webContentsId:details.webContentsId});
+    });
+    const observeConsole = async target => {
+      for(const event of ['did-start-loading','did-finish-load','did-stop-loading'])target.webContents.on(event,()=>result.navigations.push({event,url:target.webContents.getURL(),webContentsId:target.webContents.id,timestamp:Date.now()}));
+      target.webContents.on('console-message', details => {
+      if (details.level === 'error') {
+        result.errors.push(String(details.message).slice(0, 400));
+        result.consoleDiagnostics.push({message:String(details.message),sourceId:details.sourceId,lineNumber:details.lineNumber});
+      }
       if(String(details.message).includes('Failed to import native createGenerationParameters'))result.generationParameterFallbacks.push(String(details.message));
-    });
+      });
+    };
+    await observeConsole(window);
     await window.loadURL(origin);
     await waitFor(() => window.webContents.executeJavaScript(`(()=>{
       const nav = [...document.querySelectorAll('nav[aria-label="主导航"] button')].find(button => button.textContent?.includes('故事'));
@@ -190,6 +220,46 @@ async function main() {
     })()`));
     result.initialized = true; result.panel = initialized.panel; result.functionCount = initialized.functions;
     result.statuses = await window.webContents.executeJavaScript(`import('/plugin-runtime/desktop-host.js').then(host=>host.getStatuses())`);
+    if (publicDomains || lateWrites || httpCompatibility) {
+      result.fontProbe = await window.webContents.executeJavaScript(`(async()=>{
+        const path='/plugin-runtime/vendor/fontawesome/webfonts/fa-solid-900.woff2',response=await fetch(path);
+        const bytes=await response.arrayBuffer(),loaded=await document.fonts.load('900 16px "Font Awesome 6 Free"');
+        return {path,status:response.status,contentType:response.headers.get('content-type'),bytes:bytes.byteLength,loaded:loaded.length,
+          usable:document.fonts.check('900 16px "Font Awesome 6 Free"'),resourceEntries:performance.getEntriesByType('resource').filter(entry=>entry.name.includes('/fontawesome/')).map(entry=>({url:entry.name,initiatorType:entry.initiatorType,startTime:entry.startTime,duration:entry.duration,transferSize:entry.transferSize}))};
+      })()`);
+      let publicOrigin = origin;
+      const restart = async (nextConversationId=conversationId) => {
+        await window.webContents.executeJavaScript(`import('/plugin-runtime/desktop-host.js').then(host=>host.flush())`);
+        const previous = publicOrigin;
+        const guard = installDesktopCloseGuard(window, {beforeClose:async()=>{},onError:error=>{throw error;}});
+        assert.equal(await guard.requestClose(),true);
+        await service.close();
+        service = buildApp({databasePath,rendererRoot:join(root,'apps/renderer/dist')});
+        publicOrigin = await service.listen({host:'127.0.0.1',port:0});
+        assert.notEqual(publicOrigin,previous,'Full restart must use a different service port');
+        window = new BrowserWindow({show:false,webPreferences:{sandbox:true,nodeIntegration:false,contextIsolation:true,backgroundThrottling:false}});
+        await observeConsole(window);
+        await window.loadURL(publicOrigin);
+        await waitFor(()=>window.webContents.executeJavaScript(`!!window.TavernHelper?.getAudioList`));
+        await window.webContents.executeJavaScript(`(()=>{[...document.querySelectorAll('nav button')].find(button=>button.textContent.includes('故事')).click();})()`);
+        await waitFor(()=>window.webContents.executeJavaScript(`(()=>{const row=document.querySelector('button[data-conversation-id="${nextConversationId}"]');if(!row)return false;row.click();return true;})()`));
+        await waitFor(()=>window.webContents.executeJavaScript(`import('/script.js').then(core=>core.getCurrentChatId()===${JSON.stringify(nextConversationId)})`));
+        return {previousOrigin:previous,origin:publicOrigin};
+      };
+      if (lateWrites) {
+        const {verifyHelperLateWrites}=await import('./verify-helper-late-writes.mjs');
+        result.lateWrites=await verifyHelperLateWrites({getWindow:()=>window,getService:()=>service,waitFor,conversationId,characterId,providerRequests,restart});
+        result.passed=result.initialized&&result.lateWrites.passed;return;
+      }
+      if (httpCompatibility) {
+        result.httpCompatibility = await verifyHelperHttp({evaluate:source=>window.webContents.executeJavaScript(source),restart});
+        result.passed=result.initialized&&result.httpCompatibility.passed&&result.errors.length===0;return;
+      }
+      result.publicDomains = await verifyHelperPublicDomains({getWindow:()=>window,getService:()=>service,waitFor,conversationId,providerRequests,providerBase:`http://127.0.0.1:${provider.address().port}/v1`,restart,reproduceChatDelete:process.env.MYCOMPANION_VERIFY_CHAT_DELETE==='1'});
+      result.providerRequests=providerRequests.length;
+      result.passed = result.initialized && result.publicDomains.passed && result.errors.length===0;
+      return;
+    }
     if (slashExecution) {
       result.slash=await verifyHelperSlash(window,service,providerRequests);
       result.passed=result.initialized&&result.slash.passed;

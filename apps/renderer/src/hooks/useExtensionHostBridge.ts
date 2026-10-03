@@ -2,7 +2,7 @@ import type { NativeGenerationOptions } from "../api";
 import type { NativeGenerationResult } from "./useChatGeneration";
 import { useMemo, useRef, type Dispatch, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
-import { toExtensionMessage } from "@mycompanion/shared";
+import { projectNativeCandidateMessage, toExtensionMessage } from "@mycompanion/shared";
 
 import type {
   CharacterDetail,
@@ -53,6 +53,8 @@ export function useExtensionHostBridge(deps: {
   handleStopGeneration: () => Promise<void>;
   handleSendMessage: (input?: string, options?: NativeGenerationOptions) => Promise<NativeGenerationResult>;
   handleRegenerate: (options?: NativeGenerationOptions) => Promise<NativeGenerationResult>;
+  handleContinue: (options?: NativeGenerationOptions) => Promise<NativeGenerationResult>;
+  handleImpersonate: (options?: NativeGenerationOptions) => Promise<NativeGenerationResult>;
   handleCodePluginStatus: (id: string, status: string) => void;
   handleCodePluginContributions: (id: string, contribution: CodePluginContribution) => Promise<void>;
 }): void {
@@ -81,6 +83,8 @@ export function useExtensionHostBridge(deps: {
     handleStopGeneration,
     handleSendMessage,
     handleRegenerate,
+    handleContinue,
+    handleImpersonate,
     handleCodePluginStatus,
     handleCodePluginContributions,
   } = deps;
@@ -99,7 +103,8 @@ export function useExtensionHostBridge(deps: {
     generationControlsBusy,
     chat: activeConversation?.messages.map(message => toExtensionMessage(message, activeConversation.characterName)) ?? [],
     characters: characters.map(character => ({ id: character.id, name: character.name, updatedAt: character.updatedAt })),
-    extensionTypes: Object.fromEntries(codePlugins.map(plugin => [`third-party/${plugin.id}`, "local" as const])),
+    extensionTypes: Object.fromEntries([...codePlugins].sort((a, b) => Number(b.installationScope === "global") - Number(a.installationScope === "global"))
+      .map(plugin => [`third-party/${plugin.extensionName ?? plugin.id}`, plugin.installationScope ?? "local"])),
   }), [activeConversation, selectedCharacter, codePlugins, characters, isGenerating, isNativeGenerating, generationControlsBusy]);
   useExtensionHost(pluginHostContext, {
     syncMacroMetadata: (id, metadata) => flushSync(() => setActiveConversation(current => current?.id === id
@@ -122,6 +127,16 @@ export function useExtensionHostBridge(deps: {
     },
     regenerateNative: async options => {
       const result = await handleRegenerate(options);
+      if (result.status === "failed") throw result.error;
+      return result.status === "complete" ? result.text : undefined;
+    },
+    continueNative: async options => {
+      const result = await handleContinue(options);
+      if (result.status === "failed") throw result.error;
+      return result.status === "complete" ? result.text : undefined;
+    },
+    impersonateNative: async options => {
+      const result = await handleImpersonate(options);
       if (result.status === "failed") throw result.error;
       return result.status === "complete" ? result.text : undefined;
     },
@@ -180,14 +195,22 @@ export function useExtensionHostBridge(deps: {
     renderChat: (conversation, state, reloaded) => {
       flushSync(() => setActiveConversation(current => {
         if (current?.id !== conversation.id || (!reloaded && current.activeBranchId !== conversation.activeBranchId)) return current;
+        const durable = new Map(conversation.messages.map(message => [message.id, message]));
+        const live = new Map(current.messages.map(message => [message.id, message]));
         const known = new Map([...conversation.messages, ...current.messages].map(message => [message.id, message]));
         const messages = state.messages.map((raw, index): ChatMessage => {
           const previous = known.get(raw.id);
-          const { id, mes, is_user, role: _role, content: _content, status, ...extensionData } = raw;
-          return { ...previous, id, conversationId: conversation.id, branchId: conversation.activeBranchId,
-            parentMessageId: state.messages[index - 1]?.id ?? null, role: is_user ? "user" : "assistant", content: mes,
-            status: status === "streaming" || status === "stopped" || status === "failed" ? status : "complete",
-            createdAt: previous?.createdAt ?? new Date().toISOString(), extensionData };
+          const currentMessage = live.get(raw.id), stored = durable.get(raw.id);
+          // A save can return the streaming row before newer native deltas have
+          // reached storage. Its projection cannot roll that live reply back.
+          const nativeAdvancing = currentMessage?.status === "streaming" && (!stored || stored.status === "streaming");
+          const generationMetadata = nativeAdvancing || stored?.status === "streaming" && currentMessage?.generationMetadata
+            ? currentMessage?.generationMetadata : stored?.generationMetadata ?? previous?.generationMetadata;
+          const { id, mes, is_user, role: _role, content: _content, status, generationMetadata: _generation, ...extensionData } = raw;
+          return projectNativeCandidateMessage({ ...previous, id, conversationId: conversation.id, branchId: conversation.activeBranchId,
+            parentMessageId: state.messages[index - 1]?.id ?? null, role: is_user ? "user" : "assistant", content: nativeAdvancing ? currentMessage.content : mes,
+            status: nativeAdvancing ? currentMessage.status : status === "streaming" || status === "stopped" || status === "failed" ? status : "complete",
+            createdAt: previous?.createdAt ?? new Date().toISOString(), generationMetadata, extensionData });
         });
         return { ...conversation, messages, chatMetadata: state.metadata, messageCount: messages.length, lastMessagePreview: messages.at(-1)?.content.slice(0, 120) ?? "" };
       }));

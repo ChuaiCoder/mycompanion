@@ -22,6 +22,8 @@ export async function Generate(type, options = {}, dryRun = false) {
     return foreground.send(input, {allowEmpty:true, dryRun, signal:options.signal});
   }
   if (type === 'regenerate' || type === 'swipe') return foreground.regenerate({dryRun, signal:options.signal});
+  if (type === 'continue') return foreground.continue({dryRun, signal:options.signal});
+  if (type === 'impersonate') return foreground.impersonate({dryRun, signal:options.signal});
   throw new Error('尚未实现该生成模式：' + String(type));
 }
 `;

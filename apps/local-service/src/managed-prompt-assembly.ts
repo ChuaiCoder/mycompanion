@@ -7,6 +7,8 @@ import { CONTEXT_RESERVE_TOKENS, type PromptBudgetReport, type PromptBudgetRegio
 import { PromptManager, prepareCompletionPrompts, parseCompatibleCompletionExample, INJECTION_POSITION, type PromptManagerSettings, type Prompt } from "./prompt-manager-core.js";
 import { MacroEvaluationSession, macroVariableStores } from "./prompt-macros.js";
 import { countCompatibilityMessagesSync, countTextTokens } from "./tokenizer-service.js";
+import { isModelImageInliningSupported, materializePromptImage } from "./model-prompt-image.js";
+import { canReplayNativeCandidateTools } from "@mycompanion/shared";
 
 /** Imported Chat Completion presets share one preparation/budget/transport path.
  * Every substitution happens before candidate messages are measured. Rebuilding
@@ -138,20 +140,45 @@ export function assembleManagedModelPrompt(options: PromptAssemblyOptions, chara
     const value = values ? substitute(values) : "";
     if (value) buckets.set(`${depth}:${role}`, { role: (["system", "user", "assistant"] as const)[role]!, content: value });
   }
-  const controls: ModelMessage[] = [];
-  if (options.generationType === "impersonate" && prompts.get("impersonate")?.content) controls.push(modelMessage(prompts.get("impersonate")!));
-  if (prompts.get("quietPrompt")?.content) controls.push(modelMessage(prompts.get("quietPrompt")!));
-
-  let history = options.history.filter(message => ["complete", "stopped"].includes(message.status) && message.content.trim() && message.extensionData?.is_system !== true);
   type PopulationMessage = ModelMessage & { sourceId?: string; injectionKey?: string };
+  const controls: PopulationMessage[] = [],continuationNudge: PopulationMessage[]=[];
+  if (options.generationType === "impersonate" && prompts.get("impersonate")?.content) controls.push(modelMessage(prompts.get("impersonate")!));
+  if (prompts.get("quietPrompt")?.content) {
+    const source = options.settings.kind === "anthropic" ? "claude" : options.settings.kind === "gemini" ? "makersuite" : "custom";
+    const imageInlining = isModelImageInliningSupported(source, options.settings.model, settings.media_inlining);
+    // Reserve the picture with the final quiet control before history admission.
+    // An empty quiet prompt or disabled media input never creates a picture turn.
+    controls.push({...modelMessage(prompts.get("quietPrompt")!), ...(options.quietImage && imageInlining ? {
+      image: options.quietImage, imageDetail: options.imageQuality ?? (typeof settings.inline_image_quality === "string" && settings.inline_image_quality ? settings.inline_image_quality : "auto"),
+    } : {})});
+  }
+
+  let history = options.history.filter(message => ["complete", "stopped"].includes(message.status) &&
+    (message.content.trim() || typeof message.extensionData?.__mycompanion_prompt_image === "string") && message.extensionData?.is_system !== true);
+  const continuationSource=options.generationType==="continue"?history.at(-1):undefined;
   const preparedHistory = new Map<string, string>(), preparedInjections = new Map<string, string>();
   const historyMessages = (source: ChatMessage[]): PopulationMessage[] => source.map(message => {
     const name = typeof message.extensionData?.modelName === "string" ? message.extensionData.modelName
+      : typeof message.extensionData?.name === "string" ? message.extensionData.name
       : message.role === "user" ? macroContext.userName : character.name;
-    return { role: message.extensionData?.modelRole === "system" ? "system" as const : message.role,
+    const extra = message.extensionData?.extra;
+    const narrator = extra !== null && typeof extra === "object" && !Array.isArray(extra) && (extra as Record<string, unknown>).type === "narrator";
+    return { role: message.extensionData?.modelRole === "system" || narrator ? "system" as const : message.role,
       content: preparedHistory.get(message.id) ?? message.content, sourceId: message.id,
+      ...(typeof message.extensionData?.__mycompanion_prompt_image === "string" ? {
+        image:message.extensionData.__mycompanion_prompt_image,
+        imageDetail:typeof message.extensionData.__mycompanion_prompt_image_detail === "string"?message.extensionData.__mycompanion_prompt_image_detail:"auto",
+      } : {}),
       ...(settings.names_behavior === 1 ? { name: manager.isValidName(name) ? name : manager.sanitizeName(name) } : {}) };
   });
+  if(continuationSource&&settings.continue_prefill===true){
+    history=history.filter(message=>message.id!==continuationSource.id);
+    const tail=historyMessages([continuationSource])[0]!;
+    const assistantPrefill=tail.role==="assistant"&&(settings.chat_completion_source==="claude"||options.settings.kind==="anthropic")
+      ?substitute(typeof settings.assistant_prefill==="string"?settings.assistant_prefill:""):"";
+    tail.content=[assistantPrefill,tail.content].filter(Boolean).join("\n\n");
+    controls.push(tail);
+  }
   const inject = (source: ModelMessage[]) => {
     const reversed = [...source].reverse(); let inserted = 0;
     const depths = [...new Set([...absolute.map(prompt => prompt.injection_depth ?? 4), ...bucketPrompts.map(prompt => prompt.depth)])].sort((a, b) => a - b);
@@ -173,14 +200,14 @@ export function assembleManagedModelPrompt(options: PromptAssemblyOptions, chara
   const diagnostics: string[] = [], reserveTokens = options.settings.maxTokens + CONTEXT_RESERVE_TOKENS;
   const fixedMessages = (): ModelMessage[] => [...prompts.collection.flatMap(prompt =>
     prompt.identifier === "chatHistory" || prompt.identifier === "dialogueExamples" ? [] : groups.get(prompt.identifier) ?? []),
-    ...(prompts.has("chatHistory") ? additional.flatMap(item => item.messages) : []), ...controls];
+    ...(prompts.has("chatHistory") ? additional.flatMap(item => item.messages) : []), ...continuationNudge,...controls];
   let population: PopulationMessage[] = [];
   let exampleMessages: ModelMessage[] = [];
   let emptyUser: ModelMessage | undefined;
   let newChat = "";
   const populationCost = (candidate: ModelMessage[]) => countCompatibilityMessagesSync([
     ...fixedMessages(), ...(newChat ? [{ role: "system" as const, content: newChat }] : []), ...candidate, ...(emptyUser ? [emptyUser] : []),
-  ].map(message => ({ ...message })), options.settings.model, true) + reserveTokens;
+  ].map(message => materializePromptImage({ ...message })), options.settings.model, true) + reserveTokens;
   const prepareExamples = (): ModelMessage[] => {
     if (!exampleBlocks.length || !prompts.has("dialogueExamples")) return [];
     const heading = substitute(typeof settings.new_example_chat_prompt === "string" ? settings.new_example_chat_prompt : "");
@@ -203,6 +230,19 @@ export function assembleManagedModelPrompt(options: PromptAssemblyOptions, chara
     // first, including depth injections. Preserve this later pass even when an
     // earlier field or extension pass left residual macro syntax.
     const populated = inject(historyMessages(history)) as PopulationMessage[];
+    const cyclePrompt=options.cyclePrompt??continuationSource?.content;
+    if(options.generationType==="continue"&&cyclePrompt&&settings.continue_prefill!==true){
+      const index=populated.findLastIndex(message=>message.sourceId!==undefined);
+      if(index>=0){
+        const tail=populated.splice(index,1)[0]!;
+        tail.content=manager.preparePrompt({identifier:tail.sourceId??"continue",role:tail.role,content:tail.content}).content??"";
+        continuationNudge.push(tail);
+      }
+      const source=session.evaluate(typeof settings.continue_nudge_prompt==="string"?settings.continue_nudge_prompt:"",
+        {...macroContext,dynamicMacros:{lastChatMessage:String(cyclePrompt).trim()}});
+      const nudge=manager.preparePrompt({identifier:"continueNudge",role:"system",content:source});
+      continuationNudge.push(modelMessage(nudge));
+    }
     const sendIfEmpty = typeof settings.send_if_empty === "string" ? settings.send_if_empty : "";
     const replacement: ModelMessage = { role: "user", content: sendIfEmpty };
     if (populated.at(-1)?.role === "assistant" && sendIfEmpty && populationCost([...exampleMessages, replacement]) <= options.settings.contextLimitTokens) emptyUser = replacement;
@@ -224,7 +264,7 @@ export function assembleManagedModelPrompt(options: PromptAssemblyOptions, chara
         if (message.sourceId === currentUserId) population.unshift(prepared);
         diagnostics.push("历史消息超出剩余上下文预算，已停止纳入较早消息。"); break;
       }
-      if (content) population.unshift(prepared);
+      if (content || prepared.image) population.unshift(prepared);
       if (message.sourceId) preparedHistory.set(message.sourceId, content);
       else if (message.injectionKey) preparedInjections.set(message.injectionKey, content);
     }
@@ -232,7 +272,13 @@ export function assembleManagedModelPrompt(options: PromptAssemblyOptions, chara
       .map(message => ({ ...message, content: population.find(prepared => prepared.sourceId === message.id)?.content ?? message.content }));
   }
   if (powerUser?.pin_examples !== true) exampleMessages = prepareExamples();
-  const serialize = ({ sourceId: _sourceId, injectionKey: _injectionKey, ...message }: PopulationMessage): ModelMessage => message;
+  const serialize = ({ sourceId, injectionKey: _injectionKey, ...message }: PopulationMessage): ModelMessage => {
+    const original=sourceId?options.history.find(item=>item.id===sourceId):undefined;
+    const metadata=original?.status==="complete"?original.generationMetadata:undefined;
+    const state=metadata?.responseState;
+    return {...message,...(state?{responseState:{...state,model:state.model??metadata!.model}}:{}),
+      ...(metadata?.toolRounds?.length&&original&&canReplayNativeCandidateTools(original)?{toolRounds:metadata.toolRounds}:{})};
+  };
   const compose = () => {
     const result: ModelMessage[] = [];
     for (const prompt of prompts.collection) {
@@ -243,11 +289,11 @@ export function assembleManagedModelPrompt(options: PromptAssemblyOptions, chara
       else if (prompt.identifier === "dialogueExamples") result.push(...exampleMessages);
       else if (groups.has(prompt.identifier)) result.push(...groups.get(prompt.identifier)!);
     }
-    result.push(...controls);
+    result.push(...continuationNudge.map(serialize),...controls.map(serialize));
     return result;
   };
-  let messages = compose(), totalTokens = countCompatibilityMessagesSync(messages.map(message => ({ ...message })), options.settings.model, true) + reserveTokens;
-  const recount = () => { messages = compose(); totalTokens = countCompatibilityMessagesSync(messages.map(message => ({ ...message })), options.settings.model, true) + reserveTokens; };
+  let messages = compose(), totalTokens = countCompatibilityMessagesSync(messages.map(message => materializePromptImage({ ...message })), options.settings.model, true) + reserveTokens;
+  const recount = () => { messages = compose(); totalTokens = countCompatibilityMessagesSync(messages.map(message => materializePromptImage({ ...message })), options.settings.model, true) + reserveTokens; };
   for (const item of [...memory].filter(item => !item.pinned).sort((a, b) => a.score - b.score || b.memoryId.localeCompare(a.memoryId))) {
     if (totalTokens <= options.settings.contextLimitTokens) break;
     memory = memory.filter(value => value.memoryId !== item.memoryId); rebuildMemory();
@@ -301,9 +347,10 @@ export function assembleManagedModelPrompt(options: PromptAssemblyOptions, chara
     } else if (prompt.identifier === "dialogueExamples") addRegion("example_dialogue", "示例对话", exampleMessages);
     else addRegion(keyFor(prompt.identifier), prompt.identifier, groups.get(prompt.identifier) ?? []);
   }
-  for (const message of controls) addRegion("extension_prompts", "生成指令", [message]);
+  for (const message of [...continuationNudge,...controls]) addRegion("extension_prompts", "生成指令", [message]);
   const budget: PromptBudgetReport = { contextLimitTokens: options.settings.contextLimitTokens, reserveTokens,
-    availableTokens: Math.max(0, options.settings.contextLimitTokens - reserveTokens), regions, recentMessages: history,
+    availableTokens: Math.max(0, options.settings.contextLimitTokens - reserveTokens), regions,
+    recentMessages:continuationSource&&!history.some(message=>message.id===continuationSource.id)?[...history,continuationSource]:history,
     diagnostics, totalTokens, worldbookEntries: injected,
     retainedMemoryIds: memory.map(item => item.memoryId), memoryItems: memory.map(item => ({ id: item.memoryId,
       content: item.content, score: item.score, tokens: countTextTokens(item.content, options.settings.model),

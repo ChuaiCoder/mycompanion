@@ -1,8 +1,11 @@
 // UI and cancellation bridge only. Model generation APIs remain separate.
 export const generationControlsSource = String.raw`
 import { getContext, subscribeHostContext, eventSource, event_types } from '/plugin-runtime/compat-runtime.js';
+import { emitNativeGenerationStopped,takeSlashGenerationStopOrigin } from '/plugin-runtime/slash-adapter.js';
 let controls;
 let busy = Boolean(getContext().generationControlsBusy);
+let dryRun = false;
+eventSource.on(event_types.GENERATION_STARTED, (_type, options = {}, preview = false) => { dryRun = Boolean(preview || options.dryRun); });
 export let is_send_press = Boolean(getContext().nativeGenerating);
 export function connectGenerationControls(value) { controls = value; }
 function connected() { if (!controls) throw new Error('生成控件尚未连接。'); return controls; }
@@ -12,7 +15,9 @@ subscribeHostContext(context => {
   busy = Boolean(context.generationControlsBusy);
   if (busy) document.body.dataset.generating = 'true';
   else delete document.body.dataset.generating;
-  if (ended) void eventSource.emit(event_types.GENERATION_ENDED, context.chat.length).catch(error => connected().error(error));
+  // Tavern's dryRun returns before showStopButton/hideStopButton. Releasing
+  // preview UI controls must not consume one-generation script injections.
+  if (ended && !dryRun) void eventSource.emit(event_types.GENERATION_ENDED, context.chat.length).catch(error => connected().error(error));
 });
 export function activateSendButtons() { connected().busy(false); }
 export function deactivateSendButtons() { connected().busy(true); }
@@ -27,8 +32,9 @@ export function setGenerationProgress(progress) {
   input.style.transition = value && Number.isFinite(value) ? '0.25s ease-in-out' : '';
 }
 export function stopGeneration() {
+  const origin = takeSlashGenerationStopOrigin();
   const stopped = connected().stop();
-  void eventSource.emit(event_types.GENERATION_STOPPED).catch(error => connected().error(error));
+  void emitNativeGenerationStopped(origin).catch(error => connected().error(error));
   return stopped;
 }
 `;

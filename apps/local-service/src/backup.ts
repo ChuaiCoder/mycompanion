@@ -27,11 +27,13 @@ export interface BackupSources {
   runtime: RuntimeRepository;
 }
 
-function extensionSource(value: Pick<BackupPayload["codePlugins"][number], "sourceUrl" | "sourceRef" | "sourceRevision">): Record<string, string> {
+function extensionSource(value: Pick<BackupPayload["codePlugins"][number], "sourceUrl" | "sourceRef" | "sourceRevision" | "extensionName" | "installationScope">): Record<string, string> {
   return {
     ...(value.sourceUrl ? { sourceUrl: value.sourceUrl } : {}),
     ...(value.sourceRef ? { sourceRef: value.sourceRef } : {}),
     ...(value.sourceRevision ? { sourceRevision: value.sourceRevision } : {}),
+    ...(value.extensionName ? { extensionName: value.extensionName } : {}),
+    ...(value.installationScope ? { installationScope: value.installationScope } : {}),
   };
 }
 
@@ -55,6 +57,7 @@ function sameConversation(entry: BackupPayload["conversations"][number], runtime
   const existing = runtime.getConversation(entry.id);
   if (!existing || existing.title !== entry.title || existing.characterId !== entry.characterId || existing.characterName !== entry.characterName || existing.activeBranchId !== entry.activeBranchId) return false;
   if (entry.chatMetadata !== undefined && canonicalJson(existing.chatMetadata) !== canonicalJson(entry.chatMetadata)) return false;
+  if (entry.chatHeader !== undefined && canonicalJson(existing.chatHeader) !== canonicalJson(entry.chatHeader)) return false;
   const saved = new Map(entry.messages.map(message => [`${message.branchId}/${message.id}`, message]));
   const normalize = (messages: typeof entry.messages) => {
     const branches = new Map<string, unknown[]>();
@@ -115,6 +118,7 @@ export function assembleBackupPayload(sources: BackupSources): BackupPayload {
       title: conversation.title,
       activeBranchId: conversation.activeBranchId,
       chatMetadata: conversation.chatMetadata,
+      ...(Object.keys(conversation.chatHeader).length ? { chatHeader: conversation.chatHeader } : {}),
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
       messages: conversation.messages.map((message) => ({
@@ -149,6 +153,7 @@ export function assembleBackupPayload(sources: BackupSources): BackupPayload {
       maxTokens: settings.maxTokens,
       contextLimitTokens: settings.contextLimitTokens,
     },
+    providerProfiles: runtime.providers.list(),
   };
   const checksum = backupChecksum(base);
   return backupPayloadSchemaShared.parse({
@@ -446,9 +451,11 @@ export function previewRestore(
     }
     const existing = runtime.getCodePluginBackupEntry(entry.id);
     const existingManifest = runtime.getCodePluginManifest(entry.id);
+    const existingState = runtime.getCodePlugin(entry.id);
     const same =
       existing !== undefined &&
       existingManifest !== undefined &&
+      existingState?.enabled === entry.enabled && existingState.installedAt === entry.installedAt &&
       canonicalJson(existingManifest) === canonicalJson(entry.manifest) &&
       canonicalJson(extensionSource(existing)) === canonicalJson(extensionSource(entry)) &&
       canonicalJson(existing.contributions) === canonicalJson(entry.contributions) &&
@@ -497,7 +504,20 @@ export function previewRestore(
     else if (strategy === "skip" || canonicalJson(existing) === canonicalJson(entry)) retainedTally.skip++;
     else retainedTally.overwrite++;
   }
-  for (const section of [characterTally, conversationTally, memoryTally, pluginTally, codePluginTally, extensionSettingsTally, userAvatarTally, worldbookTally, worldInfoSettingsTally, retainedTally]) {
+  const providerTally = emptyTally();
+  for (const profile of backup.providerProfiles?.profiles ?? []) {
+    const existing = runtime.providers.get(profile.id);
+    if (!existing || runtime.providers.isPlaceholder(profile.id)) providerTally.new++;
+    else if (strategy === "skip" || canonicalJson({ ...existing, settings: { ...existing.settings, hasApiKey: false } })
+      === canonicalJson({ ...profile, settings: { ...profile.settings, hasApiKey: false } })) providerTally.skip++;
+    else providerTally.overwrite++;
+  }
+  if (backup.providerProfiles) {
+    if (runtime.providers.isFresh()) providerTally.new++;
+    else if (strategy === "skip" || canonicalJson(runtime.providers.assignments()) === canonicalJson(backup.providerProfiles.tasks)) providerTally.skip++;
+    else providerTally.overwrite++;
+  }
+  for (const section of [characterTally, conversationTally, memoryTally, pluginTally, codePluginTally, extensionSettingsTally, userAvatarTally, worldbookTally, worldInfoSettingsTally, retainedTally, providerTally]) {
     totals.new += section.new;
     totals.overwrite += section.overwrite;
     totals.skip += section.skip;
@@ -517,6 +537,7 @@ export function previewRestore(
       worldbooks: worldbookTally,
       worldInfoSettings: worldInfoSettingsTally,
       retainedCharacterChats: retainedTally,
+      ...(backup.providerProfiles ? { providerProfiles: providerTally } : {}),
     },
     totals,
   };
@@ -651,9 +672,11 @@ function applyRestoreSections(
   for (const entry of backup.codePlugins) {
     const existing = runtime.getCodePluginBackupEntry(entry.id);
     const existingManifest = runtime.getCodePluginManifest(entry.id);
+    const existingState = runtime.getCodePlugin(entry.id);
     if (
       existing &&
       existingManifest &&
+      existingState?.enabled === entry.enabled && existingState.installedAt === entry.installedAt &&
       canonicalJson(existingManifest) === canonicalJson(entry.manifest) &&
       canonicalJson(extensionSource(existing)) === canonicalJson(extensionSource(entry)) &&
       canonicalJson(existing.contributions) === canonicalJson(entry.contributions) &&
@@ -710,7 +733,20 @@ function applyRestoreSections(
   }
 
   // 非秘密模型设置：只写回 kind/baseUrl/model/采样参数，本机已加密的 API Key 保持不变。
-  if (backup.providerSettings) {
+  if (backup.providerProfiles) {
+    const existing = runtime.providers.list();
+    let written = 0, unchanged = 0;
+    for (const profile of backup.providerProfiles.profiles) {
+      const old = existing.profiles.find(item => item.id === profile.id);
+      if (old && !runtime.providers.isPlaceholder(profile.id) && (strategy === "skip" || canonicalJson({ ...old, settings: { ...old.settings, hasApiKey: false } })
+        === canonicalJson({ ...profile, settings: { ...profile.settings, hasApiKey: false } }))) unchanged++;
+      else written++;
+    }
+    if (!runtime.providers.isFresh() && (strategy === "skip" || canonicalJson(existing.tasks) === canonicalJson(backup.providerProfiles.tasks))) unchanged++;
+    else written++;
+    runtime.providers.restore(backup.providerProfiles, strategy);
+    applied.providerProfiles = written; skipped.providerProfiles = unchanged;
+  } else if (backup.providerSettings) {
     const { kind, baseUrl, model, temperature, maxTokens, contextLimitTokens } = backup.providerSettings;
     runtime.saveProvider({
       kind,
