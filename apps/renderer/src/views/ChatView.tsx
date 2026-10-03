@@ -337,9 +337,9 @@ export function ChatView({
   return (
     <main className={`runtime-shell ${memoryPanelOpen && activeConversation ? "runtime-shell--memory" : ""}`}>
       <aside className="story-list-pane" aria-label="故事列表">
-        <header><div><p className="eyebrow">本地故事</p><h1>故事</h1></div></header>
+        <header><h1>故事</h1>{conversations.length > 0 ? <small>{conversations.length} 段</small> : null}</header>
         {conversations.length === 0 ? <p className="panel-empty">选择角色并点击“开始对话”，这里会保存每一段故事。</p> : (
-          <ul>{conversations.map((conversation) => <li key={conversation.id}><button data-conversation-id={conversation.id} aria-pressed={activeConversation?.id === conversation.id} onClick={() => onOpenConversation(conversation.id)} type="button"><strong>{conversation.title}</strong><span>{conversation.lastMessagePreview || "尚无消息"}</span><small>{conversation.messageCount} 条消息</small></button></li>)}</ul>
+          <ul>{conversations.map((conversation) => <li key={conversation.id}><button data-conversation-id={conversation.id} aria-pressed={activeConversation?.id === conversation.id} onClick={() => onOpenConversation(conversation.id)} type="button"><span className="story-row__title"><strong>{conversation.title}</strong><small>{conversation.messageCount} 条</small></span><span className="story-row__preview">{conversation.lastMessagePreview || "尚无消息"}</span></button></li>)}</ul>
         )}
       </aside>
       <section className="chat-pane" aria-label="角色对话">

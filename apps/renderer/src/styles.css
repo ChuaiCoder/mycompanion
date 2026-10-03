@@ -473,16 +473,19 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .runtime-shell { display: grid; grid-template-columns: 270px minmax(0,1fr); position: relative; min-width: 0; height: 100vh; overflow: hidden; background: var(--surface); }
 /* 记忆面板打开时追加第三列（与面板元素同步增减，无空轨道）。 */
 .runtime-shell--memory { grid-template-columns: 270px minmax(0,1fr) 340px; }
-.story-list-pane { min-width: 0; overflow-x: hidden; overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface-muted); }
-.story-list-pane > header { padding: 28px 20px 17px; border-bottom: 1px solid var(--line-soft); }
-.story-list-pane h1, .settings-card h1 { margin: 3px 0 0; font-size: 24px; letter-spacing: -.035em; }
-.story-list-pane ul { margin: 0; padding: 8px; list-style: none; }
-.story-list-pane li button { display: grid; width: 100%; gap: 5px; padding: 12px; border: 1px solid transparent; border-radius: 9px; text-align: left; background: transparent; }
-.story-list-pane li button:hover, .story-list-pane li button[aria-pressed="true"] { border-color: var(--line); background: var(--surface); }
-.story-list-pane li strong, .story-list-pane li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.story-list-pane li strong { font-size: 11px; }
-.story-list-pane li span { color: var(--text-soft); font-size: 10px; }
-.story-list-pane li small { color: var(--text-faint); font-size: 9px; }
+.story-list-pane { min-width: 0; overflow-x: hidden; overflow-y: auto; border-right: 1px solid var(--line); background: var(--surface-raised); }
+.story-list-pane > header { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 20px 16px 10px; }
+.story-list-pane h1 { margin: 0; font-size: 15px; font-weight: 680; letter-spacing: -.02em; }
+.settings-card h1 { margin: 3px 0 0; font-size: 24px; letter-spacing: -.035em; }
+.story-list-pane > header small { color: var(--text-faint); font-size: 10px; }
+.story-list-pane ul { display: grid; gap: 2px; margin: 0; padding: 6px 8px; list-style: none; }
+.story-list-pane li button { display: grid; width: 100%; gap: 4px; padding: 9px 11px; border: 0; border-radius: 9px; text-align: left; background: transparent; }
+.story-list-pane li button:hover { background: var(--surface-hover); }
+.story-list-pane li button[aria-pressed="true"] { background: var(--surface-selected); }
+.story-row__title { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; min-width: 0; }
+.story-row__title strong { overflow: hidden; font-size: 12px; font-weight: 590; text-overflow: ellipsis; white-space: nowrap; }
+.story-row__title small { flex: 0 0 auto; color: var(--text-faint); font-size: 9px; }
+.story-row__preview { overflow: hidden; color: var(--text-soft); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .panel-empty { margin: 22px; color: var(--text-soft); font-size: 11px; line-height: 1.7; }
 .chat-pane { display: grid; grid-template-rows: 58px minmax(0,1fr) auto; min-width: 0; min-height: 0; }
 .chat-pane > .pane-header { border-bottom: 1px solid var(--line); }

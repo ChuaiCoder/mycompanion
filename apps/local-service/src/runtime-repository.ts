@@ -170,13 +170,29 @@ function messageFromRow(row: MessageRow): ChatMessage {
   });
 }
 
+// 列表预览：消息原文可能是 markdown / HTML / 代码块，这里压成纯文本单行，
+// 避免在故事列表里露出 ```html <html>… 这类原始标记。
+function plainPreview(content: string, maxLength = 80): string {
+  const text = content
+    .replace(/```[\s\S]*?(```|$)/g, " ")
+    .replace(/<[^>]*>/g, " ")
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[`*_~>#-]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (text) return text.length > maxLength ? text.slice(0, maxLength) : text;
+  // 整条都是代码/标记时的兜底：给出一点原始上下文。
+  const raw = content.replace(/\s+/g, " ").trim();
+  return raw.length > 40 ? raw.slice(0, 40) : raw;
+}
+
 function summaryFromRow(row: ConversationRow): ConversationSummary {
   return {
     id: row.id,
     characterId: row.character_id,
     characterName: row.character_name,
     title: row.title,
-    lastMessagePreview: row.last_message_preview,
+    lastMessagePreview: plainPreview(row.last_message_preview),
     messageCount: row.message_count,
     activeBranchId: row.active_branch_id,
     createdAt: row.created_at,
@@ -999,7 +1015,7 @@ export class RuntimeRepository {
   listConversations(): ConversationListResponse {
     const rows = this.#database.prepare(`
       SELECT c.*,
-        COALESCE((SELECT substr(m.content, 1, 120) FROM messages m
+        COALESCE((SELECT substr(m.content, 1, 400) FROM messages m
           WHERE m.conversation_id = c.id AND m.branch_id = c.active_branch_id
           ORDER BY m.rowid DESC LIMIT 1), '') AS last_message_preview,
         (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id AND m.branch_id = c.active_branch_id) AS message_count
@@ -1278,7 +1294,7 @@ export class RuntimeRepository {
   getConversation(id: string, messageLimit?: number): ConversationDetail | undefined {
     const row = this.#database.prepare(`
       SELECT c.*,
-        COALESCE((SELECT substr(m.content, 1, 120) FROM messages m
+        COALESCE((SELECT substr(m.content, 1, 400) FROM messages m
           WHERE m.conversation_id = c.id AND m.branch_id = c.active_branch_id
           ORDER BY m.rowid DESC LIMIT 1), '') AS last_message_preview,
         (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id AND m.branch_id = c.active_branch_id) AS message_count
