@@ -603,36 +603,13 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .settings-form label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 11px; font-weight: 500; }
 .settings-form__row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
 .settings-actions { display: flex; gap: 8px; padding-top: 8px; }
-.plugin-install-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-.plugin-url-input input { width: 260px; max-width: 100%; }
-.plugin-kind-section { margin-top: 24px; padding-top: 22px; border-top: 1px solid var(--line-soft); }
-.plugin-section-heading { display: flex; align-items: start; justify-content: space-between; gap: 18px; }
-.plugin-section-heading h2 { margin: 0; font-size: 13px; }
-.plugin-section-heading p { margin: 5px 0 0; color: var(--text-soft); font-size: 10px; }
 .plugin-list { display: grid; gap: 10px; margin: 22px 0 0; padding: 0; list-style: none; }
 .plugin-list > li { display: grid; grid-template-columns: minmax(0,1fr) auto; gap: 16px; padding: 16px; border: 1px solid var(--line); border-radius: 10px; }
 .plugin-list > li > div:first-child { display: grid; gap: 4px; }
 .plugin-list strong { font-size: 12px; }
 .plugin-list span, .plugin-list small { color: var(--text-faint); font-size: 9px; }
 .plugin-list p { margin: 4px 0; color: var(--text-soft); font-size: 10px; line-height: 1.55; }
-.plugin-list details { margin-top: 6px; color: var(--text-soft); font-size: 9px; }
-.plugin-list details summary { cursor: pointer; }
-.plugin-list details pre { max-height: 180px; overflow: auto; padding: 9px; border-radius: 6px; background: var(--surface-muted); font: 9px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; white-space: pre-wrap; }
 .plugin-actions { display: flex; flex-wrap: wrap; align-content: start; align-items: start; justify-content: flex-end; gap: 7px; max-width: 330px; }
-.plugin-install-actions { align-items: start; }
-.plugin-install-ref { margin-top: 8px; font-size: 11px; }
-.plugin-install-ref summary { cursor: pointer; color: var(--text-soft); }
-.plugin-install-ref label, .plugin-ref-picker label { display: grid; gap: 6px; margin-top: 8px; }
-.plugin-ref-picker select { max-width: 100%; width: min(340px, 100%); }
-.plugin-source-version { overflow-wrap: anywhere; }
-.code-plugin-list details ul { margin: 8px 0 0; padding-left: 18px; }
-.code-plugin-list details li { margin: 5px 0; line-height: 1.55; }
-.plugin-host-dock { position: fixed; right: 0; bottom: 0; z-index: 60; width: 1px; height: 1px; overflow: hidden; visibility: hidden; pointer-events: none; }
-.plugin-host-dock--visible { right: 22px; bottom: 22px; display: grid; width: min(460px,calc(100vw - 44px)); max-height: min(620px,72vh); height: auto; gap: 10px; overflow: auto; visibility: visible; pointer-events: auto; }
-.plugin-host-card { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: 0 18px 48px rgba(25,28,32,.18); }
-.plugin-host-card > header { display: flex; justify-content: space-between; gap: 12px; padding: 9px 11px; border-bottom: 1px solid var(--line); background: var(--surface-muted); }
-.plugin-host-card > header strong { font-size: 10px; }
-.plugin-host-card > header span { overflow: hidden; color: var(--text-faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 
 @media (max-width: 900px) {
   .runtime-shell { grid-template-columns: 220px minmax(0,1fr); }

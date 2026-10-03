@@ -66,5 +66,4 @@
   .desktop-shell .settings-card :is(form, fieldset, label, details, section, .settings-form) { min-width: 0; max-width: 100%; }
   .desktop-shell .settings-card :is(input, select, textarea) { min-width: 0; max-width: 100%; }
   .desktop-shell .settings-card select { width: 100%; }
-  .desktop-shell .plugin-url-input { min-width: 0; max-width: 100%; }
 }

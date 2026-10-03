@@ -18,12 +18,8 @@ export function PluginsView(props: PluginsViewProps) {
   const { plugins } = props;
   return (
     <main className="settings-workspace">
-      <section className="settings-card plugin-center" aria-labelledby="plugins-title">
-        <header>
-          <p className="eyebrow">{text("扩展中心")}</p>
-          <h1 id="plugins-title">{text("插件")}</h1>
-          <p>{text("声明式插件是纯数据的提示词插件：声明注入的提示词与斜杠命令，不包含可执行代码。可在此启用、停用或卸载。")}</p>
-        </header>
+      <header className="settings-page-head"><h1>{text("插件")}</h1><p>{text("声明式插件是纯数据的提示词插件：声明注入的提示词与斜杠命令，不包含可执行代码。可在此启用、停用或卸载。")}</p></header>
+      <section className="settings-card plugin-center" aria-label={text("插件")}>
         {props.runtimeError ? <Notice tone="error">{diagnostic(props.runtimeError)}</Notice> : null}
         {!plugins.length ? <p className="panel-empty">{text("还没有安装插件。")}</p> : null}
         <ul className="plugin-list">
