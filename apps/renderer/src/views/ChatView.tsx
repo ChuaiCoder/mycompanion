@@ -344,22 +344,27 @@ export function ChatView({
       </aside>
       <section className="chat-pane" aria-label="角色对话">
         <header className="pane-header">
-          <div className="pane-heading"><strong>{activeConversation?.characterName ?? "开始一段故事"}</strong><span>{activeConversation?.title ?? "聊天记录只保存在本机"}</span>{memoryPanelOpen && activeConversation ? <span className="pane-heading__flag">记忆面板已打开</span> : null}</div>
+          <div className="pane-heading"><strong>{activeConversation?.characterName ?? "开始一段故事"}</strong><span>{activeConversation?.title ?? "聊天记录只保存在本机"}</span></div>
           <div className="pane-header-actions">
-            {activeConversation ? <details className="story-export"><summary>导出故事</summary><a download href={storyExportUrl(activeConversation.id, "markdown")}>Markdown</a><a download href={storyExportUrl(activeConversation.id, "json")}>JSON（全部分支）</a></details> : null}
-            <button aria-expanded={memoryPanelOpen} className="button button--quiet" disabled={!activeConversation} onClick={onMemoryPanelToggle} type="button">
+            {activeConversation ? (
+              <details className="story-export">
+                <summary aria-label="导出故事" className="icon-button" title="导出故事"><Icon name="download" size={16} /></summary>
+                <div className="story-export__menu" onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")}>
+                  <a download href={storyExportUrl(activeConversation.id, "markdown")}>Markdown</a>
+                  <a download href={storyExportUrl(activeConversation.id, "json")}>JSON（全部分支）</a>
+                </div>
+              </details>
+            ) : null}
+            <button aria-expanded={memoryPanelOpen} aria-label="记忆" className={`icon-button${memoryPanelOpen && activeConversation ? " icon-button--active" : ""}`} disabled={!activeConversation} onClick={onMemoryPanelToggle} title="记忆" type="button">
               <Icon name="brain" size={16} />
-              记忆
             </button>
             {isGenerating ? (
-              <button className="button button--quiet" onClick={onStopGeneration} type="button">
+              <button aria-label="停止" className="icon-button" onClick={onStopGeneration} title="停止生成" type="button">
                 <Icon name="stop" size={16} />
-                停止
               </button>
             ) : (
-              <button className="button button--quiet" disabled={!activeConversation} onClick={onOpenSettings} type="button">
+              <button aria-label="模型设置" className="icon-button" disabled={!activeConversation} onClick={onOpenSettings} title="模型设置" type="button">
                 <Icon name="settings" size={16} />
-                模型设置
               </button>
             )}
           </div>
