@@ -102,7 +102,7 @@ export function LorebookPanel({ characterId, characterName, runtimeError, primar
 
   if (namedBinding) return <section className="document-section lorebook-panel" aria-label="角色世界书绑定">
     <h2>世界书</h2><p>当前角色使用 <strong>{namedBinding}</strong>。在世界书编辑器中修改条目和启用状态，原始随卡内容仍保留在角色卡中。</p>
-    <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name: namedBinding } }))}>编辑绑定的世界书</button>
+    <button type="button" className="button button--primary button--small" onClick={() => window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name: namedBinding } }))}>编辑绑定的世界书</button>
   </section>;
   return (
     <section className="document-section lorebook-panel" aria-labelledby="lorebook-panel-title">
