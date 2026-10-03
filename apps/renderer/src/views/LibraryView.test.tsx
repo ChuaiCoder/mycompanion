@@ -28,9 +28,9 @@ const character = characterDetailSchema.parse({
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
 function props(overrides: Partial<LibraryViewProps> = {}): LibraryViewProps {
   return { preview: null, selectedCharacter: null, draftFileName: null, characters: [], listError: null, importError: null, importErrorDetails: [], successMessage: null,
-    isImporting: false, isSaving: false, isLoadingCharacter: false, regexPanelOpen: false, lorebookPanelOpen: false, previewHeadingRef: createRef(),
+    isImporting: false, isSaving: false, isLoadingCharacter: false, regexPanelOpen: false, lorebookPanelOpen: false, worldEditorOpen: false, previewHeadingRef: createRef(),
     onOpenFilePicker: vi.fn(), onSelectCharacter: vi.fn(), onEditCharacter: vi.fn(), onStartConversation: vi.fn(), onCommit: vi.fn(), onCancelImport: vi.fn(),
-    onRegexPanelToggle: vi.fn(), onLorebookPanelToggle: vi.fn(), onOpenSettings: vi.fn(), ...overrides };
+    onRegexPanelToggle: vi.fn(), onLorebookPanelToggle: vi.fn(), onWorldEditorToggle: vi.fn(), onOpenSettings: vi.fn(), ...overrides };
 }
 function ImportHarness() {
   const [saved, setSaved] = useState<CharacterDetail | null>(null);

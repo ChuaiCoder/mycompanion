@@ -38,6 +38,7 @@ export interface LibraryViewProps {
   isLoadingCharacter: boolean;
   regexPanelOpen: boolean;
   lorebookPanelOpen: boolean;
+  worldEditorOpen: boolean;
   previewHeadingRef: HeadingRef;
   onOpenFilePicker: () => void;
   onSelectCharacter: (id: string) => void;
@@ -47,6 +48,7 @@ export interface LibraryViewProps {
   onCancelImport: () => void;
   onRegexPanelToggle: () => void;
   onLorebookPanelToggle: () => void;
+  onWorldEditorToggle: () => void;
   onOpenSettings?: () => void;
   connectionReady?: boolean;
   batchItems?: ImportQueueItem[];
@@ -71,6 +73,7 @@ export function LibraryView({
   isLoadingCharacter,
   regexPanelOpen,
   lorebookPanelOpen,
+  worldEditorOpen,
   previewHeadingRef,
   onOpenFilePicker,
   onSelectCharacter,
@@ -80,6 +83,7 @@ export function LibraryView({
   onCancelImport,
   onRegexPanelToggle,
   onLorebookPanelToggle,
+  onWorldEditorToggle,
   onOpenSettings, connectionReady,
   batchItems = [], onSkipFile, onRetryFile, onOpenDuplicate, onReplaceDuplicate, onRefreshPreview,
 }: LibraryViewProps) {
@@ -92,7 +96,7 @@ export function LibraryView({
       <section className="conversation-pane" aria-label={text("角色导入助手")}>
         <header className="pane-header">
           <div className="pane-heading"><strong>{text("角色导入助手")}</strong><span>{text("上下文：")}{currentTitle}</span></div>
-          <div className="pane-header-actions"><button type="button" id="world_button" onClick={onLorebookPanelToggle}>{text("世界书")}</button><button disabled type="button"><Icon name="history" size={17} />{text("历史记录")}</button><button disabled={isImporting || isSaving} onClick={onOpenFilePicker} type="button"><Icon name="plus" size={17} />{text("新建导入")}</button></div>
+          <div className="pane-header-actions"><button type="button" id="world_button" aria-pressed={worldEditorOpen} onClick={onWorldEditorToggle}>{text("世界书")}</button><button disabled type="button"><Icon name="history" size={17} />{text("历史记录")}</button><button disabled={isImporting || isSaving} onClick={onOpenFilePicker} type="button"><Icon name="plus" size={17} />{text("新建导入")}</button></div>
         </header>
         <div className="conversation-scroll">
           <div aria-live="polite" className="notice-stack">

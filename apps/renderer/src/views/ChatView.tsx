@@ -556,6 +556,10 @@ export function ChatView({
       </section>
       {memoryPanelOpen && activeConversation ? (
         <aside className="memory-side-pane" aria-label="记忆中心">
+          <div className="memory-side-pane__bar">
+            <strong>记忆中心</strong>
+            <button type="button" onClick={onMemoryPanelToggle}>关闭</button>
+          </div>
           <MemoryPanel
             conversationId={activeConversation.id}
             conversationTitle={activeConversation.title}

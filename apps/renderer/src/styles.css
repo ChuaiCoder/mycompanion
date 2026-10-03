@@ -348,7 +348,11 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .memory-test-result--skipped { color: var(--text-faint); }
 .memory-panel__error { color: var(--error, #b3261e); font-size: 11px; }
 .memory-side-pane { min-width: 0; min-height: 0; overflow-y: auto; border-left: 1px solid var(--line); background: var(--surface-raised); }
-.memory-side-pane .memory-panel { padding: 22px 18px 40px; }
+.memory-side-pane__bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); background: rgba(251,251,250,.96); backdrop-filter: blur(8px); }
+.memory-side-pane__bar strong { font-size: 12px; font-weight: 650; }
+.memory-side-pane__bar button { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--text-soft); background: var(--surface); font-size: 11px; }
+.memory-side-pane__bar button:hover { color: var(--text); background: var(--surface-hover); }
+.memory-side-pane .memory-panel { padding: 18px 18px 40px; }
 .chat-memory-report summary span { margin-left: auto; }
 .chat-lorebook-report { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
 .chat-lorebook-report summary { display: flex; align-items: center; gap: 8px; padding: 8px 12px; cursor: pointer; list-style: none; font-size: 11px; font-weight: 600; }

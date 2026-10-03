@@ -56,6 +56,7 @@ export function App() {
   const [workspaceView, setWorkspaceView] = useState<WorkspaceView>(resume.current.view ?? "chat");
   const [regexPanelOpen, setRegexPanelOpen] = useState(false);
   const [lorebookPanelOpen, setLorebookPanelOpen] = useState(false);
+  const [worldEditorOpen, setWorldEditorOpen] = useState(false);
   const [characterPanelOpen, setCharacterPanelOpen] = useState(false);
   // 最近一次世界书匹配报告（FR-LORE-003）：随 SSE 的 lorebook 事件更新，供高级查看。
   const [lastLorebookReport, setLastLorebookReport] = useState<LorebookReport | null>(null);
@@ -76,7 +77,7 @@ export function App() {
 
   useEffect(() => {
     // 外部模块（角色世界书面板）请求编辑某本书时，同时展开世界书编辑器。
-    const reveal = () => setLorebookPanelOpen(true);
+    const reveal = () => setWorldEditorOpen(true);
     window.addEventListener("mycompanion:world-editor", reveal);
     return () => window.removeEventListener("mycompanion:world-editor", reveal);
   }, []);
@@ -285,7 +286,7 @@ export function App() {
           <button aria-current={workspaceView === "library" ? "page" : undefined} className={`nav-row ${workspaceView === "library" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("library")} type="button"><Icon name="character" /><span>{t("nav.library")}</span></button>
           <button aria-current={workspaceView === "chat" && !memoryPanelOpen ? "page" : undefined} className={`nav-row ${workspaceView === "chat" && !memoryPanelOpen ? "nav-row--active" : ""}`} onClick={() => { setMemoryPanelOpen(false); setWorkspaceView("chat"); }} type="button"><Icon name="book" /><span>{t("nav.chat")}</span><small>{conversations.length || ""}</small></button>
           <button aria-current={workspaceView === "plugins" ? "page" : undefined} className={`nav-row ${workspaceView === "plugins" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("plugins")} type="button"><Icon name="sparkles" /><span>{t("nav.plugins")}</span><small>{plugins.length || ""}</small></button>
-          <button aria-current={workspaceView === "chat" && memoryPanelOpen ? "page" : undefined} className={`nav-row ${workspaceView === "chat" && memoryPanelOpen ? "nav-row--active" : ""}`} onClick={() => { setMemoryPanelOpen(true); setWorkspaceView("chat"); }} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{lastMemoryReport?.injectedCount ?? ""}</small></button>
+          <button aria-current={workspaceView === "chat" && memoryPanelOpen ? "page" : undefined} className={`nav-row ${workspaceView === "chat" && memoryPanelOpen ? "nav-row--active" : ""}`} onClick={() => { if (workspaceView === "chat" && memoryPanelOpen) { setMemoryPanelOpen(false); } else { setMemoryPanelOpen(true); setWorkspaceView("chat"); } }} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{lastMemoryReport?.injectedCount ?? ""}</small></button>
         </nav>
         <section aria-labelledby="recent-characters-title" className="sidebar-library">
           <div className="tree-heading"><div><Icon name="character" size={16} /><h2 id="recent-characters-title">我的角色</h2></div><button aria-label="导入新的角色卡" disabled={isImporting || isSaving} onClick={openFilePicker} type="button"><Icon name="plus" size={16} /></button></div>
@@ -334,6 +335,8 @@ export function App() {
         onRegexPanelToggle={() => setRegexPanelOpen((value) => !value)}
         lorebookPanelOpen={lorebookPanelOpen}
         onLorebookPanelToggle={() => setLorebookPanelOpen((value) => !value)}
+        worldEditorOpen={worldEditorOpen}
+        onWorldEditorToggle={() => setWorldEditorOpen((value) => !value)}
         selectedCharacter={selectedCharacter}
         successMessage={successMessage}
         characters={characters}
@@ -414,7 +417,7 @@ export function App() {
         plugins={plugins}
         runtimeError={runtimeError}
       /> : null}
-      <WorldInfoPanel open={lorebookPanelOpen} online={serviceState === "online"} character={selectedCharacter} onClose={() => setLorebookPanelOpen(false)} />
+      <WorldInfoPanel open={worldEditorOpen} online={serviceState === "online"} character={selectedCharacter} onClose={() => setWorldEditorOpen(false)} />
       <CharacterPanel open={characterPanelOpen} online={serviceState === "online"} character={selectedCharacter} onSaved={handleCharacterSaved} onClose={() => setCharacterPanelOpen(false)} />
     </div>
   );
