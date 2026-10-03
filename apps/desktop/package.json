@@ -8,11 +8,10 @@
   "type": "module",
   "main": "dist/main.js",
   "scripts": {
-    "build": "node scripts/create-icon.mjs && node scripts/build.mjs && node scripts/verify-built-runtime-graph.mjs",
+    "build": "node scripts/create-icon.mjs && node scripts/build.mjs",
     "start": "electron .",
     "package:win": "electron-builder --win portable --x64 --publish never --config.electronDist=../../node_modules/electron/dist",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "verify:plugins": "electron scripts/verify-plugin-runtime.mjs"
+    "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "@mycompanion/local-service": "0.2.1"

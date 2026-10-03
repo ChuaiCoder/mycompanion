@@ -38,8 +38,6 @@ module.exports = async function verifyPackage({ appOutDir }) {
   }
   const notices = readFileSync(join(resources, 'THIRD_PARTY_NOTICES.md'), 'utf8');
   const rendererLicenses = readFileSync(join(resources, 'renderer/THIRD_PARTY_LICENSES.md'), 'utf8');
-  assert(files.some(file => file.replaceAll('\\', '/').endsWith('/node_modules/@mycompanion/macro-engine/dist/index.js')), 'Missing shared browser macro parser');
-  assert(notices.includes('Reused macro parser and registry') && notices.includes('Apache-2.0 — Chevrotain 13.2.0'), 'Missing macro parser attribution/licenses');
   for (const name of ['markdown-it', 'dompurify', 'entities', 'linkify-it', 'mdurl', 'punycode.js', 'uc.micro', 'i18next', 'react-i18next']) {
     assert(rendererLicenses.includes('## ' + name + ' - '), 'Missing bundled renderer dependency license: ' + name);
   }

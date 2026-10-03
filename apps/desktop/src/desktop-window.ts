@@ -1,15 +1,13 @@
 import { BrowserWindow, shell } from "electron";
-import { installDesktopNetwork } from "./desktop-network.js";
 
 function externalUrl(value: string): boolean {
   try { return ["http:", "https:"].includes(new URL(value).protocol); } catch { return false; }
 }
 
-/** Install desktop networking before loading the application's own document. */
+/** Load the application's own local document. */
 export async function loadDesktopDocument(window: BrowserWindow, origin: string): Promise<void> {
   const url = new URL(origin);
   if (url.protocol !== "http:" || url.hostname !== "127.0.0.1" || !url.port) throw new Error("Invalid local application origin");
-  installDesktopNetwork(window.webContents.session);
   await window.loadURL(origin);
 }
 

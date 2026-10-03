@@ -9,7 +9,7 @@ const desktopRoot = resolve(scriptDirectory, "..");
 const outputFile = resolve(desktopRoot, "dist", "main.js");
 
 await mkdir(dirname(outputFile), { recursive: true });
-const entries = ["main.ts", "independent-service.ts", "desktop-window.ts", "desktop-network.ts", "desktop-close.ts"];
+const entries = ["main.ts", "independent-service.ts", "desktop-window.ts", "desktop-close.ts"];
 if (process.argv.includes("--reference-tavern")) throw new Error("The embedded Tavern build has been removed. Use the independent desktop build.");
 await build({
   entryPoints: entries.map(file => resolve(desktopRoot, "src", file)),

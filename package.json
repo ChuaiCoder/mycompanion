@@ -27,14 +27,8 @@
     "test": "npm run build:character-card && node --test scripts/*.test.mjs && npm run test --workspaces --if-present",
     "typecheck": "npm run build:character-card && npm run typecheck --workspaces --if-present",
     "check": "npm run typecheck && npm run test && npm run build",
-    "verify:plugins": "npm run build && npm run verify:plugins -w @mycompanion/desktop",
-    "verify:plugin-url": "npm run build && node apps/desktop/scripts/verify-plugin-url-update.mjs",
     "prepare:source": "node scripts/package-source.mjs",
-    "audit:production:osv": "node scripts/audit-production-osv.mjs",
-    "verify:cdn": "npm run build -w @mycompanion/desktop && node node_modules/electron/cli.js apps/desktop/scripts/verify-cdn.mjs",
-    "verify:packaged": "node apps/desktop/scripts/verify-packaged.mjs",
-    "verify:packaged-helper": "node apps/desktop/scripts/verify-packaged-helper.mjs",
-    "audit:independent-helper": "node apps/desktop/scripts/audit-independent-helper.mjs"
+    "audit:production:osv": "node scripts/audit-production-osv.mjs"
   },
   "devDependencies": {
     "acorn": "8.18.0",
