@@ -5,6 +5,7 @@ import {
 } from "react";
 
 import type {
+  CharacterDetail,
   LorebookReport,
   MemoryRetrievalReport,
   PromptBudgetReport,
@@ -15,7 +16,6 @@ import {
   fetchConversation,
   activateBranch,
   getProviderSettings,
-  listCodePlugins,
   listConversations,
   listPlugins,
 } from "./api";
@@ -25,14 +25,13 @@ import {
   toSummary,
   type ServiceState,
 } from "./components";
-import { loadExtensionHost, flushLoadedExtensionHost } from "./ExtensionHost";
+import { flushSharedExtensionSettings } from "./extension-settings";
 import { flushWorldEditorDrafts } from "./world-editor-drafts";
 import { flushComposerDrafts } from "./composer-drafts";
 import { useCharacterImport } from "./hooks/useCharacterImport";
 import { useCharacterSelection } from "./hooks/useCharacterSelection";
 import { useChatGeneration } from "./hooks/useChatGeneration";
 import { useConversations } from "./hooks/useConversations";
-import { useExtensionHostBridge } from "./hooks/useExtensionHostBridge";
 import { readExtensionResume, useExtensionResume, type WorkspaceView } from "./hooks/useExtensionResume";
 import { usePlugins } from "./hooks/usePlugins";
 import { useProviderSettings } from "./hooks/useProviderSettings";
@@ -66,13 +65,19 @@ export function App() {
   // 记忆中心面板（FR-MEM-007）：聊天页右侧边栏，按当前故事加载。
   const [memoryPanelOpen, setMemoryPanelOpen] = useState(false);
   const [sourceFocus, setSourceFocus] = useState<{ conversationId: string; messageId: string; revision: number } | null>(null);
-  // 角色选择/故事导航/扩展回调共用的防竞态序号。
+  // 角色选择/故事导航共用的防竞态序号。
   const navigationRevision = useRef(0);
-  const characterRefreshRevision = useRef(0);
   useEffect(() => {
-    const flush = async () => { await flushWorldEditorDrafts(); await flushComposerDrafts(); await flushLoadedExtensionHost(); };
+    const flush = async () => { await flushWorldEditorDrafts(); await flushComposerDrafts(); await flushSharedExtensionSettings(); };
     window.__mycompanionFlushDrafts = flush;
     return () => { if (window.__mycompanionFlushDrafts === flush) delete window.__mycompanionFlushDrafts; };
+  }, []);
+
+  useEffect(() => {
+    // 外部模块（角色世界书面板）请求编辑某本书时，同时展开世界书编辑器。
+    const reveal = () => setLorebookPanelOpen(true);
+    window.addEventListener("mycompanion:world-editor", reveal);
+    return () => window.removeEventListener("mycompanion:world-editor", reveal);
   }, []);
 
   // 健康检查须先于各领域 hook 的挂载请求发出（与原单一挂载 effect 的请求顺序一致）。
@@ -204,38 +209,13 @@ export function App() {
   } = chat;
 
   const pluginsState = usePlugins({
-    workspaceView,
-    conversationId: activeConversation?.id,
-    chatInput,
     setRuntimeError,
   });
   const {
     plugins,
-    codePlugins,
-    openedPluginId,
-    setOpenedPluginId,
-    pluginUrl,
-    setPluginUrl,
-    pluginRef,
-    setPluginRef,
-    isInstallingFromUrl,
-    codePluginStatus,
-    codePluginChecks,
-    codePluginRefs,
-    codePluginErrors,
-    codePluginPendingReload,
-    codePluginOperations,
-    isChangingPlugins,
     activeCommands,
     handlePluginToggle,
     handlePluginUninstall,
-    handleInstallFromUrl,
-    handleCodePluginToggle,
-    handleCodePluginUninstall,
-    handleCodePluginCheckUpdate,
-    handleCodePluginRef,
-    handleCodePluginUpdate,
-    handleCodePluginReload,
   } = pluginsState;
 
   useExtensionResume({
@@ -245,36 +225,14 @@ export function App() {
     chatInput,
   });
 
-  useExtensionHostBridge({
-    online: serviceState === "online",
-    activeConversation,
-    selectedCharacter,
-    characters,
-    codePlugins,
-    isGenerating,
-    isNativeGenerating: chat.isNativeGenerating,
-    generationControlsBusy,
-    navigationRevision,
-    characterRefreshRevision,
-    streamControllerRef: chat.streamControllerRef,
-    setExtensionGenerating: chat.setExtensionGenerating,
-    setActiveConversation: conversationsState.setActiveConversation,
-    setConversations: conversationsState.setConversations,
-    setCharacters: characterSelection.setCharacters,
-    setSelectedCharacter: characterSelection.setSelectedCharacter,
-    setChatInput,
-    setWorkspaceView,
-    setCharacterPanelOpen,
-    setOpenedPluginId,
-    clearImportState,
-    handleStopGeneration: chat.handleStopGeneration,
-    handleSendMessage,
-    handleRegenerate,
-    handleContinue,
-    handleImpersonate,
-    handleCodePluginStatus: pluginsState.handleCodePluginStatus,
-    handleCodePluginContributions: pluginsState.handleCodePluginContributions,
-  });
+  const handleCharacterSaved = (updated: CharacterDetail): void => {
+    const summary = toSummary(updated);
+    characterSelection.setCharacters(current => current.map(item => item.id === summary.id ? summary : item));
+    characterSelection.setSelectedCharacter(current => current?.id === updated.id ? updated : current);
+    if (activeConversation?.characterId === updated.id) {
+      conversationsState.setActiveConversation(current => current?.characterId === updated.id ? { ...current, characterName: updated.name } : current);
+    }
+  };
 
   useEffect(() => {
     if (workspaceView === "chat") {
@@ -294,9 +252,6 @@ export function App() {
       void listPlugins()
         .then((result) => pluginsState.setPlugins(result.items))
         .catch(() => setRuntimeError("暂时无法读取插件列表。"));
-      void listCodePlugins()
-        .then((result) => pluginsState.setCodePlugins(result.items))
-        .catch(() => setRuntimeError("暂时无法读取代码扩展列表。"));
     }
   }, [workspaceView, provider]);
 
@@ -311,7 +266,7 @@ export function App() {
           <button className="nav-row nav-row--new" disabled={isImporting || isSaving} onClick={openFilePicker} type="button"><Icon name="plus" /><span>{t(isImporting ? "nav.reading" : "nav.import")}</span><kbd>Ctrl I</kbd></button>
           <button aria-current={workspaceView === "library" ? "page" : undefined} className={`nav-row ${workspaceView === "library" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("library")} type="button"><Icon name="character" /><span>{t("nav.library")}</span></button>
           <button aria-current={workspaceView === "chat" ? "page" : undefined} className={`nav-row ${workspaceView === "chat" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("chat")} type="button"><Icon name="book" /><span>{t("nav.chat")}</span><small>{conversations.length || ""}</small></button>
-          <button aria-current={workspaceView === "plugins" ? "page" : undefined} className={`nav-row ${workspaceView === "plugins" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("plugins")} type="button"><Icon name="sparkles" /><span>{t("nav.plugins")}</span><small>{plugins.length + codePlugins.length || ""}</small></button>
+          <button aria-current={workspaceView === "plugins" ? "page" : undefined} className={`nav-row ${workspaceView === "plugins" ? "nav-row--active" : ""}`} onClick={() => setWorkspaceView("plugins")} type="button"><Icon name="sparkles" /><span>{t("nav.plugins")}</span><small>{plugins.length || ""}</small></button>
           <button aria-current={workspaceView === "chat" ? "page" : undefined} className={`nav-row ${workspaceView === "chat" ? "nav-row--active" : ""}`} onClick={() => { setMemoryPanelOpen(true); setWorkspaceView("chat"); }} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{lastMemoryReport?.injectedCount ?? ""}</small></button>
         </nav>
         <section aria-labelledby="recent-characters-title" className="sidebar-library">
@@ -342,7 +297,7 @@ export function App() {
         onRefreshPreview={() => void characterImport.handleRefreshPreview()}
         onOpenSettings={() => setWorkspaceView("settings")}
         connectionReady={isConnectionReady}
-        onEditCharacter={() => { if (selectedCharacter) void loadExtensionHost().then(host => host.editCharacter(selectedCharacter.id)).catch(error => setRuntimeError(String(error))); }}
+        onEditCharacter={() => { if (selectedCharacter) setCharacterPanelOpen(true); }}
         draftFileName={draftFile?.name ?? null}
         importError={importError}
         importErrorDetails={importErrorDetails}
@@ -408,7 +363,7 @@ export function App() {
         onActivateBranch={conversationsState.handleActivateBranch}
         onSaveEdit={(id) => void saveEditMessage(id)}
         onSendMessage={(input) => void handleSendMessage(input)}
-        onStopGeneration={() => { void loadExtensionHost().then(host => host.stopGeneration()).catch(error => setRuntimeError(String(error))); }}
+        onStopGeneration={() => { void chat.handleStopGeneration(); }}
         runtimeError={runtimeError}
       /></div>
       <div hidden={workspaceView !== "settings"}><SettingsView
@@ -428,43 +383,13 @@ export function App() {
         runtimeError={runtimeError}
       /></div>
       {workspaceView === "plugins" ? <PluginsView
-        codePlugins={codePlugins}
-        onOpenPlugin={setOpenedPluginId}
-        codePluginStatus={codePluginStatus}
-        codePluginChecks={codePluginChecks}
-        codePluginRefs={codePluginRefs}
-        codePluginErrors={codePluginErrors}
-        codePluginPendingReload={codePluginPendingReload}
-        codePluginOperations={codePluginOperations}
-        isChangingPlugins={isChangingPlugins}
-        pluginRef={pluginRef}
-        onPluginRef={setPluginRef}
-        onCodePluginCheckUpdate={(plugin) => void handleCodePluginCheckUpdate(plugin)}
-        onCodePluginRef={handleCodePluginRef}
-        onCodePluginUpdate={(plugin) => void handleCodePluginUpdate(plugin)}
-        onCodePluginReload={(id) => void handleCodePluginReload(id)}
-        isInstallingFromUrl={isInstallingFromUrl}
-        onCodePluginToggle={(plugin) => void handleCodePluginToggle(plugin)}
-        onCodePluginUninstall={(id) => void handleCodePluginUninstall(id)}
-        onInstallFromUrl={() => void handleInstallFromUrl()}
         onPluginToggle={(plugin) => void handlePluginToggle(plugin)}
         onPluginUninstall={(id) => void handlePluginUninstall(id)}
-        onPluginUrl={setPluginUrl}
-        pluginUrl={pluginUrl}
         plugins={plugins}
         runtimeError={runtimeError}
       /> : null}
-      {/* These are the actual settings/menu mounts, shared by extensions in this document. */}
-      <div className={`plugin-host-dock${workspaceView === "plugins" && openedPluginId ? " plugin-host-dock--visible" : ""}`}>
-        <section className="plugin-host-card">
-          <header><strong>扩展设置</strong><button aria-label="关闭扩展设置" onClick={() => setOpenedPluginId(null)} type="button">关闭</button></header>
-          <div id="extensions_settings" />
-          <div id="plugin-root" />
-        </section>
-      </div>
-      <div id="extensionsMenu" className="extension-menu" />
       <WorldInfoPanel open={lorebookPanelOpen} online={serviceState === "online"} character={selectedCharacter} onClose={() => setLorebookPanelOpen(false)} />
-      <CharacterPanel open={characterPanelOpen} online={serviceState === "online"} onClose={() => setCharacterPanelOpen(false)} />
+      <CharacterPanel open={characterPanelOpen} online={serviceState === "online"} character={selectedCharacter} onSaved={handleCharacterSaved} onClose={() => setCharacterPanelOpen(false)} />
     </div>
   );
 }

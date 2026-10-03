@@ -2,9 +2,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-libra
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { BackupPanel } from "./BackupPanel";
 import i18n from "../i18n";
-const host = vi.hoisted(() => ({ flush: vi.fn(), reload: vi.fn(), world: vi.fn() }));
-vi.mock("../ExtensionHost", () => ({ loadExtensionHost: async () => host, reloadForExtensions: host.reload }));
+const host = vi.hoisted(() => ({ flush: vi.fn(), reload: vi.fn(), world: vi.fn(), composer: vi.fn() }));
+vi.mock("../extension-settings", () => ({ flushSharedExtensionSettings: host.flush, reloadApplication: host.reload,
+  loadSharedExtensionSettings: vi.fn(), saveSharedExtensionSettings: vi.fn(), saveSharedExtensionSettingsDebounced: vi.fn(), onSharedExtensionSettingsSaved: vi.fn() }));
 vi.mock("../world-editor-drafts", () => ({ flushWorldEditorDrafts: host.world }));
+vi.mock("../composer-drafts", () => ({ flushComposerDrafts: host.composer }));
 const backup = { format: "mycompanion-backup", formatVersion: 1, createdAt: "2026-10-02T00:00:00.000Z",
   manifest: { characterCount: 0, conversationCount: 0, messageCount: 0, memoryCount: 0, pluginCount: 0, codePluginCount: 0, settingsIncluded: false, checksum: "0".repeat(64) },
   characters: [], conversations: [], memories: [], stageSummaries: [], conversationSettings: [], plugins: [], codePlugins: [], providerSettings: null };

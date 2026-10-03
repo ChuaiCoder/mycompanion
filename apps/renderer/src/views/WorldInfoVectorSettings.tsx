@@ -1,57 +1,50 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { loadExtensionHost } from "../ExtensionHost";
+import { loadSharedExtensionSettings, onSharedExtensionSettingsSaved, saveSharedExtensionSettings } from "../extension-settings";
 import "../i18n";
 
 interface VectorSettings {
   enabled_world_info: boolean; enabled_for_all: boolean; query: number; max_entries: number; score_threshold: number;
 }
-interface SettingsRuntime {
-  extension_settings: Record<string, unknown>;
-  saveSettings(): Promise<void>;
-  onExtensionSettingsSaved(callback: () => void): () => void;
-}
 const defaults: VectorSettings = { enabled_world_info: false, enabled_for_all: false, query: 2, max_entries: 5, score_threshold: .25 };
-function read(runtime: SettingsRuntime): VectorSettings {
-  const raw = runtime.extension_settings.vectors;
+function read(root: Record<string, unknown>): VectorSettings {
+  const raw = root.vectors;
   const value = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
   const number = (key: string, fallback: number) => typeof value[key] === "number" && Number.isFinite(value[key]) ? Number(value[key]) : fallback;
   return { enabled_world_info: value.enabled_world_info === true, enabled_for_all: value.enabled_for_all === true,
     query: Math.max(0, Math.floor(number("query", 2))), max_entries: Math.max(1, Math.floor(number("max_entries", 5))), score_threshold: number("score_threshold", .25) };
 }
 
-/** The same mutable extension_settings namespace used by original vector code.
+/** The same mutable extension settings namespace used by the original vector code.
  * Save only the changed field, preserving plugin-owned and future properties. */
 export function WorldInfoVectorSettings({ online }: { online: boolean }) {
   const { i18n } = useTranslation(), en = i18n.language.startsWith("en");
-  const runtime = useRef<SettingsRuntime | null>(null);
+  const root = useRef<Record<string, unknown> | null>(null);
   const [settings, setSettings] = useState(defaults), [busy, setBusy] = useState(false), [error, setError] = useState("");
   const [ready, setReady] = useState(false);
   useEffect(() => {
     if (!online) return;
     let disposed = false, unsubscribe: (() => void) | undefined;
-    void loadExtensionHost().then(async () => {
-      const path = "/plugin-runtime/settings.js";
-      const module = await import(/* @vite-ignore */ path) as SettingsRuntime;
+    void loadSharedExtensionSettings().then(settingsRoot => {
       if (disposed) return;
-      runtime.current = module; setSettings(read(module)); setReady(true);
-      unsubscribe = module.onExtensionSettingsSaved(() => { if (!disposed) setSettings(read(module)); });
-    }).catch(error => { if (!disposed) setError(error instanceof Error ? error.message : String(error)); });
+      root.current = settingsRoot; setSettings(read(settingsRoot)); setReady(true);
+      unsubscribe = onSharedExtensionSettingsSaved(() => { if (!disposed && root.current) setSettings(read(root.current)); });
+    }).catch(cause => { if (!disposed) setError(cause instanceof Error ? cause.message : String(cause)); });
     return () => { disposed = true; unsubscribe?.(); };
   }, [online]);
   async function change<K extends keyof VectorSettings>(key: K, value: VectorSettings[K]) {
-    const module = runtime.current;
-    if (!module || busy) return;
-    const previous = read(module);
-    const raw = module.extension_settings.vectors;
+    const settingsRoot = root.current;
+    if (!settingsRoot || busy) return;
+    const previous = read(settingsRoot);
+    const raw = settingsRoot.vectors;
     const vectors = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
-    module.extension_settings.vectors = { ...vectors, [key]: value };
-    setSettings(read(module)); setBusy(true); setError("");
-    try { await module.saveSettings(); }
-    catch (error) {
+    settingsRoot.vectors = { ...vectors, [key]: value };
+    setSettings(read(settingsRoot)); setBusy(true); setError("");
+    try { await saveSharedExtensionSettings(); }
+    catch (cause) {
       // Show the unsaved value for a retry; the shared queue retains failed
       // patches, so pretending it reverted would silently save it later.
-      setError("向量设置保存失败，请再次选择设置重试。" + (error instanceof Error ? error.message : String(error)));
+      setError("向量设置保存失败，请再次选择设置重试。" + (cause instanceof Error ? cause.message : String(cause)));
       setSettings({ ...previous, [key]: value });
     } finally { setBusy(false); }
   }

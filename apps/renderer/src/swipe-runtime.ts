@@ -1,6 +1,17 @@
 import { chatMessageStatusSchema, messageGenerationMetadataSchema, NATIVE_CANDIDATE_INFO_KEY, projectNativeCandidateMessage,
   type ExtensionChatMessage } from "@mycompanion/shared";
-import { loadExtensionHost } from "./ExtensionHost";
+
+// 最后的兼容消费者：候选回复的“切换选择”仍依赖酒馆聊天运行时来持久化
+// （原生 swipe 选择端点缺失；补齐端点后此模块应改为纯 REST）。
+let hostPromise: Promise<unknown> | undefined;
+function loadExtensionHost(): Promise<unknown> {
+  return hostPromise ??= (async () => {
+    const libraries = "/plugin-runtime/libraries.js";
+    await import(/* @vite-ignore */ libraries);
+    const path = "/plugin-runtime/desktop-host.js";
+    return import(/* @vite-ignore */ path);
+  })();
+}
 
 export interface SwipeTarget { conversationId: string; branchId: string; messageId: string }
 interface SwipeContext { conversationId?: string; branchId?: string; chat: ExtensionChatMessage[]; chatMetadata: Record<string, unknown> }

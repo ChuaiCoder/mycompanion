@@ -1,13 +1,8 @@
-import type { QuietGenerationRequest } from "@mycompanion/shared";
 import {
   apiErrorResponseSchema,
   characterCardPreviewResponseSchema,
   characterDetailSchema,
   characterListResponseSchema,
-  codePluginContributionSchema,
-  codePluginListResponseSchema,
-  codePluginSchema,
-  codePluginUpdateCheckSchema,
   conversationDetailSchema,
   conversationListResponseSchema,
   healthResponseSchema,
@@ -35,10 +30,6 @@ import {
   type ChatMessage,
   type ConversationDetail,
   type ConversationListResponse,
-  type CodePlugin,
-  type CodePluginContribution,
-  type CodePluginListResponse,
-  type CodePluginUpdateCheck,
   type CharacterRegexRule,
   type GenerationSseEvent,
   type HealthResponse,
@@ -233,6 +224,29 @@ export async function fetchCharacter(
   const response = await fetch(`/api/characters/${encodeURIComponent(id)}`, {
     headers: { Accept: "application/json" },
     ...(signal ? { signal } : {}),
+  });
+  return characterDetailSchema.parse(await readApiPayload(response));
+}
+
+// 原生角色编辑：读取完整角色卡 JSON（保留未知字段往返），PUT 更新后返回 CharacterDetail。
+export async function fetchCharacterCard(id: string, signal?: AbortSignal): Promise<Record<string, unknown>> {
+  const response = await fetch(characterExportUrl(id, "json"), {
+    headers: { Accept: "application/json" },
+    ...(signal ? { signal } : {}),
+  });
+  if (!response.ok) await readApiPayload(response);
+  const card: unknown = JSON.parse(await response.text());
+  if (!card || typeof card !== "object" || Array.isArray(card)) {
+    throw new ApiRequestError("INVALID_CHARACTER_CARD", "角色卡数据无效。");
+  }
+  return card as Record<string, unknown>;
+}
+
+export async function updateCharacter(id: string, card: unknown): Promise<CharacterDetail> {
+  const response = await fetch(`/api/characters/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ card }),
   });
   return characterDetailSchema.parse(await readApiPayload(response));
 }
@@ -624,18 +638,6 @@ export async function setAutoSummary(
   return readApiPayload(response) as Promise<{ autoSummaryEnabled: boolean }>;
 }
 
-export class ExtensionPromptPreparationError extends Error {}
-async function prepareExtensionPrompts(signal?: AbortSignal, options: Partial<QuietGenerationRequest> = {}) {
-  const path = '/plugin-runtime/desktop-host.js';
-  const host = await import(/* @vite-ignore */ path);
-  signal?.throwIfAborted();
-  let prompts;
-  try { prompts = await host.prepareExtensionPrompts({ ...options, signal }); }
-  catch (error) { throw new ExtensionPromptPreparationError(error instanceof Error ? error.message : String(error)); }
-  signal?.throwIfAborted();
-  return prompts;
-}
-
 // 提示词预览（FR-PROMPT-004）：发送前查看即将发给模型的提示词（已脱敏）。
 export async function promptPreview(
   conversationId: string,
@@ -647,18 +649,14 @@ export async function promptPreview(
     {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
-      body: JSON.stringify({ draft, extensionPrompts: await prepareExtensionPrompts(signal), browserMacros: true }),
+      body: JSON.stringify({ draft }),
       ...(signal ? { signal } : {}),
     },
   );
-  const macroHostPath = '/plugin-runtime/desktop-host.js';
-  const macroHost = await import(/* @vite-ignore */ macroHostPath);
-  const payload = await macroHost.readMacroResult(response, signal);
-  return promptPreviewResponseSchema.parse(payload);
+  return promptPreviewResponseSchema.parse(await readApiPayload(response));
 }
 
-export interface NativeGenerationOptions { allowEmpty?: boolean; dryRun?: boolean; signal?: AbortSignal; quiet?: Partial<QuietGenerationRequest>; mode?: "continue" | "impersonate" }
-export type QuietGenerationOptions = Partial<QuietGenerationRequest> & { signal?: AbortSignal };
+export interface NativeGenerationOptions { allowEmpty?: boolean; dryRun?: boolean; signal?: AbortSignal; mode?: "continue" | "impersonate" }
 
 // Installed code may return a promise that never settles. Stop/shutdown must
 // release our generation even though JavaScript cannot cancel that promise.
@@ -673,61 +671,24 @@ export function waitForGenerationHook<T>(operation: Promise<T>, signal: AbortSig
   });
 }
 
+// 原生生成链路：不传 browserMacros/extensionPrompts，宏展开完全在服务端完成，
+// 因此不再有 macro_request/effect_request/completion_request 浏览器 RPC。
 async function streamNativeGeneration(id: string, content: string | undefined, signal: AbortSignal,
   onEvent: (event: GenerationSseEvent) => void, options: NativeGenerationOptions): Promise<void> {
-  const path = '/plugin-runtime/desktop-host.js';
-  const host = await import(/* @vite-ignore */ path);
-  const quiet = options.quiet;
-  const type = quiet ? "quiet" : options.mode ?? (content === undefined ? "regenerate" : "normal");
-  const prepareSignal = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
-  await waitForGenerationHook(host.beginNativeGeneration(type, { ...options, ...(quiet ? { quiet_prompt: quiet.quietPrompt, quietToLoud: quiet.quietToLoud, skipWIAN: quiet.skipWIAN, quietName: quiet.quietName } : {}), signal: prepareSignal }), prepareSignal);
-  signal.throwIfAborted();
-  const prompts = await waitForGenerationHook(prepareExtensionPrompts(prepareSignal, quiet), prepareSignal);
-  const quietPrompt = quiet ? host.prepareQuietPrompt(quiet.quietPrompt ?? "", quiet) : undefined;
-  // Snapshots contain raw macro text. Drain earlier extension listener writes
-  // before native assembly creates the invocation-owned variable draft.
-  await waitForGenerationHook(host.flush(), prepareSignal);
-  signal.throwIfAborted();
-  const suffix = quiet ? "/quiet-generation" : `/messages${type === "normal" ? "" : "/" + type}`;
+  const type = options.mode ?? (content === undefined ? "regenerate" : "normal");
+  const suffix = `/messages${type === "normal" ? "" : "/" + type}`;
   const response = await fetch(`/api/conversations/${encodeURIComponent(id)}${suffix}`, {
     method: "POST", headers: { Accept: "text/event-stream", "Content-Type": "application/json" },
-    body: JSON.stringify(quiet ? { ...quiet, quietPrompt, quietPromptMacrosResolved: false, extensionPrompts: prompts, browserMacros: true, browserPreflight: true, dryRun: options.dryRun ?? false } : { content, extensionPrompts: prompts, browserMacros: true, browserPreflight: true,
-      allowEmpty: content === undefined ? undefined : options.allowEmpty ?? false, dryRun: options.dryRun ?? false }), signal,
+    body: JSON.stringify({ content, allowEmpty: content === undefined ? undefined : options.allowEmpty ?? false,
+      dryRun: options.dryRun ?? false }), signal,
   });
   if (!response.ok || !response.body) { await readApiPayload(response); throw new Error("生成请求失败。"); }
-  const effectInvocations = new Set<string>();
-  try { await readSseStream(response.body, async event => {
-    if(event.type === "macro_request"){await host.respondToMacroRequest(event,signal);return;}
-    if(event.type === "effect_request"){effectInvocations.add(event.evaluation.invocationId);await host.respondToEffectRequest(event,signal);return;}
-    if(event.type === "effect_end"){host.endEffectInvocation(event.invocationId);effectInvocations.delete(event.invocationId);return;}
-    if(event.type === "macro_variables"){host.applyNativeMacroVariables(event);return;}
-    if (event.type !== "completion_request") {
-      onEvent(event);
-      if (event.type === "impersonate_result") await host.completeNativeImpersonation(id, event.text, signal);
-      return;
-    }
-    const url = `/api/generation/preflight/${encodeURIComponent(event.requestId)}`;
-    let request;
-    const hookSignal = AbortSignal.any([signal, AbortSignal.timeout(120_000)]);
-    try { request = await waitForGenerationHook(host.prepareNativeCompletion(event.request, event.dryRun, hookSignal, type, event.provider), hookSignal); }
-    catch (error) {
-      if (!signal.aborted) await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ error: error instanceof Error ? error.message : String(error) }), signal });
-      throw error;
-    }
-    signal.throwIfAborted();
-    const accepted = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ request }), signal });
-    if (!accepted.ok) await readApiPayload(accepted);
-  }); } finally { for (const invocationId of effectInvocations) host.endEffectInvocation(invocationId); }
-}
-export async function streamQuietGeneration(id: string, options: QuietGenerationOptions): Promise<string | undefined> {
-  const { signal = new AbortController().signal, ...quiet } = options;
-  let text: string | undefined;
-  await streamNativeGeneration(id, undefined, signal, event => {
-    if (event.type === "quiet_result") text = event.text;
-    if (event.type === "error") throw new Error(event.message);
-  }, { quiet, dryRun: quiet.dryRun ?? false });
-  return text;
+  await readSseStream(response.body, async event => {
+    // 原生路径下服务端不会发出浏览器 RPC 事件；macro_variables 透传给调用方同步本地草稿。
+    if (event.type === "macro_request" || event.type === "effect_request" || event.type === "effect_end"
+      || event.type === "completion_request") return;
+    onEvent(event);
+  });
 }
 export function streamChatMessage(id: string, content: string, signal: AbortSignal,
   onEvent: (event: GenerationSseEvent) => void, options: NativeGenerationOptions = {}): Promise<void> {
@@ -862,90 +823,7 @@ export async function uninstallPlugin(id: string): Promise<void> {
   if (!response.ok) await readApiPayload(response);
 }
 
-export async function listCodePlugins(signal?: AbortSignal): Promise<CodePluginListResponse> {
-  const response = await fetch("/api/code-plugins", {
-    headers: { Accept: "application/json" },
-    ...(signal ? { signal } : {}),
-  });
-  return codePluginListResponseSchema.parse(await readApiPayload(response));
-}
-
-export async function installCodePlugin(file: File): Promise<CodePlugin> {
-  const response = await fetch("/api/code-plugins/install", {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/zip",
-      "X-Plugin-Filename": encodeURIComponent(file.name),
-    },
-    body: file,
-  });
-  return codePluginSchema.parse(await readApiPayload(response));
-}
-
-export async function installCodePluginFromUrl(
-  url: string,
-  branch = "",
-): Promise<CodePlugin> {
-  const response = await fetch("/api/code-plugins/install-url", {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ url, branch }),
-  });
-  return codePluginSchema.parse(await readApiPayload(response));
-}
-
-export async function setCodePluginEnabled(id: string, enabled: boolean): Promise<CodePlugin> {
-  const response = await fetch(`/api/code-plugins/${encodeURIComponent(id)}/enabled`, {
-    method: "PUT",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ enabled }),
-  });
-  return codePluginSchema.parse(await readApiPayload(response));
-}
 export function streamForegroundMode(id: string, mode: "continue" | "impersonate", signal: AbortSignal,
   onEvent: (event: GenerationSseEvent) => void, options: NativeGenerationOptions = {}): Promise<void> {
   return streamNativeGeneration(id, undefined, signal, onEvent, { ...options, mode });
-}
-
-export async function checkCodePluginUpdate(id: string, signal?: AbortSignal): Promise<CodePluginUpdateCheck> {
-  const response = await fetch(`/api/code-plugins/${encodeURIComponent(id)}/check-update`, {
-    method: "POST",
-    headers: { Accept: "application/json" },
-    ...(signal ? { signal } : {}),
-  });
-  return codePluginUpdateCheckSchema.parse(await readApiPayload(response));
-}
-
-export async function updateCodePlugin(
-  id: string,
-  expectedRevision: string,
-  branch?: string,
-): Promise<CodePlugin> {
-  const response = await fetch(`/api/code-plugins/${encodeURIComponent(id)}/update`, {
-    method: "POST",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify({ expectedRevision, ...(branch ? { branch } : {}) }),
-  });
-  return codePluginSchema.parse(await readApiPayload(response));
-}
-
-export async function saveCodePluginContributions(
-  id: string,
-  contribution: CodePluginContribution,
-): Promise<CodePluginContribution> {
-  const response = await fetch(`/api/code-plugins/${encodeURIComponent(id)}/contributions`, {
-    method: "PUT",
-    headers: { Accept: "application/json", "Content-Type": "application/json" },
-    body: JSON.stringify(contribution),
-  });
-  return codePluginContributionSchema.parse(await readApiPayload(response));
-}
-
-export async function uninstallCodePlugin(id: string): Promise<void> {
-  const response = await fetch(`/api/code-plugins/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-    headers: { Accept: "application/json" },
-  });
-  if (!response.ok) await readApiPayload(response);
 }

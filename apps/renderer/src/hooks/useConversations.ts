@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ConversationDetail, ConversationSummary } from "@mycompanion/shared";
 
 import { ApiRequestError, activateBranch, createConversation, fetchConversation } from "../api";
-import { flushLoadedExtensionHost } from "../ExtensionHost";
+import { flushSharedExtensionSettings } from "../extension-settings";
 import type { WorkspaceView } from "./useExtensionResume";
 
 // 故事会话：创建/打开与当前激活会话，和角色选中共用 navigationRevision 防竞态。
@@ -74,7 +74,7 @@ export function useConversations(deps: {
     const revision = ++navigationRevision.current;
     setBranchBusy(true); setRuntimeError(null);
     try {
-      await flushLoadedExtensionHost();
+      await flushSharedExtensionSettings();
       if (revision !== navigationRevision.current) return;
       const conversation = await activateBranch(conversationId, branchId);
       if (revision !== navigationRevision.current) return;

@@ -2,8 +2,9 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { backupPayloadSchemaShared, type BackupPayload, type BackupRestorePreviewResponse } from "@mycompanion/shared";
 import { applyBackupRestore, fetchBackup, previewBackupRestore } from "../api";
-import { loadExtensionHost, reloadForExtensions } from "../ExtensionHost";
+import { flushSharedExtensionSettings, reloadApplication } from "../extension-settings";
 import { flushWorldEditorDrafts } from "../world-editor-drafts";
+import { flushComposerDrafts } from "../composer-drafts";
 import { uiLocale } from "../i18n";
 import { backupText, backupTotals } from "../backup-translations";
 
@@ -25,7 +26,7 @@ export function BackupPanel({ busy: applicationBusy = false }: { busy?: boolean 
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const revision = useRef(0);
-  async function flush() { await flushWorldEditorDrafts(); await (await loadExtensionHost()).flush(); }
+  async function flush() { await flushWorldEditorDrafts(); await flushComposerDrafts(); await flushSharedExtensionSettings(); }
   async function review(value: BackupPayload, nextStrategy: "skip" | "overwrite", token: number) {
     const result = await previewBackupRestore(value, nextStrategy);
     if (token === revision.current) setPreview(result);
@@ -75,7 +76,7 @@ export function BackupPanel({ busy: applicationBusy = false }: { busy?: boolean 
           try {
             await flush(); await applyBackupRestore(backup, strategy);
             // Do not flush the old settings object over the restored profile.
-            setNotice("恢复完成，正在重新加载数据…"); reloadForExtensions();
+            setNotice("恢复完成，正在重新加载数据…"); reloadApplication();
           } catch (cause) { setError(errorText(cause)); } finally { setBusy(false); }
         })()}>{text("确认恢复")}</button>
       </> : <p>{text("正在检查备份…")}</p>}

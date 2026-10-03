@@ -14,7 +14,6 @@ import type {
 
 import {
   ApiRequestError,
-  ExtensionPromptPreparationError,
   deleteMessage,
   editMessage,
   fetchConversation,
@@ -24,7 +23,6 @@ import {
   streamRegenerate,
   streamForegroundMode,
 } from "../api";
-import { loadExtensionHost } from "../ExtensionHost";
 import { replaceMessage, updateLastAssistantContent } from "../chat-stream-utils";
 import { observeProviderConnection } from "../provider-connection";
 import { loadComposerDraftStore, type ComposerDraftStore } from "../composer-drafts";
@@ -86,9 +84,8 @@ export function useChatGeneration(deps: {
   }
   renderedComposer.current = { id: activeConversation?.id, revision: inputRevision.current };
   const [isNativeGenerating, setIsGenerating] = useState(false);
-  const [extensionGenerating, setExtensionGenerating] = useState(false);
   const isGenerating = isNativeGenerating;
-  const generationControlsBusy = isNativeGenerating || extensionGenerating;
+  const generationControlsBusy = isNativeGenerating;
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
 
@@ -165,6 +162,22 @@ export function useChatGeneration(deps: {
         setLastMemoryReport(event.report);
         return;
       }
+      if (event.type === "macro_variables") {
+        // 服务端已原子持久化变量；这里同步本地草稿，让后续宏上下文读取一致。
+        setActiveConversation((current) => {
+          if (!current || current.id !== conversationId) return current;
+          const metadata = { ...(current.chatMetadata ?? {}) } as Record<string, unknown>;
+          const variables = { ...(metadata.variables as Record<string, unknown> | undefined) };
+          for (const change of event.changes) {
+            if (change.scope !== "local") continue;
+            if (change.afterExists) variables[change.key] = change.after;
+            else delete variables[change.key];
+          }
+          metadata.variables = variables;
+          return { ...current, chatMetadata: metadata };
+        });
+        return;
+      }
       if (event.type === "assistant_start") {
         if (event.message.branchId !== streamBranchId) {
           // Only this accepted native-generation transition can preserve a
@@ -205,21 +218,6 @@ export function useChatGeneration(deps: {
     const content = options.dryRun ? "" : (input ?? chatInput).trim();
     if (!activeConversation || (!content && !options.allowEmpty && !options.dryRun) || isGenerating || streamControllerRef.current) return { status: "skipped" };
     const story = activeConversation.id;
-    if (content.startsWith("/")) {
-      try {
-        const host = await loadExtensionHost();
-        if (!isCurrentStory(story)) return { status: "skipped" };
-        const result = await host.runSlashCommand(content);
-        if (result?.isError) throw new Error(result.errorMessage);
-        if (isCurrentStory(story)) {
-          setChatInput("");
-          setRuntimeError(null);
-        }
-      } catch (error) {
-        if (isCurrentStory(story)) setRuntimeError(error instanceof Error ? error.message : "斜杠命令执行失败。");
-      }
-      return { status: "skipped" };
-    }
     if (!options.dryRun) setChatInput("");
     setRuntimeError(null);
     setIsGenerating(true);
@@ -243,7 +241,6 @@ export function useChatGeneration(deps: {
         return { status: "stopped" };
       }
       if (isCurrentStory(story)) {
-        if (error instanceof ExtensionPromptPreparationError) setChatInput(current => current || content);
         setRuntimeError(error instanceof Error ? error.message : "消息发送失败。");
       }
       try {
@@ -368,8 +365,6 @@ export function useChatGeneration(deps: {
     setChatInput,
     isNativeGenerating,
     isGenerating,
-    extensionGenerating,
-    setExtensionGenerating,
     generationControlsBusy,
     editingMessageId,
     editingDraft,

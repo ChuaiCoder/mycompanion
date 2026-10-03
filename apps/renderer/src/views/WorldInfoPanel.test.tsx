@@ -1,22 +1,29 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import type { CharacterDetail, WorldInfoDocument } from "@mycompanion/shared";
+import { worldInfoSettingsSchema, type CharacterDetail, type WorldInfoDocument } from "@mycompanion/shared";
 import { WorldInfoPanel } from "./WorldInfoPanel";
 vi.mock("./WorldInfoVectorSettings", () => ({ WorldInfoVectorSettings: () => null }));
 
-const state = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), openCharacter: vi.fn(), drafts: new Map(), selected: "", flush: vi.fn() }));
+const state = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn(), names: vi.fn(), settings: vi.fn(), openCharacter: vi.fn(), drafts: new Map(), selected: "", flush: vi.fn() }));
 vi.mock("../character-world-info-editor", () => ({ openCharacterWorldInfoEditor: state.openCharacter }));
-vi.mock("../world-info-runtime", () => ({ loadWorldInfoRuntime: async () => ({
-  newWorldInfoEntryTemplate: { content: "", key: [] }, loadWorldInfo: state.load, saveWorldInfo: state.save,
-  syncWorldInfoControls: vi.fn(), selectWorldInfoEditor: (name: string) => window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name } })),
-}) }));
+vi.mock("../world-info-api", () => ({
+  newWorldInfoEntryTemplate: { content: "", key: [] },
+  listWorldInfoNames: state.names, loadWorldInfo: state.load, saveWorldInfo: state.save,
+  createWorldInfo: vi.fn(), deleteWorldInfo: vi.fn(),
+  getWorldInfoSettings: state.settings, saveWorldInfoSettings: vi.fn(),
+}));
 vi.mock("../world-editor-drafts", () => ({ loadWorldDraftStore: async () => ({
   read: (name: string) => state.drafts.get(name), write: (name: string, draft: unknown) => state.drafts.set(name, structuredClone(draft)),
   selected: () => state.selected, select: (name: string) => { state.selected = name; }, remove: (name: string) => state.drafts.delete(name),
   merge: (_base: unknown, draft: unknown) => draft, flush: state.flush,
 }) }));
 const book = (content: string): WorldInfoDocument => ({ entries: { "1": { uid: 1, comment: "Entry", content, key: ["star"], custom: "preserve" } } });
-beforeEach(() => { state.drafts.clear(); state.selected = ""; state.load.mockImplementation(async (name: string) => book(name)); state.save.mockResolvedValue(undefined); });
+beforeEach(() => {
+  state.drafts.clear(); state.selected = "";
+  state.load.mockImplementation(async (name: string) => book(name)); state.save.mockResolvedValue(undefined);
+  state.names.mockResolvedValue(["A", "B", "Existing", "slow", "broken", "Role book"]);
+  state.settings.mockImplementation(async () => worldInfoSettingsSchema.parse({}));
+});
 afterEach(() => { cleanup(); vi.clearAllMocks(); vi.restoreAllMocks(); });
 async function select(name: string, expected: string) {
   await act(async () => { window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name } })); });

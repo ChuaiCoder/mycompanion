@@ -1,5 +1,5 @@
-import type { WorldInfoDocument } from "@mycompanion/shared";
-import { loadExtensionHost } from "./ExtensionHost";
+import { mergeJsonChanges, type WorldInfoDocument } from "@mycompanion/shared";
+import { flushSharedExtensionSettings, loadSharedExtensionSettings, saveSharedExtensionSettingsDebounced } from "./extension-settings";
 
 export interface WorldEditorDraft { base: WorldInfoDocument; document: WorldInfoDocument }
 export interface WorldDraftStore {
@@ -13,35 +13,25 @@ export interface WorldDraftStore {
 }
 let pending: Promise<WorldDraftStore> | undefined;
 
-// Use the existing profile settings writer: Electron's service port changes
-// between launches, so origin-scoped browser storage cannot protect restart.
+// Use the profile settings writer: Electron's service port changes between
+// launches, so origin-scoped browser storage cannot protect a restart.
 export function loadWorldDraftStore(): Promise<WorldDraftStore> {
   return pending ??= (async () => {
-    await loadExtensionHost();
-    const settingsPath = "/plugin-runtime/settings.js";
-    const settings = await import(/* @vite-ignore */ settingsPath) as {
-      extension_settings: Record<string, unknown>;
-      loadExtensionSettings(): Promise<void>;
-      saveSettingsDebounced(): void;
-      saveSettings(): Promise<void>;
-    };
-    const mergePath = "/plugin-runtime/chat-merge.js";
-    const { mergeJsonChanges } = await import(/* @vite-ignore */ mergePath);
-    await settings.loadExtensionSettings();
-    const root = settings.extension_settings.__mycompanion_editor_drafts ??= {};
+    const settings = await loadSharedExtensionSettings();
+    const root = settings.__mycompanion_editor_drafts ??= {};
     const data = root as { worlds?: Record<string, WorldEditorDraft>; worldSelected?: string };
     data.worlds ??= {};
     const store: WorldDraftStore = {
       read: name => Object.hasOwn(data.worlds!, name) ? structuredClone(data.worlds![name]) : undefined,
       selected: () => data.worldSelected ?? "",
-      select: name => { data.worldSelected = name; settings.saveSettingsDebounced(); },
+      select: name => { data.worldSelected = name; saveSharedExtensionSettingsDebounced(); },
       write: (name, draft) => {
         Object.defineProperty(data.worlds!, name, { value: structuredClone(draft), enumerable: true, configurable: true, writable: true });
-        settings.saveSettingsDebounced();
+        saveSharedExtensionSettingsDebounced();
       },
-      remove: name => { delete data.worlds![name]; settings.saveSettingsDebounced(); },
+      remove: name => { delete data.worlds![name]; saveSharedExtensionSettingsDebounced(); },
       merge: (base, draft, saved) => mergeJsonChanges(base, draft, saved) as WorldInfoDocument,
-      flush: () => settings.saveSettings(),
+      flush: () => flushSharedExtensionSettings(),
     };
     return store;
   })().catch(error => { pending = undefined; throw error; });

@@ -1,5 +1,6 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
+import { loadSharedExtensionSettings, saveSharedExtensionSettings } from "./extension-settings";
 
 const messages = {
   "nav.import": ["导入角色卡", "Import character"], "nav.reading": ["正在读取角色卡…", "Reading character…"],
@@ -29,22 +30,22 @@ i18next.on("languageChanged", language => {
 });
 document.documentElement.lang = "zh-CN";
 export type UiLanguage = "zh" | "en";
-type Settings = { extension_settings: Record<string, unknown>; loadExtensionSettings(): Promise<void>; saveSettings(): Promise<void> };
-let settings: Settings | undefined, pending: Promise<void> | undefined, preferenceRevision = 0;
+let pending: Promise<void> | undefined, preferenceRevision = 0;
 export function initializeUiLanguage(): Promise<void> {
   return pending ??= (async () => {
-    const token = preferenceRevision, path = "/plugin-runtime/settings.js";
-    settings = await import(/* @vite-ignore */ path) as Settings; await settings.loadExtensionSettings();
-    const preferences = settings.extension_settings.__mycompanion_preferences as { language?: unknown } | undefined;
+    const token = preferenceRevision;
+    const settings = await loadSharedExtensionSettings();
+    const preferences = settings.__mycompanion_preferences as { language?: unknown } | undefined;
     if (token === preferenceRevision && (preferences?.language === "zh" || preferences?.language === "en")) await i18next.changeLanguage(preferences.language);
     else if (preferenceRevision) await persistUiLanguage();
   })().catch(error => { pending = undefined; throw error; });
 }
 async function persistUiLanguage() {
+  const settings = await loadSharedExtensionSettings().catch(() => undefined);
   if (!settings) return;
-  const preferences = settings.extension_settings.__mycompanion_preferences ??= {};
+  const preferences = settings.__mycompanion_preferences ??= {};
   (preferences as Record<string, unknown>).language = i18next.language === "en" ? "en" : "zh";
-  await settings.saveSettings();
+  await saveSharedExtensionSettings();
 }
 export async function changeUiLanguage(language: UiLanguage): Promise<void> {
   preferenceRevision++; await i18next.changeLanguage(language); await initializeUiLanguage(); await persistUiLanguage();
