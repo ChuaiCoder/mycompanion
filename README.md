@@ -23,7 +23,7 @@ npm run package:win
 
 产物写入 `.cache/packaging/candidates/<timestamp>/`，包含候选 EXE、对应源码归档、manifest、完整检查日志和 `candidate.json`。这一步不会替换正式版。源码归档包含可复现测试所需的合法自有夹具及注明来源的公共参考；运行资源排除测试夹具与用户数据库。`afterPack` 核对实际资源与冻结输入，不能只凭文件名宣称对应源码。
 
-满足所有发布门槛后，使用 `npm run promote:release -- --candidate <candidate.json> --acceptance <acceptance.json>` 晋升。流程与中断恢复见 [发布文档](docs/release-workflow.md)。`release` 保持一个正式 EXE，`output` 为空；开发产物尚未签名。正式版当前仍为旧版 `MyCompanion-0.2.1-windows-x64.exe`，SHA-256 `722dce179165fcf8df3c9b1c0e47968941a1bf2dc5cfcd1fa926bd2bcb1d30a5`。内部候选及源码专项结果不能归到该旧包。
+满足所有发布门槛后，使用 `npm run promote:release -- --candidate <candidate.json> --acceptance <acceptance.json>` 晋升。流程与中断恢复见 [发布文档](docs/release-workflow.md)。`release` 保持一个正式 EXE，`output` 为空；开发产物尚未签名。旧的 `MyCompanion-0.2.1-windows-x64.exe`（兼容层移除前构建）已于 2026-10-03 清理，**当前没有正式发行版**；下一个正式版须从新候选晋升。内部候选及源码专项结果不能归到旧包。
 
 目录职责：
 
