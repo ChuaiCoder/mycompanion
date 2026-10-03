@@ -111,7 +111,7 @@ export function CharacterPanel({ open, online, character, onSaved, onClose }: {
   }
   const disabled = !online || loading || busy || !character;
   return <aside className="character-editor-dock" hidden={!open} aria-label="编辑角色">
-    <header><h2>编辑角色</h2><button type="button" onClick={onClose}>关闭</button></header>
+    <header><h2>编辑角色</h2><button type="button" className="button button--quiet button--small" onClick={onClose}>关闭</button></header>
     {!character ? <p>请先在角色库选择角色。</p> : <>
       {error ? <p role="alert">{error}</p> : null}
       {notice ? <p role="status">{notice}</p> : null}
@@ -128,10 +128,10 @@ export function CharacterPanel({ open, online, character, onSaved, onClose }: {
             <div id="alternate-greetings-list">
               {form.alternateGreetings.map((greeting, index) => <label key={index}>备用开场白 {index + 1}
                 <textarea rows={3} value={greeting} onChange={event => patch({ alternateGreetings: form.alternateGreetings.map((item, itemIndex) => itemIndex === index ? event.target.value : item) })} />
-                <button type="button" onClick={() => patch({ alternateGreetings: form.alternateGreetings.filter((_item, itemIndex) => itemIndex !== index) })}>移除</button>
+                <button type="button" className="button button--quiet button--small" onClick={() => patch({ alternateGreetings: form.alternateGreetings.filter((_item, itemIndex) => itemIndex !== index) })}>移除</button>
               </label>)}
             </div>
-            <button type="button" data-add-greeting onClick={() => patch({ alternateGreetings: [...form.alternateGreetings, ""] })}>添加开场白</button>
+            <button type="button" className="button button--quiet button--small" data-add-greeting onClick={() => patch({ alternateGreetings: [...form.alternateGreetings, ""] })}>添加开场白</button>
           </details>
           <label>主世界书<select className="character_world_info_selector" aria-label="主世界书" value={form.world} onChange={event => patch({ world: event.target.value })}>
             <option value="">（无）</option>
@@ -150,7 +150,7 @@ export function CharacterPanel({ open, online, character, onSaved, onClose }: {
             <label>版本<input name="character_version" value={form.character_version} onChange={event => patch({ character_version: event.target.value })} /></label>
             <label>标签（逗号分隔）<input name="tags" value={form.tags} onChange={event => patch({ tags: event.target.value })} /></label>
           </details>
-          <button id="create_button" type="submit" disabled={disabled}>{busy ? "正在保存…" : "保存角色"}</button>
+          <button id="create_button" className="button button--primary" type="submit" disabled={disabled}>{busy ? "正在保存…" : "保存角色"}</button>
         </fieldset>
       </form>
     </>}

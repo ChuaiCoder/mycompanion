@@ -122,10 +122,10 @@ export function WorldInfoPanel({ open, online, character, onClose }: { open: boo
     checked={Boolean(settings?.[key])} disabled={!settings}
     onChange={event => updateSettings({ [key]: event.target.checked } as Partial<WorldInfoSettings>)} />{label}</label>;
   return <aside className="world-info-dock" hidden={!open} aria-label="世界书编辑器">
-    <header><h2>世界书</h2><button type="button" onClick={onClose}>关闭</button></header>
+    <header><h2>世界书</h2><button type="button" className="button button--quiet button--small" onClick={onClose}>关闭</button></header>
     {error ? <p role="alert">{error}</p> : null}
     {draftNotice ? <p role="status">{draftNotice}</p> : null}
-    {character && (character.lorebookEntryCount > 0 || typeof character.rawExtensions.world === "string") ? <button type="button" data-edit-character-world-info disabled={!online || !ready || busy} onClick={() => {
+    {character && (character.lorebookEntryCount > 0 || typeof character.rawExtensions.world === "string") ? <button type="button" className="button button--quiet" data-edit-character-world-info disabled={!online || !ready || busy} onClick={() => {
       const id = character.id, revision = loadRevision.current;
       const isCurrent = () => characterId.current === id && loadRevision.current === revision;
       void action(async () => {
@@ -157,7 +157,7 @@ export function WorldInfoPanel({ open, online, character, onClose }: { open: boo
     <WorldInfoVectorSettings online={online} />
     <div className="world-info-actions">
       <input aria-label="新世界书名称" placeholder="新世界书名称" value={newName} onChange={event => setNewName(event.target.value)} />
-      <button disabled={!online || busy || !newName.trim()} type="button" onClick={() => void action(async () => {
+      <button className="button button--primary button--small" disabled={!online || busy || !newName.trim()} type="button" onClick={() => void action(async () => {
         if (!await createWorldInfo(newName.trim())) throw new Error("同名世界书已存在，或名称无效。");
         setWorldNames(await listWorldInfoNames());
         setNewName("");
@@ -179,10 +179,10 @@ export function WorldInfoPanel({ open, online, character, onClose }: { open: boo
     </div>
     {document ? <section aria-label="世界书条目">
       <h3>{name}{dirty ? " · 未保存" : ""}</h3>
-      <div className="world-info-actions"><button type="button" disabled={busy} onClick={() => {
+      <div className="world-info-actions"><button type="button" className="button button--quiet button--small" disabled={busy} onClick={() => {
         let uid = 0; while (Object.hasOwn(document.entries, String(uid))) uid++;
         edit(String(uid), { ...structuredClone(newWorldInfoEntryTemplate), uid });
-      }}>添加条目</button><button type="button" disabled={busy || !dirty} onClick={() => void action(async () => {
+      }}>添加条目</button><button type="button" className="button button--primary button--small" disabled={busy || !dirty} onClick={() => void action(async () => {
         const snapshot = current.current;
         await saveWorldInfo(snapshot.name, snapshot.document!);
         if (current.current.name === snapshot.name) {
@@ -192,12 +192,12 @@ export function WorldInfoPanel({ open, online, character, onClose }: { open: boo
         }
         await drafts.current!.flush();
       })}>保存世界书</button>
-      <button type="button" disabled={busy || !dirty} onClick={() => void action(async () => {
+      <button type="button" className="button button--quiet button--small" disabled={busy || !dirty} onClick={() => void action(async () => {
         if (!window.confirm("放弃这本世界书的未保存修改？")) return;
         const next = await loadWorldInfo(name);
         drafts.current!.remove(name); base.current = next; show(name, next, false); setDraftNotice(""); await drafts.current!.flush();
       })}>放弃草稿</button>
-      <button type="button" disabled={busy} onClick={() => void action(async () => {
+      <button type="button" className="button button--quiet button--small" disabled={busy} onClick={() => void action(async () => {
         if (!window.confirm("是否删除当前世界书及其所有条目？")) return;
         if (!await deleteWorldInfo(name)) throw new Error("删除失败，请重试。");
         drafts.current!.remove(name); drafts.current!.select(""); base.current = null; show("", null, false); setDraftNotice(""); await drafts.current!.flush();
@@ -209,7 +209,7 @@ export function WorldInfoPanel({ open, online, character, onClose }: { open: boo
         <label>关键词（每行一个）<textarea data-world-info-field="key" value={Array.isArray(entry.key) ? entry.key.join("\n") : ""} onChange={event => edit(uid, { key: event.target.value.split("\n").filter(Boolean) })} /></label>
         <label>内容<textarea data-world-info-field="content" rows={4} value={String(entry.content ?? "")} onChange={event => edit(uid, { content: event.target.value })} /></label>
         <WorldInfoAdvancedFields entry={entry} onChange={patch => edit(uid, patch)} />
-        <button type="button" onClick={() => { const entries = { ...document.entries }; delete entries[uid]; show(name, { ...document, entries }, true); checkpoint(); }}>移除条目</button>
+        <button type="button" className="button button--quiet button--small" onClick={() => { const entries = { ...document.entries }; delete entries[uid]; show(name, { ...document, entries }, true); checkpoint(); }}>移除条目</button>
       </fieldset>)}
     </section> : <p>选择或新建一本世界书，在需要时向对话补充背景设定。</p>}
   </aside>;

@@ -638,9 +638,21 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 :is(.world-info-dock, .character-editor-dock)[hidden] { display: none; }
 :is(.world-info-dock, .character-editor-dock) header, .world-info-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; }
 :is(.world-info-dock, .character-editor-dock) header { justify-content: space-between; }
-:is(.world-info-dock, .character-editor-dock) label { display: block; margin: 10px 0; }
-:is(.world-info-dock, .character-editor-dock) :is(textarea, select, input:not([type=checkbox])) { width: 100%; padding: 7px; border: 1px solid var(--line, #ddd); border-radius: 6px; background: transparent; color: inherit; }
-:is(.world-info-dock, .character-editor-dock) fieldset { margin: 14px 0; border: 1px solid var(--line, #ddd); border-radius: 8px; }
+:is(.world-info-dock, .character-editor-dock) header h2 { margin: 0; font-size: 15px; font-weight: 680; letter-spacing: -.02em; }
+:is(.world-info-dock, .character-editor-dock) label { display: grid; gap: 6px; margin: 10px 0; color: var(--text-soft, #555); font-size: 10px; font-weight: 650; }
+:is(.world-info-dock, .character-editor-dock) label:has(> input[type=checkbox]) { display: flex; align-items: center; gap: 8px; color: var(--text, #222); font-size: 11px; font-weight: 500; }
+:is(.world-info-dock, .character-editor-dock) :is(textarea, select, input:not([type=checkbox])) { width: 100%; padding: 7px 10px; border: 1px solid var(--line, #ddd); border-radius: 7px; outline: none; background: transparent; color: inherit; font-size: 11px; }
+:is(.world-info-dock, .character-editor-dock) :is(select, input:not([type=checkbox]):not([type=file])) { height: 34px; padding: 0 10px; }
+:is(.world-info-dock, .character-editor-dock) select[multiple] { height: auto; min-height: 72px; padding: 6px; }
+:is(.world-info-dock, .character-editor-dock) :is(textarea, select, input):focus { border-color: #7ca6d2; box-shadow: 0 0 0 3px var(--accent-soft, #dbe7f5); }
+:is(.world-info-dock, .character-editor-dock) fieldset { margin: 14px 0; padding: 12px 14px; border: 1px solid var(--line, #ddd); border-radius: 8px; }
+/* 角色编辑表单的外层 fieldset 只做禁用分组，不画框。 */
+.character-editor-dock form > fieldset { margin: 0; padding: 0; border: 0; display: grid; gap: 2px; }
+:is(.world-info-dock, .character-editor-dock) summary { cursor: pointer; font-weight: 600; }
+/* 标签内的按钮（如备用开场白的“移除”）不随网格拉伸。 */
+:is(.world-info-dock, .character-editor-dock) label > .button { justify-self: start; }
+/* 新建/导入行：名称输入占剩余宽度，不再撑满整行。 */
+.world-info-dock .world-info-actions > input { flex: 1 1 180px; width: auto; }
 .world-info-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 16px; }
 .memory-sources pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 220px; overflow: auto; font: inherit; }
 .memory-sources summary { cursor: pointer; }
