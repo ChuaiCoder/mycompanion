@@ -38,6 +38,8 @@ const english: Record<string, string> = {
   "连接模型": "Connect a model", "用自己的 API 服务完成连接检查。": "Test a connection to your API service.",
   "开始故事": "Start your story", "选择开场白，记忆和上下文由系统持续整理。": "Choose a greeting. The app keeps organizing memory and context as you chat.",
   "角色卡兼容": "Character card compatibility", "支持 Character Card V2/V3，包含世界书、备用开场白和常见正则扩展。": "Supports Character Card V2/V3, including world info, alternate greetings and common regex extensions.",
+  "MYCOMPANION · 角色库": "MYCOMPANION · Characters", "我的角色": "My characters", "已保存角色": "Saved characters",
+  "选择角色查看设定、世界书和正则，或开始新的故事。": "Choose a character to review its details, world info and regex rules, or start a new story.",
   "发现额外字段；系统会原样保留。": "Extra fields were found and will be kept unchanged.",
   "角色卡包含扩展数据，请在确认导入前检查。": "This card includes extension data. Review it before confirming the import.",
   "世界书会随角色保存，之后可在世界书面板中选择启用。": "World info is saved with the character. You can enable it in the world info panel.",

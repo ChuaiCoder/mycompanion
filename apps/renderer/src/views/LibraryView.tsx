@@ -42,6 +42,7 @@ export interface LibraryViewProps {
   previewHeadingRef: HeadingRef;
   onOpenFilePicker: () => void;
   onSelectCharacter: (id: string) => void;
+  onBackToLibrary?: () => void;
   onEditCharacter: () => void;
   onStartConversation: () => void;
   onCommit: () => void;
@@ -77,6 +78,7 @@ export function LibraryView({
   previewHeadingRef,
   onOpenFilePicker,
   onSelectCharacter,
+  onBackToLibrary,
   onEditCharacter,
   onStartConversation,
   onCommit,
@@ -135,7 +137,7 @@ export function LibraryView({
       </section>
 
       <aside className="inspector-pane">
-        <header className="inspector-header"><div className="breadcrumb" aria-label={text("当前位置")}><span>{text("角色库")}</span><i>/</i><strong>{currentTitle}</strong></div><span className={`local-save-state ${preview ? "local-save-state--pending" : ""}`}>{preview ? text("尚未保存") : selectedCharacter ? text("✓ 已保存到本地") : text("本地工作区")}</span></header>
+        <header className="inspector-header"><div className="breadcrumb" aria-label={text("当前位置")}>{!preview && selectedCharacter && onBackToLibrary ? <button className="breadcrumb__link" onClick={onBackToLibrary} type="button">{text("角色库")}</button> : <span>{text("角色库")}</span>}<i>/</i><strong>{currentTitle}</strong></div><span className={`local-save-state ${preview ? "local-save-state--pending" : ""}`}>{preview ? text("尚未保存") : selectedCharacter ? text("✓ 已保存到本地") : text("本地工作区")}</span></header>
         {preview ? (
           <section className="inspector-scroll preview-inspector" aria-labelledby="preview-title">
             <header className="character-hero"><span aria-hidden="true" className="character-avatar character-avatar--large">{characterInitial(preview.name)}</span><div><p className="eyebrow">{text("导入预览 · ")}{preview.format.toUpperCase()}</p><h1 id="preview-title" ref={previewHeadingRef} tabIndex={-1}>{preview.name}</h1><ExpandableDescription translate={text} text={preview.descriptionPreview} emptyText={text("这张角色卡没有填写人物简介。")} /></div></header>
@@ -160,6 +162,14 @@ export function LibraryView({
             {lorebookPanelOpen ? <LorebookPanel characterId={selectedCharacter.id} characterName={selectedCharacter.name} runtimeError={importError} primaryWorld={typeof selectedCharacter.rawExtensions.world === "string" ? selectedCharacter.rawExtensions.world : undefined} /> : null}
             {selectedCharacter.lorebookEntries.length > 0 || selectedCharacter.regexScripts.length > 0 ? <section className="document-section imported-content" aria-label={text("已保存的附属内容")}><ImportedContentDetails locale={locale} translate={text} lorebookEntries={selectedCharacter.lorebookEntries} regexScripts={selectedCharacter.regexScripts} /></section> : null}
             {selectedCharacter.firstMessage ? <section className="document-section"><h2>{text("默认开场白")}</h2><RichTextPreview translate={text} text={selectedCharacter.firstMessage} /></section> : null}
+          </section>
+        ) : characters.length > 0 ? (
+          <section className="inspector-scroll character-grid-panel" aria-labelledby="character-grid-title">
+            <p className="eyebrow">{text("MYCOMPANION · 角色库")}</p><h2 id="character-grid-title">{text("我的角色")}</h2><p className="onboarding-lead">{text("选择角色查看设定、世界书和正则，或开始新的故事。")}</p>
+            {listError ? <p className="sidebar-error">{text(listError)}</p> : null}
+            <ul className="character-grid" aria-label={text("已保存角色")}>
+              {characters.map((character) => <li key={character.id}><button className="character-card" data-character-id={character.id} disabled={isLoadingCharacter} onClick={() => onSelectCharacter(character.id)} type="button"><CharacterAvatar character={character} large /><strong>{character.name}</strong><small>{text(`${character.lorebookEntryCount} 世界书 · ${character.regexScriptCount} 正则`)}</small></button></li>)}
+            </ul>
           </section>
         ) : (
           <section className="inspector-scroll onboarding-panel" aria-labelledby="steps-title">

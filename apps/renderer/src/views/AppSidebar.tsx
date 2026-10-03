@@ -1,13 +1,35 @@
-import type { ChangeEvent, RefObject } from "react";
+import { useState, type ChangeEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
-import type { CharacterSummary } from "@mycompanion/shared";
+import type { ConversationSummary } from "@mycompanion/shared";
 
-import { CharacterAvatar, Icon, type ServiceState } from "../components";
+import { Icon, type ServiceState } from "../components";
 import { libraryText } from "../library-translations";
 import type { WorkspaceView } from "../hooks/useExtensionResume";
 
-// 桌面侧边栏：品牌行、主导航、我的角色列表、服务状态与隐藏的角色卡文件输入。
+// 侧栏对话分组：角色名作可折叠分组头（只留名字），下属该角色的各段故事。
+interface ConversationGroup {
+  characterId: string;
+  characterName: string;
+  items: ConversationSummary[];
+}
+
+function groupConversationsByCharacter(conversations: ConversationSummary[]): ConversationGroup[] {
+  const groups: ConversationGroup[] = [];
+  const index = new Map<string, ConversationGroup>();
+  for (const conversation of conversations) {
+    let group = index.get(conversation.characterId);
+    if (!group) {
+      group = { characterId: conversation.characterId, characterName: conversation.characterName, items: [] };
+      index.set(conversation.characterId, group);
+      groups.push(group);
+    }
+    group.items.push(conversation);
+  }
+  return groups;
+}
+
+// 桌面侧边栏：品牌行、主导航、按角色分组的对话列表、服务状态与隐藏的角色卡文件输入。
 export function AppSidebar({
   collapsed,
   onCollapseToggle,
@@ -22,11 +44,9 @@ export function AppSidebar({
   conversationCount,
   pluginCount,
   memoryInjectedCount,
-  characters,
-  selectedCharacterId,
-  isLoadingCharacter,
-  onSelectCharacter,
-  listError,
+  conversations,
+  activeConversationId,
+  onOpenConversation,
   serviceState,
   fileInputRef,
   onCardFile,
@@ -44,16 +64,21 @@ export function AppSidebar({
   conversationCount: number;
   pluginCount: number;
   memoryInjectedCount: number | "";
-  characters: CharacterSummary[];
-  selectedCharacterId: string | undefined;
-  isLoadingCharacter: boolean;
-  onSelectCharacter: (id: string) => void;
-  listError: string | null;
+  conversations: ConversationSummary[];
+  activeConversationId: string | undefined;
+  onOpenConversation: (id: string) => void;
   serviceState: ServiceState;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onCardFile: (event: ChangeEvent<HTMLInputElement>) => void;
 }) {
   const { t, i18n } = useTranslation();
+  const [collapsedGroups, setCollapsedGroups] = useState<ReadonlySet<string>>(new Set());
+  const groups = groupConversationsByCharacter(conversations);
+  const toggleGroup = (characterId: string) => setCollapsedGroups(current => {
+    const next = new Set(current);
+    if (next.has(characterId)) next.delete(characterId); else next.add(characterId);
+    return next;
+  });
   return (
     <aside className="sidebar">
       <div className="brand-row">
@@ -67,15 +92,26 @@ export function AppSidebar({
         <button aria-current={view === "plugins" ? "page" : undefined} className={`nav-row ${view === "plugins" ? "nav-row--active" : ""}`} onClick={() => onNavigate("plugins")} type="button"><Icon name="sparkles" /><span>{t("nav.plugins")}</span><small>{pluginCount || ""}</small></button>
         <button aria-current={view === "chat" && memoryPanelOpen ? "page" : undefined} className={`nav-row ${view === "chat" && memoryPanelOpen ? "nav-row--active" : ""}`} onClick={onMemoryNav} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{memoryInjectedCount}</small></button>
       </nav>
-      <section aria-labelledby="recent-characters-title" className="sidebar-library">
-        <div className="tree-heading"><div><Icon name="character" size={16} /><h2 id="recent-characters-title">我的角色</h2></div><button aria-label="导入新的角色卡" disabled={busy} onClick={onOpenFilePicker} type="button"><Icon name="plus" size={16} /></button></div>
+      <section aria-labelledby="sidebar-conversations-title" className="sidebar-library">
+        <div className="tree-heading"><div><Icon name="book" size={16} /><h2 id="sidebar-conversations-title">对话</h2></div></div>
         <div id="right-nav-panel" hidden><div aria-label="收藏角色" className="hotswap" /></div>
-        {listError ? <p className="sidebar-error">{listError}</p> : null}
-        {characters.length === 0 ? (
-          <div className="tree-empty"><span>还没有角色</span><small>导入 PNG、JSON 或 CHARX 角色卡</small></div>
+        {groups.length === 0 ? (
+          <div className="tree-empty"><span>还没有对话</span><small>在角色库选择角色，开始第一段故事</small></div>
         ) : (
-          <ul className="character-list" aria-label="已保存角色">
-            {characters.map((character) => <li key={character.id}><button aria-pressed={selectedCharacterId === character.id} className="character-row" disabled={isLoadingCharacter} onClick={() => onSelectCharacter(character.id)} type="button"><CharacterAvatar character={character} /><span className="character-row__copy"><strong>{character.name}</strong><small>世界书 {character.lorebookEntryCount} · 正则 {character.regexScriptCount}</small></span><Icon name="chevron" size={14} /></button></li>)}
+          <ul className="conversation-groups" aria-label="按角色分组的对话">
+            {groups.map((group) => {
+              const isCollapsed = collapsedGroups.has(group.characterId);
+              return (
+                <li key={group.characterId}>
+                  <button aria-expanded={!isCollapsed} className="conversation-group__header" onClick={() => toggleGroup(group.characterId)} type="button"><Icon name="chevron" size={14} /><strong>{group.characterName}</strong></button>
+                  {isCollapsed ? null : (
+                    <ul className="conversation-group__items">
+                      {group.items.map((conversation) => <li key={conversation.id}><button data-conversation-id={conversation.id} aria-pressed={activeConversationId === conversation.id} className="conversation-row" onClick={() => onOpenConversation(conversation.id)} type="button"><span>{conversation.title}</span><small>{conversation.messageCount} 条</small></button></li>)}
+                    </ul>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

@@ -198,11 +198,10 @@ export function AppLayout(props: AppLayoutProps) {
         busy={isImporting || isSaving}
         collapsed={isSidebarCollapsed}
         conversationCount={conversations.length}
-        characters={characters}
+        conversations={conversations}
+        activeConversationId={activeConversation?.id}
         fileInputRef={fileInputRef}
         isImporting={isImporting}
-        isLoadingCharacter={isLoadingCharacter}
-        listError={listError}
         memoryInjectedCount={lastMemoryReport?.injectedCount ?? ""}
         memoryPanelOpen={memoryPanelOpen}
         onCollapseToggle={() => setIsSidebarCollapsed((value) => !value)}
@@ -210,10 +209,9 @@ export function AppLayout(props: AppLayoutProps) {
         onChatNav={() => { setMemoryPanelOpen(false); setWorkspaceView("chat"); }}
         onMemoryNav={() => { if (workspaceView === "chat" && memoryPanelOpen) { setMemoryPanelOpen(false); } else { setMemoryPanelOpen(true); setWorkspaceView("chat"); } }}
         onNavigate={setWorkspaceView}
+        onOpenConversation={(id) => void handleOpenConversation(id)}
         onOpenFilePicker={openFilePicker}
-        onSelectCharacter={(id) => void handleSelectCharacter(id)}
         pluginCount={plugins.length}
-        selectedCharacterId={selectedCharacter?.id}
         serviceState={serviceState}
         view={workspaceView}
       />
@@ -239,6 +237,7 @@ export function AppLayout(props: AppLayoutProps) {
         onCommit={() => void handleCommit()}
         onOpenFilePicker={openFilePicker}
         onSelectCharacter={(id) => void handleSelectCharacter(id)}
+        onBackToLibrary={() => characterSelection.setSelectedCharacter(null)}
         onStartConversation={() => void handleStartConversation()}
         preview={preview}
         previewHeadingRef={previewHeadingRef}
@@ -259,7 +258,6 @@ export function AppLayout(props: AppLayoutProps) {
         chatInput={chatInput}
         characters={characters}
         connectionLabel={isConnectionReady ? (provider?.model || "默认模型") : "未连接模型"}
-        conversations={conversations}
         onChatWithCharacter={(id) => void handleChatWithCharacter(id)}
         onOpenImport={openFilePicker}
         editingDraft={editingDraft}
@@ -291,7 +289,6 @@ export function AppLayout(props: AppLayoutProps) {
         onEditMessage={beginEditMessage}
         onEditingDraft={setEditingDraft}
         onGoToLibrary={() => setWorkspaceView("library")}
-        onOpenConversation={(id) => void handleOpenConversation(id)}
         onOpenSettings={() => setWorkspaceView("settings")}
         onRegenerate={() => void handleRegenerate()}
         onContinue={() => void handleContinue()}

@@ -6,7 +6,6 @@ import type {
   ChatMessage,
   CharacterSummary,
   ConversationDetail,
-  ConversationSummary,
   LorebookReport,
   MemoryRetrievalReport,
   PromptBudgetReport,
@@ -16,7 +15,6 @@ import type {
 import type { MessageListRef } from "../components";
 import { MemoryPanel } from "./MemoryPanel";
 import { ChatHeader } from "./chat/ChatHeader";
-import { StoryListPane } from "./chat/StoryListPane";
 import { ChatMessageRow } from "./chat/ChatMessageRow";
 import { ChatAuxiliary } from "./chat/ChatAuxiliary";
 import { ChatComposer } from "./chat/ChatComposer";
@@ -24,7 +22,6 @@ import { PromptPreviewPanel } from "./chat/PromptPreviewPanel";
 
 export interface ChatViewProps {
   generationControlsBusy: boolean;
-  conversations: ConversationSummary[];
   activeConversation: ConversationDetail | null;
   characters?: CharacterSummary[];
   connectionLabel?: string;
@@ -42,7 +39,6 @@ export interface ChatViewProps {
   onChatInput: (value: string) => void;
   onChatWithCharacter?: (id: string) => void;
   onOpenImport?: () => void;
-  onOpenConversation: (id: string) => void;
   onSendMessage: (input: string) => void;
   onStopGeneration: () => void;
   onRegenerate: () => void;
@@ -65,7 +61,6 @@ export interface ChatViewProps {
 // 聊天页组装层：持有 MessageSurface 绑定与来源聚焦，具体区块见 views/chat/ 下的子组件。
 export function ChatView({
   generationControlsBusy,
-  conversations,
   activeConversation,
   characters = [],
   connectionLabel = "未连接模型",
@@ -83,7 +78,6 @@ export function ChatView({
   onChatInput,
   onChatWithCharacter,
   onOpenImport,
-  onOpenConversation,
   onSendMessage,
   onStopGeneration,
   onRegenerate,
@@ -119,11 +113,6 @@ export function ChatView({
   }, [surface, activeConversation, sourceFocus]);
   return (
     <main className={`runtime-shell ${memoryPanelOpen && activeConversation ? "runtime-shell--memory" : ""}`}>
-      <StoryListPane
-        conversations={conversations}
-        activeConversationId={activeConversation?.id}
-        onOpenConversation={onOpenConversation}
-      />
       <section className="chat-pane" aria-label="角色对话">
         <ChatHeader
           activeConversation={activeConversation}
