@@ -2,7 +2,7 @@
 
 面向新人的开源 Windows AI 角色扮演桌面软件。使用独立 Electron、React、Fastify 与 SQLite，支持角色卡、长期记忆、世界书、正则与多供应商模型接入。
 
-MyCompanion 是独立的角色聊天应用，不是 SillyTavern 等开源项目的套壳：不内置、不运行也不分发完整酒馆前后端，不提供第三方 JS/CSS 扩展或酒馆助手兼容宿主。兼容范围限于角色卡等数据格式（Character Card V2/V3 的 PNG/JSON，以及 BYAF/CHARX 等导入导出），方便新人使用现有角色卡资源。具体支持见 [当前支持矩阵](docs/current-support.md)，推进状态见 [37项清单](docs/project-todo.md) 和 [实施证据](docs/checklist-implementation.md)。产品要求与发布门槛分别见 [spec.md](spec.md) 和 [test.md](test.md)。历史记录已移至 [README 历史](docs/independent-readme-history.md)。
+MyCompanion 是独立的角色聊天应用，不是 SillyTavern 等开源项目的套壳：不内置、不运行也不分发完整酒馆前后端，不提供第三方 JS/CSS 扩展或酒馆助手兼容宿主。兼容范围限于角色卡等数据格式（Character Card V2/V3 的 PNG/JSON，以及 BYAF/CHARX 等导入导出），方便新人使用现有角色卡资源。具体支持见 [当前支持矩阵](docs/current-support.md)，推进状态见 [37项清单](docs/project-todo.md) 和 [实施证据](docs/history/checklist-implementation.md)。产品要求与发布门槛分别见 [spec.md](spec.md) 和 [test.md](test.md)。历史记录已移至 [README 历史](docs/history/independent-readme-history.md)。
 
 要求 Node.js ≥22.12、npm ≥11。开发环境运行：
 

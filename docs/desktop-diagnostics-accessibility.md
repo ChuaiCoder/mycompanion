@@ -27,7 +27,7 @@
 
 ## 实际源码 Electron 证据
 
-验收脚本：[verify-renderer-diagnostics.mjs](../apps/desktop/scripts/verify-renderer-diagnostics.mjs)。它运行生产 renderer、实际本地服务、临时 SQLite profile 和真实 HTTP provider fixture，关闭并换新服务端口后重新打开窗口；没有运行或覆盖正式 EXE。
+验收脚本 verify-renderer-diagnostics.mjs 已随兼容层验证工具一并删除；当时的验收结论保留如下。它运行生产 renderer、实际本地服务、临时 SQLite profile 和真实 HTTP provider fixture，关闭并换新服务端口后重新打开窗口；没有运行或覆盖正式 EXE。
 
 最终报告：`.cache/reports/renderer-diagnostics-u05-20261003-r13.json`，**9 阶段通过**，SHA-256：`4bd672ed623a4ab06fe8f4a79efdf93dd77255a5ebb687e21b36944afa9f796a`。报告记录相应源码 hash 和加载的 renderer HTML hash，`completeU05`、`wcagConformanceClaim` 和 `assistiveTechnologyHumanTested` 都为 false。
 
