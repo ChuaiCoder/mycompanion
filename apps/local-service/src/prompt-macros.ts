@@ -14,7 +14,7 @@
 
 import { expandTavernRandom } from "./tavern-random-core.js";
 import { tavernTimeValue } from "./tavern-time-core.js";
-import { MacroEngine, MacroEnvironmentBuilder, createMacroEnvironment, createVariableStores, createLegacyVariableMacroRules, type VariableStore } from "@mycompanion/macro-engine";
+import { createVariableStores, createLegacyVariableMacroRules, type VariableStore } from "./macro-variables.js";
 import { createCharacterMacroFieldsLazy, readCharacterMacroFields, type CharacterMacroFields, type CharacterMacroFieldSources } from "@mycompanion/shared";
 
 export interface NativeCharacterMacroEnvironment {
@@ -36,6 +36,7 @@ const RANDOM_MACRO = /\{\{\s*random\s+([^{}]*?)\s*\}\}/gi;
 
 interface MacroContext {
   macroSession?: MacroEvaluationSession;
+  // 实验引擎分支已随 macro-engine 解耦移除；该开关被接受但忽略，随兼容层一起删除。
   experimentalMacroEngine?: boolean;
   characterName: string;
   userName: string;
@@ -225,41 +226,6 @@ export function resolveMacros(
     const source = value.startsWith("<START>") ? value : "<START>\n" + value.trim();
     return source.split(/<START>/gi).slice(1).map(block => "<START>\n" + block.trim() + "\n");
   };
-  if (context.experimentalMacroEngine) {
-    const user = context.userName ?? "User", char = context.characterName;
-    const read = (key: string, global: boolean) => stores[global ? "global" : "local"].get(key);
-    const values = {
-      names: { user, char, group: char, groupNotMuted: char, notChar: user },
-      ...(context.dynamicMacros === undefined ? {} : { dynamicMacros: context.dynamicMacros }),
-      extra: {
-        model: context.model, maxContext: context.contextLimitTokens, maxResponse: context.maxResponseTokens,
-        maxPrompt: context.contextLimitTokens === undefined || context.maxResponseTokens === undefined ? undefined : context.contextLimitTokens - context.maxResponseTokens,
-        ...Object.fromEntries(["date", "time", "weekday", "isodate", "isotime"].map(key => [key, () => tavernTimeValue(key, now, context.locale)])),
-        readVariable: read,
-        variables: stores,
-        parseMesExamples: parseExamples,
-        isInstruct: false,
-        getOutletPrompt: (key: string) => Object.hasOwn(context.worldInfoOutlets ?? {}, key) ? context.worldInfoOutlets![key] : "",
-      },
-    };
-    if (context.characterFieldSources) {
-      const builder = new MacroEnvironmentBuilder(() => ({ name1: user, name2: char,
-        getGeneratingModel: () => context.model ?? "",
-        getCharacterCardFieldsLazy: () => readFields() as unknown as Record<string, unknown> }));
-      const environment = builder.buildFromRawEnv({ content: text, ...(context.original === undefined ? {} : { original: context.original }),
-        replaceCharacterCard: context.replaceCharacterCard !== false,
-        ...(context.dynamicMacros === undefined ? {} : { dynamicMacros: context.dynamicMacros }),
-        ...(context.postProcessFn === undefined ? {} : { postProcessFn: context.postProcessFn }) });
-      Object.assign(environment.extra, values.extra);
-      return MacroEngine.evaluate(text, environment);
-    }
-    let originalSubstituted = false;
-    return MacroEngine.evaluate(text, createMacroEnvironment(text, { ...values,
-      functions: { postProcess: post, ...(context.original === undefined ? {} : { original: () => {
-        if (originalSubstituted) return "";
-        originalSubstituted = true; return context.original!;
-      } }) } }));
-  }
   const fields = context.characterFieldSources && context.replaceCharacterCard !== false
     ? readCharacterMacroFields(readFields()) : undefined;
   // Tavern runs variable macros before the ordinary environment macros. A

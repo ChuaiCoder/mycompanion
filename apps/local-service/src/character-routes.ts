@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 
+import deepmerge from "@fastify/deepmerge";
 import type { FastifyInstance, FastifyReply } from "fastify";
 
 import {
@@ -20,6 +21,7 @@ import {
   characterListResponseSchema,
   characterRelatedCountsSchema,
   characterRestoreResponseSchema,
+  characterUpdateRequestSchema,
   type ApiErrorResponse,
   type CharacterCardPreviewResponse,
   type CharacterDetail,
@@ -42,6 +44,9 @@ import { BoundedZipError } from "./bounded-zip.js";
 import { parseCharacterCardYaml } from "./character-yaml.js";
 import { parseCharacterByaf, importByafScenarios, type ByafImport } from "./character-byaf.js";
 import { materializeCharacterInlineAssets } from "./character-inline-assets.js";
+
+// 与酒馆编辑语义一致：提交的扩展字段合并到已存扩展之上，未提交的键保留。
+const mergeExtensions = deepmerge({ mergeArray: () => (_target, source) => structuredClone(source) });
 
 export class InvalidImportRequestError extends Error {
   readonly details: string[];
@@ -191,6 +196,54 @@ export function registerCharacterRoutes(app: FastifyInstance, characters: Charac
       return sendError(reply, 404, "CHARACTER_NOT_FOUND", "The requested character does not exist.");
     }
     return characterDetailSchema.parse(character);
+  });
+
+  // 原生角色更新：接收完整角色卡 JSON，走 character-repository 更新。
+  // 扩展字段合并保留、avatar 文件名稳定，更新后返回 CharacterDetail。
+  app.put<{
+    Params: CharacterParams;
+    Body: unknown;
+    Reply: CharacterDetail | ApiErrorResponse;
+  }>("/api/characters/:id", async (request, reply) => {
+    const stored = characters.getStored(request.params.id);
+    if (!stored) {
+      return sendError(reply, 404, "CHARACTER_NOT_FOUND", "The requested character does not exist.");
+    }
+    const parsed = characterUpdateRequestSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return sendError(reply, 400, "INVALID_REQUEST", "The character update request is invalid.");
+    }
+    try {
+      const card = parseCharacterCardDocument(parsed.data.card).card;
+      card.data.extensions = mergeExtensions(stored.rawCard.data.extensions, card.data.extensions) as Record<string, unknown>;
+      const updated = characters.update(stored.detail.id, card);
+      if (!updated) {
+        return sendError(reply, 404, "CHARACTER_NOT_FOUND", "The requested character does not exist.");
+      }
+      return characterDetailSchema.parse(updated.detail);
+    } catch (error) {
+      if (error instanceof CharacterCardParseError) {
+        return reply.status(422).send({
+          error: {
+            code: "INVALID_CHARACTER_CARD",
+            message: error.message,
+            details: error.issues,
+          },
+        } satisfies ApiErrorResponse);
+      }
+      throw error;
+    }
+  });
+
+  // 角色头像图像：URL 与酒馆兼容层保持一致（原生 UI 的 CharacterAvatar 直接使用）。
+  app.get<{ Params: { avatar: string } }>("/characters/:avatar", async (request, reply) => {
+    const stored = characters.getByAvatar(request.params.avatar);
+    if (stored) {
+      const path = mainIconPath(stored.rawCard), asset = path ? characters.assets.get(stored.detail.id,path) : undefined;
+      if (asset) return reply.type(characterAssetContentType(path!)).header("Cache-Control","no-store").send(asset);
+    }
+    return stored ? reply.type("image/png").header("Cache-Control", "no-store").send(Buffer.from(encodeCharacterCardPng(stored.rawCard, stored.sourcePng)))
+      : reply.code(404).send({ error: "Character not found" });
   });
 
   app.get<{

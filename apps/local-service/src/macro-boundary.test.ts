@@ -8,11 +8,11 @@ import { matchLorebookEntries } from "./worldbook-engine.js";
 import { browserMacroHarness } from "./browser-macro-test-helper.js";
 
 const context = { characterName: "Actor", userName: "User", model: "gpt-4o" };
-it.each([false, true])("sends dynamic continue macros through the actual served browser responder with experimental=%s",async experimentalMacroEngine=>{
+it("sends dynamic continue macros through the actual served browser responder",async()=>{
   const harness=browserMacroHarness(),session=new MacroEvaluationSession({variables:{count:0}});
   session.bindCharacterEnvironment({characterFieldSources:{description:"card"}});
   const dynamicMacros={lastChatMessage:"{{incvar::count}} {{char}} {{maxResponse}}",description:"{{char}}",char:"Override"};
-  const options={...context,experimentalMacroEngine,dynamicMacros,contextLimitTokens:1024,maxResponseTokens:128};
+  const options={...context,dynamicMacros,contextLimitTokens:1024,maxResponseTokens:128};
   const calls:BrowserMacroCall[]=[];
   const result=await runMacroBoundary(session,new AbortController().signal,async call=>{
     calls.push(call);
@@ -20,7 +20,7 @@ it.each([false, true])("sends dynamic continue macros through the actual served 
     expect(call.context.dynamicMacros).not.toBe(dynamicMacros);
     return harness.evaluateBrowserMacro({conversationId:null,branchId:null,evaluation:call});
   },()=>[session.evaluate("{{incvar::count}}/{{lastChatMessage}}",options),session.evaluate("{{description}}",options)]);
-  expect(result).toEqual(["1/{{incvar::count}} {{char}} "+(experimentalMacroEngine?"{{maxResponse}}":"128"),experimentalMacroEngine?"{{char}}":"Override"]);
+  expect(result).toEqual(["1/{{incvar::count}} {{char}} 128","Override"]);
   expect(calls).toHaveLength(2);expect(session.local.count).toBe(1);
   expect(harness.context.chatMetadata.variables).toBeUndefined();expect(harness.localSave).not.toHaveBeenCalled();
 });

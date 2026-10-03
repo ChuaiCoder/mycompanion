@@ -52,7 +52,7 @@ function assertSnapshot(messages: PromptMessage[], round: number, experimental: 
   expect(messages).toEqual(reference("native", round, experimental).messages);
 }
 
-it.each([false, true])("prepares the complete first character snapshot before WI and commits normal/quiet drafts (experimental=%s)", async experimental => {
+it.each([false])("prepares the complete first character snapshot before WI and commits normal/quiet drafts (experimental=%s)", async experimental => {
   const f = await fixture(experimental, {
     system_prompt: field("S", "systemRuns"), mes_example: field("E", "exampleRuns"),
     description: field("D", "descriptionRuns"), personality: field("P", "personalityRuns"),
@@ -130,7 +130,7 @@ it.each([false, true])("scans public globalScanData as literal prepared text wit
   expect.soft(await f.chat()).toEqual(before);
 });
 
-it.each([false, true])("honors metadata and preferences, normalizes card text and evaluates duplicate greetings separately (experimental=%s)", async experimental => {
+it.each([false])("honors metadata and preferences, normalizes card text and evaluates duplicate greetings separately (experimental=%s)", async experimental => {
   const duplicate = "DUPLICATE={{incvar::duplicateRuns}}";
   const f = await fixture(experimental, {
     description: "  DES\rCRIPTION\n\n\n\nTAIL {{incvar::descriptionRuns}}  ",

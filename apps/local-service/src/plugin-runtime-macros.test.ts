@@ -96,13 +96,11 @@ describe("legacy extension macros",()=>{
     try{expect(h.substituteParams("{{bridgeOriginal}}/{{original}}/{{bridgeOriginal}}",{original:"once"})).toBe("/once/");}
     finally{h.registry.unregisterMacro("bridgeOriginal");}
   });
-  it("shares parameterized parser semantics with native templates when the engine is selected",()=>{
+  it("evaluates parameterized parser semantics in the served browser engine",()=>{
     const h=harness();h.powerUser.experimental_macro_engine=true;
     h.variables.setLocalVariable("flag", "1");
     const text="{{if {{getvar::flag}}}}{{reverse::{{char}}}}/{{maxPrompt}}/{{space::2}}{{else}}wrong{{/if}}";
-    const native=resolveMacros(text,{characterName:"Actor",userName:"Reader",contextLimitTokens:4096,maxResponseTokens:256,experimentalMacroEngine:true,localVariables:{flag:1}});
-    expect(h.substituteParams(text)).toBe(native);
-    expect(native).toBe("rotcA/3840/");
+    expect(h.substituteParams(text)).toBe("rotcA/3840/");
     expect(h.substituteParams("{{maxPrompt}}/{{maxResponse}}",{dynamicMacros:{maxPrompt:4000,maxResponse:96}})).toBe("4000/96");
   });
   it("matches native localized and ISO time macros in the same fixed minute",()=>{

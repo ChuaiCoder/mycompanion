@@ -79,20 +79,20 @@ describe("resolveMacros", () => {
     expect(resolveMacros("{{random }}", { characterName: "A" })).toBe("{{random }}");
   });
 
-  it.each([false, true])("preserves dynamic replacement phase and session cache with experimental=%s", experimentalMacroEngine => {
+  it("preserves dynamic replacement phase and session cache", () => {
     const session = new MacroEvaluationSession({variables:{count:0}});
-    const context = {characterName:"Actor",userName:"Reader",experimentalMacroEngine,contextLimitTokens:1024,maxResponseTokens:128};
+    const context = {characterName:"Actor",userName:"Reader",contextLimitTokens:1024,maxResponseTokens:128};
     const value = "{{incvar::count}} {{char}} {{maxResponse}}";
     expect(session.evaluate("{{incvar::count}}/{{lastChatMessage}}", {...context,dynamicMacros:{lastChatMessage:value}}))
-      .toBe("1/"+value.replace("{{maxResponse}}",experimentalMacroEngine?"{{maxResponse}}":"128"));
+      .toBe("1/"+value.replace("{{maxResponse}}","128"));
     expect(session.local.count).toBe(1);
     expect(session.resolve("continue","{{lastChatMessage}}",{...context,dynamicMacros:{lastChatMessage:"first"}})).toBe("first");
     expect(session.resolve("continue","{{lastChatMessage}}",{...context,dynamicMacros:{lastChatMessage:"second"}})).toBe("second");
     expect(session.evaluate("{{CHAR}}",{...context,dynamicMacros:{char:"Override"}})).toBe("Override");
     expect(session.evaluate("{{description}}",{...context,characterFieldSources:{description:"card"},dynamicMacros:{description:"{{char}}"}}))
-      .toBe(experimentalMacroEngine?"{{char}}":"Actor");
+      .toBe("Actor");
     expect(session.evaluate("{{tag.key+}}",{...context,dynamicMacros:{"tag.key+":"literal"}}))
-      .toBe(experimentalMacroEngine?"{{tag.key+}}":"literal");
+      .toBe("literal");
   });
 
   it("selects from Tavern's double-colon and escaped-comma syntax", () => {

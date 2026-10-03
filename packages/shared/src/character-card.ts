@@ -159,6 +159,15 @@ export const characterImportCommitQuerySchema = z.object({
     context.addIssue({ code: "custom", message: "复制角色不能指定替换目标。" });
 });
 
+// 原生角色更新请求（PUT /api/characters/:id）：完整的角色卡 JSON 文档。
+export const characterUpdateRequestSchema = z
+  .object({
+    card: z.unknown(),
+  })
+  .strict();
+
+export type CharacterUpdateRequest = z.infer<typeof characterUpdateRequestSchema>;
+
 export const characterSummarySchema = z.object({
   avatar: z.string().optional(),
   id: z.uuid(),

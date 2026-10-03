@@ -204,15 +204,6 @@ export function registerCharacterCompatibility(app: FastifyInstance, characters:
       runtime.retainedChats.removeCharacter(stored.detail.id, stored.detail.avatar!, fields.delete_chats === true || fields.delete_chats === 1 || fields.delete_chats === "1");
       return reply.type("text/plain").send("OK");
     });
-    scoped.get<{ Params: { avatar: string } }>("/characters/:avatar", async (request, reply) => {
-      const stored = characters.getByAvatar(request.params.avatar);
-      if (stored) {
-        const path = mainIconPath(stored.rawCard), asset = path ? characters.assets.get(stored.detail.id,path) : undefined;
-        if (asset) return reply.type(characterAssetContentType(path!)).header("Cache-Control","no-store").send(asset);
-      }
-      return stored ? reply.type("image/png").header("Cache-Control", "no-store").send(Buffer.from(encodeCharacterCardPng(stored.rawCard, stored.sourcePng)))
-        : reply.code(404).send({ error: "Character not found" });
-    });
     scoped.get<{ Querystring: { type?: string; file?: string } }>("/thumbnail", async (request, reply) => {
       const stored = request.query.type === "avatar" ? characters.getByAvatar(request.query.file ?? "") : undefined;
       if (stored) {

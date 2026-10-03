@@ -21,7 +21,7 @@ it.each([false, true])("only evaluates NONE extension prompts when scanning is r
   expect(saved.chatMetadata.variables ?? {}).toEqual(skipWIAN ? {} : { scanned: 1 });
 });
 
-it.each([false,true])("commits one normal/quiet draft while previews stay read-only (experimental=%s)",async experimental=>{
+it.each([false])("commits one normal/quiet draft while previews stay read-only (experimental=%s)",async experimental=>{
   const app=buildApp();apps.push(app);
   const avatar=(await app.inject({method:"POST",url:"/api/characters/create",payload:{ch_name:"Macro",first_mes:"Hello",description:"CARD={{incvar::card}}/{{incglobalvar::global}}"}})).body;
   const character=(await app.inject({method:"POST",url:"/api/characters/get",payload:{avatar_url:avatar}})).json();

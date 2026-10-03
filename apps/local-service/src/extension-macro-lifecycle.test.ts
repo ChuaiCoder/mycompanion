@@ -20,7 +20,7 @@ async function fixture(experimental: boolean) {
   return {app,character,story,chat,settings,scan,assemble};
 }
 
-it.each([false,true])("publishes public API effects once before extension transport (experimental=%s)",async experimental=>{
+it.each([false])("publishes public API effects once before extension transport (experimental=%s)",async experimental=>{
   const f=await fixture(experimental);
   const scan=await f.scan();expect(scan.statusCode,scan.body).toBe(200);
   expect(scan.json().report.block).toBe("WORLD=1/1");expect(scan.json().macroChanges).toHaveLength(experimental?2:3);
@@ -39,7 +39,7 @@ it.each([false,true])("publishes public API effects once before extension transp
   const next=await f.scan();expect(next.json().report.block).toBe("WORLD=2/2");
 });
 
-it.each([false,true])("keeps explicit internal read-only scans and previews free of writes (experimental=%s)",async experimental=>{
+it.each([false])("keeps explicit internal read-only scans and previews free of writes (experimental=%s)",async experimental=>{
   const f=await fixture(experimental),before=await f.chat(),settings=await f.settings();
   const scan=await f.scan({commitVariables:false});expect(scan.statusCode).toBe(200);expect(scan.json().report.block).toBe("WORLD=1/1");
   const assembly=await f.assemble({commitVariables:false});expect(assembly.statusCode,assembly.body).toBe(200);

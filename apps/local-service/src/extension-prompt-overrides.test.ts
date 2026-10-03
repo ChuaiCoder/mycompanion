@@ -4,7 +4,7 @@ import { apps } from "./test-helpers.js";
 import reference from "./fixtures/prompt-remaining-upstream-reference.json" with { type: "json" };
 
 it.each([
-  [false, false], [false, true], [true, false], [true, true],
+  [false, false], [false, true],
 ])("preserves explicit public overrides and each engine's independent card environment (experimental=%s, suppliedWI=%s)",
   async (experimental, suppliedWI) => {
     const app = buildApp(); apps.push(app);
