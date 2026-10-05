@@ -6,8 +6,8 @@ jobs:
   check:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: npm
@@ -16,7 +16,9 @@ jobs:
       - run: npm run build -w @mycompanion/desktop
       - run: npm run prepare:source
       - run: node scripts/verify-corresponding-source.mjs
-      - uses: actions/upload-artifact@v4
+      # 运行时要求 node24：checkout@v5 / setup-node@v5 / upload-artifact@v6。
+      # 注意 upload-artifact 的 **v5 仍声明 node20**，只有 v6 才不会触发弃用警告。
+      - uses: actions/upload-artifact@v6
         if: always()
         with:
           name: corresponding-source-validation
