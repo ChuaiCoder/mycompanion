@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { GenerationSseEvent } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { apps, fullV2Card, sseResponse, completionResponse, stoppableSseResponse } from "./test-helpers.js";
+import { apps, fullV2Card, sseResponse, completionResponse, stoppableSseResponse } from "./testing/helpers.js";
 
 afterEach(() => vi.restoreAllMocks());
 const nativeFetch = globalThis.fetch;

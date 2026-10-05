@@ -8,15 +8,15 @@ import { createContext, runInContext } from "node:vm";
 import { parse } from "acorn";
 import { parseRegexFromString, worldInfoSettingsSchema, type CharacterLorebookEntry, type ChatMessage } from "@mycompanion/shared";
 import { parseCharacterCardDocument } from "@mycompanion/character-card";
-import { matchLorebookEntries, estimateTokens } from "./worldbook-engine.js";
+import { matchLorebookEntries, estimateTokens } from "./world-info/worldbook-engine.js";
 import { createWorldInfoRuntime } from "./world-info-upstream-runtime.js";
-import { createWorldInfoEffectsDraft, commitWorldInfoEffects, getWorldInfoEffects, getCommittedWorldInfoState, worldInfoStateRevision, WORLD_INFO_STATE_KEY } from "./world-info-effects.js";
-import { RuntimeRepository } from "./runtime-repository.js";
-import { CharacterRepository } from "./character-repository.js";
-import { MacroEvaluationSession, resolveMacroField } from "./prompt-macros.js";
-import { buildWorldInfoReport, finalizeWorldInfoRegex } from "./world-info-service.js";
-import { getWorldInfoOutletEntries } from "./world-info-activation.js";
-import { TavernRegexExecutor } from "./tavern-regex-service.js";
+import { createWorldInfoEffectsDraft, commitWorldInfoEffects, getWorldInfoEffects, getCommittedWorldInfoState, worldInfoStateRevision, WORLD_INFO_STATE_KEY } from "./world-info/world-info-effects.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
+import { CharacterRepository } from "./character/character-repository.js";
+import { MacroEvaluationSession, resolveMacroField } from "./prompt/prompt-macros.js";
+import { buildWorldInfoReport, finalizeWorldInfoRegex } from "./world-info/world-info-service.js";
+import { getWorldInfoOutletEntries } from "./world-info/world-info-activation.js";
+import { TavernRegexExecutor } from "./prompt/tavern-regex-service.js";
 
 const characterId = "00000000-0000-4000-8000-000000000001";
 const entry = (index: number, extra: Record<string, unknown> = {}, override: Partial<CharacterLorebookEntry> = {}): CharacterLorebookEntry => ({

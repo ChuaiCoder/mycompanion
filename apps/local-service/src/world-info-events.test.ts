@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { encodeWorldInfoGraph, decodeWorldInfoGraph } from "./world-info-event-graph.js";
+import { encodeWorldInfoGraph, decodeWorldInfoGraph } from "./world-info/world-info-event-graph.js";
 
 it("round-trips graph aliases, Map/Set keys, cycles and scalars while reusing identities across loops",()=>{
   const nativeObjects:object[]=[],browserObjects:object[]=[];

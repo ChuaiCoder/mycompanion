@@ -8,8 +8,8 @@ import { randomUUID } from "node:crypto";
 import { describe,expect,it,vi } from "vitest";
 import type { MemoryRecord } from "@mycompanion/shared";
 import { SemanticMemoryRetriever, type EmbeddingSelection } from "./semantic-memory.js";
-import { VectorStore } from "./vector-store.js";
-import { embedTexts, embeddingSignature, vectorContentFingerprint } from "./embedding-client.js";
+import { VectorStore } from "../providers/vector-store.js";
+import { embedTexts, embeddingSignature, vectorContentFingerprint } from "../providers/embedding-client.js";
 
 function memory(content:string,patch:Partial<MemoryRecord>={}):MemoryRecord {
   return {id:randomUUID(),conversationId:randomUUID(),characterId:randomUUID(),type:"fact",content,scope:"story",importance:3,status:"active",pinned:false,

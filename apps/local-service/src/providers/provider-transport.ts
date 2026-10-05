@@ -1,6 +1,6 @@
 import { modelResponseStateSchema, type ProviderSettings } from "@mycompanion/shared";
 import { ModelRequestError } from "./model-request-error.js";
-import { convertClaudeMessages, convertGooglePrompt, calculateClaudeBudgetTokens, calculateGoogleBudgetTokens } from "./provider-converters-upstream.js";
+import { convertClaudeMessages, convertGooglePrompt, calculateClaudeBudgetTokens, calculateGoogleBudgetTokens } from "../provider-converters-upstream.js";
 
 export type CompletionProtocol = "openai" | "claude" | "gemini";
 const object = (value: unknown): Record<string, any> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, any> : {};

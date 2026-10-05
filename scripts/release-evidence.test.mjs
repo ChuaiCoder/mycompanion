@@ -32,3 +32,19 @@ test('a non-passing checklist item or high severity defect blocks promotion', ()
   const result = validateReleaseEvidence(manifest, data, ['G04', 'G05']);
   assert(result.some(text => text.includes('G04'))); assert(result.some(text => text.includes('High')));
 });
+test('a void checklist item needs no evidence but cannot claim a passing status', () => {
+  const ids = [{ id: 'G04', void: false }, { id: 'G05', void: false }, { id: 'E01', void: true }];
+  const absent = fixture(); assert.deepEqual(validateReleaseEvidence(manifest, absent, ids), []);
+  const declared = fixture(); declared.items.E01 = { status: 'void', reports: [] };
+  assert.deepEqual(validateReleaseEvidence(manifest, declared, ids), []);
+  const stale = fixture(); stale.items.E01 = { status: 'passed', reports: ['stale.json'] };
+  const result = validateReleaseEvidence(manifest, stale, ids);
+  assert(result.some(text => text.includes('E01') && text.includes('void')), result.join('; '));
+});
+test('excluding void items does not weaken a real item', () => {
+  const data = fixture(); delete data.items.G04;
+  const ids = [{ id: 'G04', void: false }, { id: 'G05', void: false }, { id: 'E01', void: true }];
+  const result = validateReleaseEvidence(manifest, data, ids);
+  assert(result.some(text => text.includes('G04')), result.join('; '));
+});
+

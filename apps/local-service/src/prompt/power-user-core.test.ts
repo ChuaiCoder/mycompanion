@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
 import { getPersonaDescription, getPersonaUserName, POWER_USER_SETTINGS_KEY } from "./power-user-core.js";
-import reference from "./fixtures/prompt-persona-examples-upstream-reference.json" with { type: "json" };
+import reference from "../fixtures/prompt-persona-examples-upstream-reference.json" with { type: "json" };
 
 it("migrates the legacy persona position using the executed original setPersonaDescription result",()=>{
   const oracle=reference.runs.find(run=>run.mode==="legacy-persona-position")!;

@@ -2,12 +2,12 @@ import { randomUUID } from "node:crypto";
 import { posix } from "node:path";
 import { CharacterCardParseError, parseCharacterCardDocument } from "@mycompanion/character-card";
 import type { CharacterImport } from "./character-repository.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import { readBoundedZip, normalizeZipPath } from "./bounded-zip.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import { readBoundedZip, normalizeZipPath } from "../bounded-zip.js";
 import { characterAssetLimits } from "./character-archive.js";
-import { ByafParser } from "./character-byaf-upstream.js";
-import { byafManifestSchema, byafCharacterSchema, byafScenarioSchema } from "./character-byaf-schemas.js";
-import { byafDate } from "./character-byaf-utils.js";
+import { ByafParser } from "../character-byaf-upstream.js";
+import { byafManifestSchema, byafCharacterSchema, byafScenarioSchema } from "../character-byaf-schemas.js";
+import { byafDate } from "../character-byaf-utils.js";
 
 type JsonObject = Record<string, unknown>;
 export interface ByafImport extends CharacterImport {

@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { EMBEDDING_BATCH_SIZE, embedTexts, embeddingSignature, vectorContentFingerprint } from "./embedding-client.js";
-import type { EmbeddingSelection } from "./semantic-memory.js";
+import type { EmbeddingSelection } from "../memory/semantic-memory.js";
 import type { VectorStore } from "./vector-store.js";
 
 export interface VectorItem { hash: number; text: string; index: string | number }

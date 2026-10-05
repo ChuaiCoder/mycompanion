@@ -3,8 +3,8 @@ import { describe, expect, it } from "vitest";
 import type { CharacterLorebookEntry } from "@mycompanion/shared";
 
 import { estimateTokens, matchLorebookEntries } from "./worldbook-engine.js";
-import { tavernTimeValue } from "./tavern-time-core.js";
-import { MacroEvaluationSession } from "./prompt-macros.js";
+import { tavernTimeValue } from "../prompt/tavern-time-core.js";
+import { MacroEvaluationSession } from "../prompt/prompt-macros.js";
 
 const CHARACTER_ID = "00000000-0000-4000-8000-000000000001";
 const CHARACTER_NAME = "阿斯特";

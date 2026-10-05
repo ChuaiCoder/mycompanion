@@ -1,11 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { providerProfilesSchema, providerProfileSchema, saveProviderProfileSchema, updateProviderTaskAssignmentsSchema,
   updateProviderSettingsSchema } from "@mycompanion/shared";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import type { SecretCodec } from "./route-types.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import type { SecretCodec } from "../route-types.js";
 import { sameProviderCredentialScope } from "./provider-credential-scope.js";
 import { probeProvider } from "./provider-probe.js";
-import { sendError } from "./http-errors.js";
+import { sendError } from "../http-errors.js";
 import { embedTexts, EmbeddingRequestError } from "./embedding-client.js";
 import { providerFailureDetails } from "./provider-errors.js";
 

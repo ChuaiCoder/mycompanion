@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { conversationDetailSchema } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
 import {
   apps,
   commitCard,
@@ -11,7 +11,7 @@ import {
   parseSse,
   setLorebookEntryEnabled,
   sseResponse,
-} from "./test-helpers.js";
+} from "./testing/helpers.js";
 
 describe("prompt budget (FR-PROMPT-003)", () => {
   it("emits a prompt_budget report and trims within a tight context limit", async () => {

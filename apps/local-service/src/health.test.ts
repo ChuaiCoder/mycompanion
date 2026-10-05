@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { healthResponseSchema } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
-import { apps } from "./test-helpers.js";
+import { apps } from "./testing/helpers.js";
 
 describe("GET /api/health", () => {
   it("returns a response that matches the shared API contract", async () => {

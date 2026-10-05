@@ -6,10 +6,10 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach,expect,it,vi } from "vitest";
 import type { MemoryRecord, MemoryRetrievalReport } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { RuntimeRepository } from "./runtime-repository.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { parseSse,sseResponse,completionResponse } from "./test-helpers.js";
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { parseSse,sseResponse,completionResponse } from "./testing/helpers.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
 
 const resources:Array<{app:ReturnType<typeof buildApp>;database:DatabaseSync;path:string}>=[];
 afterEach(async()=>{for(const {app,database,path}of resources.splice(0)){await app.close();database.close();for(const suffix of["","-wal","-shm"])rmSync(path+suffix,{force:true});}});

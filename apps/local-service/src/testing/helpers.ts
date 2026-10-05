@@ -4,7 +4,7 @@ import { afterEach, expect, vi } from "vitest";
 
 import { characterDetailSchema } from "@mycompanion/shared";
 
-import { buildApp } from "./app.js";
+import { buildApp } from "../app.js";
 
 export type TestApp = ReturnType<typeof buildApp>;
 
@@ -23,7 +23,7 @@ export { apps };
 export const fullV2Card = JSON.parse(
   readFileSync(
     new URL(
-      "../../../packages/character-card/fixtures/ccv2-full.json",
+      "../../../../packages/character-card/fixtures/ccv2-full.json",
       import.meta.url,
     ),
     "utf8",

@@ -6,7 +6,7 @@ import {
 } from "@mycompanion/character-card";
 
 import { buildApp } from "./app.js";
-import { apps, fullV2Card } from "./test-helpers.js";
+import { apps, fullV2Card } from "./testing/helpers.js";
 
 describe("POST /api/characters/import/preview", () => {
   it("returns a structured V2 preview without persisting the card", async () => {

@@ -6,10 +6,10 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it, vi } from "vitest";
 import { parseCharacterCardDocument } from "@mycompanion/character-card";
 import { type BackupPayload, type ChatMessage, type ConversationDetail, type MemoryRecord } from "@mycompanion/shared";
-import { applyRestore, assembleBackupPayload, backupChecksum, verifyBackupPayload } from "./backup.js";
+import { applyRestore, assembleBackupPayload, backupChecksum, verifyBackupPayload } from "./storage/backup.js";
 import { buildApp } from "./app.js";
-import { CharacterRepository } from "./character-repository.js";
-import { RuntimeRepository } from "./runtime-repository.js";
+import { CharacterRepository } from "./character/character-repository.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
 
 type App = ReturnType<typeof buildApp>;
 const resources: Array<{ app: App; database: DatabaseSync; path: string }> = [];

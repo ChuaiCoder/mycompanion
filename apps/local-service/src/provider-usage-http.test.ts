@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect,it } from "vitest";
 import { buildApp } from "./app.js";
-import { parseSse } from "./test-helpers.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { streamReply } from "./model-client.js";
+import { parseSse } from "./testing/helpers.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { streamReply } from "./providers/model-client.js";
 import { promptBudgetReportSchema,chatMessageSchema,characterDetailSchema,lorebookReportSchema,memoryRetrievalReportSchema,type ProviderTokenUsage } from "@mycompanion/shared";
 
 it("records a usage-only final HTTP SSE frame separately from local budget and persists safe numeric usage through restart/export",async()=>{

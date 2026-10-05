@@ -15,7 +15,7 @@ import sanitize from 'sanitize-filename';
 import lodash from 'lodash';
 import { ZipFile } from 'yazl';
 import { buildApp } from '../../apps/local-service/dist/app.js';
-import { parseCharacterArchive } from '../../apps/local-service/dist/character-archive.js';
+import { parseCharacterArchive } from '../../apps/local-service/dist/character/character-archive.js';
 import { encodeCharacterCardPng,parseCharacterCardDocument,parseCharacterCardPngDocument } from '@mycompanion/character-card';
 
 const {values}=parseArgs({options:{'upstream-dir':{type:'string'},'report-dir':{type:'string'}}});

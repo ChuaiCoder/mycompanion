@@ -1,15 +1,15 @@
 import type { FastifyInstance } from "fastify";
 import { worldInfoDocumentSchema, worldInfoSettingsSchema, type CharacterLorebookEntry } from "@mycompanion/shared";
 import type { WorldInfoRepository } from "./world-info-repository.js";
-import type { CharacterRepository } from "./character-repository.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
+import type { CharacterRepository } from "../character/character-repository.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
 import { buildWorldInfoReport, finalizeWorldInfoRegex, collectWorldInfoEntries } from "./world-info-service.js";
 import { normalizeWorldInfoEntries } from "./worldbook-engine.js";
-import { MacroEvaluationSession } from "./prompt-macros.js";
-import { MacroVariableConflictError } from "./macro-variable-conflict.js";
-import { sendError } from "./http-errors.js";
-import { TavernRegexExecutor } from "./tavern-regex-service.js";
-import { bindCharacterMacroEnvironment } from "./character-macros.js";
+import { MacroEvaluationSession } from "../prompt/prompt-macros.js";
+import { MacroVariableConflictError } from "../prompt/macro-variable-conflict.js";
+import { sendError } from "../http-errors.js";
+import { TavernRegexExecutor } from "../prompt/tavern-regex-service.js";
+import { bindCharacterMacroEnvironment } from "../character/character-macros.js";
 import { commitWorldInfoEffects, getCommittedWorldInfoState } from "./world-info-effects.js";
 import { getWorldInfoActivatedEntries, getWorldInfoOutletEntries } from "./world-info-activation.js";
 

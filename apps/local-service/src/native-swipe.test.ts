@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ConversationDetail } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
-import { apps, commitCard } from "./test-helpers.js";
+import { apps, commitCard } from "./testing/helpers.js";
 
 const swipeCard = {
   spec: "chara_card_v2",

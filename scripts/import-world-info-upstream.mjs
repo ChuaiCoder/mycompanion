@@ -90,31 +90,11 @@ export function createWorldInfoRuntime(deps: any): any {
 }
 `;
 const sha256 = source => createHash('sha256').update(source).digest('hex');
-const macroPath = 'public/scripts/macros/definitions/core-macros.js';
-const macros = readFileSync(join(root, macroPath), 'utf8');
-const macroFunction = ast(macros).body.map(unwrap).find(node => node?.id?.name === 'registerCoreMacros');
-const outletNode = macroFunction.body.body.find(node => node.type === 'ExpressionStatement'
-  && node.expression?.callee?.object?.name === 'MacroRegistry' && node.expression?.arguments?.[0]?.value === 'outlet');
-if (!outletNode) throw new Error('Missing fixed-upstream outlet registration');
-const outlet = macros.slice(outletNode.start, outletNode.end)
-  .replace('handler: ({ unnamedArgs: [outlet] })', 'handler: ({ unnamedArgs: [outlet], env })')
-  .replace('extension_prompts[inject_ids.CUSTOM_WI_OUTLET(outlet)]?.value', 'env.extra.getOutletPrompt?.(outlet)');
-const outletSource = `// Extracted from SillyTavern 1.19.0, ${commit}.
-// SPDX-License-Identifier: AGPL-3.0-only
-// Bind the upstream outlet read to this invocation's prompt map.
-import { MacroRegistry, MacroCategory } from '../engine/MacroRegistry.js';
-export function registerWorldInfoMacros() {
-  ${outlet}
-}
-`;
-writeFileSync(resolve('packages/macro-engine/src/definitions/world-info-macros.js'), outletSource);
-const macroManifestPath = resolve('packages/macro-engine/upstream.json');
-const macroManifest = JSON.parse(readFileSync(macroManifestPath, 'utf8'));
-macroManifest.files = macroManifest.files.filter(file => file.path !== 'src/definitions/world-info-macros.js');
-macroManifest.files.push({ path: 'src/definitions/world-info-macros.js', upstreamPath: macroPath,
-  upstreamSha256: sha256(macros), adaptedSha256: sha256(outletSource),
-  adaptation: 'Extract the exact outlet registration, including metadata and typed parser arguments. Bind only the extension prompt getter to env.extra.getOutletPrompt; do not recursively substitute its returned value.' });
-writeFileSync(macroManifestPath, JSON.stringify(macroManifest, null, 2) + '\n');
+// The macro-engine outlet extraction was removed with the compatibility layer.
+// It wrote `packages/macro-engine/src/definitions/world-info-macros.js` and edited
+// `packages/macro-engine/upstream.json`, neither of which exists any more, so
+// running this importer would fail after the runtime source had already been
+// rewritten. Only the native scanner runtime is regenerated here.
 writeFileSync(resolve('apps/local-service/src/world-info-upstream-runtime.ts'), source);
 writeFileSync(resolve('apps/local-service/world-info-upstream.json'), JSON.stringify({
   repository: 'https://github.com/SillyTavern/SillyTavern', commit, license: 'AGPL-3.0-only',

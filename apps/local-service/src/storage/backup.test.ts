@@ -10,7 +10,7 @@ import {
   type MemoryRecord,
 } from "@mycompanion/shared";
 
-import { buildApp } from "./app.js";
+import { buildApp } from "../app.js";
 import { backupChecksum } from "./backup.js";
 import {
   apps,
@@ -20,7 +20,7 @@ import {
   sseResponse,
   waitFor,
   type TestApp,
-} from "./test-helpers.js";
+} from "../testing/helpers.js";
 
 describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
   /** 轮询后台记忆提取直到本故事出现至少一条记忆。 */
@@ -384,6 +384,73 @@ describe("数据导入、导出与备份 (FR-DATA-001…004)", () => {
     expect(danglingPreview.statusCode).toBe(422);
     const danglingErrors = (danglingPreview.json() as { errors: string[] }).errors;
     expect(danglingErrors.some((error) => error.includes("记忆"))).toBe(true);
+  });
+
+  it("carries the story soft-delete state through a backup round-trip (FR-DATA-003/004)", async () => {
+    // 以前备份不记录 deleted_at：恢复到新库会让已删故事重新出现，
+    // 覆盖恢复也回不到"已删除"的状态。
+    const { app, conversation } = await seedConversation();
+    const deletedAt = new Date().toISOString();
+    expect((await app.inject({ method: "DELETE", url: `/api/conversations/${conversation.id}` })).statusCode).toBe(200);
+
+    const exported = (await app.inject({ method: "GET", url: "/api/backup" })).json() as {
+      conversations: Array<{ id: string; deletedAt?: string }>;
+    };
+    const exportedEntry = exported.conversations.find(entry => entry.id === conversation.id);
+    expect(exportedEntry, "已删除的故事仍要进备份（否则无法恢复）").toBeDefined();
+    // 关键：删除状态本身必须一起备份。
+    expect(exportedEntry!.deletedAt).toBeTruthy();
+    expect(new Date(exportedEntry!.deletedAt!).getTime()).toBeLessThanOrEqual(new Date(deletedAt).getTime() + 1000);
+
+    // 恢复到全新服务：故事必须仍是"已删除"，不能重新出现在列表里。
+    const restoreApp = buildApp();
+    apps.push(restoreApp);
+    const restored = await restoreApp.inject({
+      method: "POST", url: "/api/backup/restore", payload: { strategy: "overwrite", backup: exported },
+    });
+    expect(restored.statusCode, restored.body).toBe(200);
+    const listed = (await restoreApp.inject({ method: "GET", url: "/api/conversations" })).json() as { items: Array<{ id: string }> };
+    expect(listed.items.map(item => item.id)).not.toContain(conversation.id);
+  });
+
+  it("does not overwrite the auto-summary switch when the strategy is skip (FR-DATA-003)", async () => {
+    // 「跳过冲突」以前只对角色/故事/插件生效，对话设置是**无条件覆盖**的。
+    const { app, conversation } = await seedConversation();
+    // 先显式打开自动摘要，制造一条"本机已存在"的设置行；否则恢复到空库不算冲突。
+    const turnedOn = await app.inject({
+      method: "PUT", url: `/api/conversations/${conversation.id}/summary/auto`, payload: { enabled: true },
+    });
+    expect(turnedOn.statusCode, turnedOn.body).toBe(200);
+
+    const backup = (await app.inject({ method: "GET", url: "/api/backup" })).json() as {
+      conversationSettings: Array<{ conversationId: string; autoSummaryEnabled: boolean }>;
+    };
+    // 备份里把开关设成与当前相反的值。
+    const current = (await app.inject({ method: "GET", url: `/api/conversations/${conversation.id}/summary` })).json() as { autoSummaryEnabled: boolean };
+    const target = backup.conversationSettings.find(entry => entry.conversationId === conversation.id)!;
+    expect(target, "备份应包含该故事的自动摘要设置").toBeDefined();
+    target.autoSummaryEnabled = !current.autoSummaryEnabled;
+    // 改过内容必须重算校验和，否则会被完整性校验拦下（422）。
+    (backup as unknown as { manifest: { checksum: string } }).manifest.checksum = backupChecksum(
+      backup as unknown as Parameters<typeof backupChecksum>[0],
+    );
+
+    const skipped = await app.inject({
+      method: "POST", url: "/api/backup/restore", payload: { strategy: "skip", backup },
+    });
+    expect(skipped.statusCode, skipped.body).toBe(200);
+    // 跳过冲突就不该改动本机的开关。
+    const after = (await app.inject({ method: "GET", url: `/api/conversations/${conversation.id}/summary` })).json() as { autoSummaryEnabled: boolean };
+    expect(after.autoSummaryEnabled).toBe(current.autoSummaryEnabled);
+    expect((skipped.json() as { skipped: { conversationSettings?: number } }).skipped.conversationSettings).toBeGreaterThan(0);
+
+    // overwrite 策略下才允许改写。
+    const overwritten = await app.inject({
+      method: "POST", url: "/api/backup/restore", payload: { strategy: "overwrite", backup },
+    });
+    expect(overwritten.statusCode, overwritten.body).toBe(200);
+    const final = (await app.inject({ method: "GET", url: `/api/conversations/${conversation.id}/summary` })).json() as { autoSummaryEnabled: boolean };
+    expect(final.autoSummaryEnabled).toBe(!current.autoSummaryEnabled);
   });
 
   it("rejects an invalid restore payload (FR-DATA-003)", async () => {

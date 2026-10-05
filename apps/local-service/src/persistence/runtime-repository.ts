@@ -1,16 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
-import type { MacroVariableChange } from "./prompt-macros.js";
-import { MacroVariableConflictError } from "./macro-variable-conflict.js";
-import { worldInfoStateRevision, worldInfoSourcesMatch, WORLD_INFO_STATE_KEY,restoreWorldInfoStateForBranch } from "./world-info-effects.js";
+import type { MacroVariableChange } from "../prompt/prompt-macros.js";
+import { MacroVariableConflictError } from "../prompt/macro-variable-conflict.js";
+import { worldInfoStateRevision, worldInfoSourcesMatch, WORLD_INFO_STATE_KEY,restoreWorldInfoStateForBranch } from "../world-info/world-info-effects.js";
 import { DatabaseSync } from "node:sqlite";
-import { classifyMemoryRelation, isCompleteSourceQuote, isProtectedMemory, quoteDirectlyNamesClaim, quoteProvesTransition } from "./memory-conflict-core.js";
-import { WorldInfoRepository } from "./world-info-repository.js";
-import { RetainedCharacterChatsRepository } from "./retained-character-chats.js";
-import { PersonaAvatarRepository } from "./persona-avatars.js";
-import { VectorStore } from "./vector-store.js";
-import { VectorCollectionRepository } from "./vector-collections.js";
-import { ProviderRepository } from "./provider-repository.js";
+import { classifyMemoryRelation, isCompleteSourceQuote, isProtectedMemory, quoteDirectlyNamesClaim, quoteProvesTransition } from "../memory/memory-conflict-core.js";
+import { WorldInfoRepository } from "../world-info/world-info-repository.js";
+import { RetainedCharacterChatsRepository } from "../chat/retained-character-chats.js";
+import { PersonaAvatarRepository } from "../character/persona-avatars.js";
+import { VectorStore } from "../providers/vector-store.js";
+import { VectorCollectionRepository } from "../providers/vector-collections.js";
+import { ProviderRepository } from "../providers/provider-repository.js";
 
 import type {
   BackupPayload,
@@ -58,6 +58,8 @@ interface ConversationRow {
   updated_at: string;
   metadata_json: string;
   header_json: string;
+  /** 软删除时间（迁移后新增列；旧库升级时由 ALTER TABLE 补齐）。 */
+  deleted_at?: string | null;
 }
 
 interface MessageRow {
@@ -264,7 +266,8 @@ export class RuntimeRepository {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
         metadata_json TEXT NOT NULL DEFAULT '{}',
-        header_json TEXT NOT NULL DEFAULT '{}'
+        header_json TEXT NOT NULL DEFAULT '{}',
+        deleted_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS messages (
@@ -456,11 +459,22 @@ export class RuntimeRepository {
         "ALTER TABLE conversations ADD COLUMN active_branch_id TEXT NOT NULL DEFAULT ''",
       ).run();
     }
+    // 旧库回填：分支功能前的会话 active_branch_id 为 ''（消息侧已归入以对话 ID
+    // 命名的根分支），空值会使列表/详情的 UUID 校验整体失败。统一回填为对话 ID。
+    if (conversationsExists) {
+      this.#database.prepare(
+        "UPDATE conversations SET active_branch_id = id WHERE active_branch_id = ''",
+      ).run();
+    }
     if (conversationsExists && !hasConversationColumn("metadata_json")) {
       this.#database.exec("ALTER TABLE conversations ADD COLUMN metadata_json TEXT NOT NULL DEFAULT '{}'");
     }
     if (conversationsExists && !hasConversationColumn("header_json")) {
       this.#database.exec("ALTER TABLE conversations ADD COLUMN header_json TEXT NOT NULL DEFAULT '{}'");
+    }
+    // 软删除（FR-DATA-004）：为空表示故事可见；非空为删除时间，可恢复。
+    if (conversationsExists && !hasConversationColumn("deleted_at")) {
+      this.#database.exec("ALTER TABLE conversations ADD COLUMN deleted_at TEXT");
     }
     if (hasMessagesColumn("id") && !hasMessagesColumn("extension_data_json")) {
       this.#database.exec("ALTER TABLE messages ADD COLUMN extension_data_json TEXT NOT NULL DEFAULT '{}'");
@@ -784,9 +798,69 @@ export class RuntimeRepository {
     return row ? this.memoryFromRow(row) : undefined;
   }
 
-  readonly #memoryVisibilitySql = `EXISTS (SELECT 1 FROM conversations WHERE id = ?)
+  /**
+   * 记忆库（跨故事清单）：每条记忆只出现一次，附归属故事，供「记忆」一级页面使用。
+   * 归属优先保留出处：记忆自己所在的故事仍然可见时就用它（哪怕是用户事后改成角色级/
+   * 全局的记忆，也不该被改挂到别的故事上）。只有原故事已被软删除时，才回退到该角色
+   * 最近更新的故事，避免把记忆挂在用户看不到的故事名下。
+   */
+  listMemoryInventory(
+    filters: { scope?: MemoryScope | undefined; type?: MemoryType | undefined; status?: MemoryStatus | undefined } = {},
+  ): Array<{ memory: MemoryRecord; conversationId: string; conversationTitle: string }> {
+    // 只列出**来源故事仍然活跃**的记忆。已删故事的故事级记忆在任何故事里都不可见
+    // （可见性要求 conversation_id 匹配），列出来只会让人以为能改，点下去却 404。
+    const clauses: string[] = [
+      // 来源故事仍活跃 → 照常列出。
+      // 用户级记忆例外：它跨故事共享、仍在参与检索，来源故事删了也必须能管理。
+      // 其余（story/character）来源已删则隐藏——它们在任何故事里都已不可见。
+      "(EXISTS (SELECT 1 FROM conversations c WHERE c.id = m.conversation_id AND c.deleted_at IS NULL) OR m.scope = 'user')",
+    ];
+    const params: string[] = [];
+    if (filters.scope) { clauses.push("m.scope = ?"); params.push(filters.scope); }
+    if (filters.type) { clauses.push("m.type = ?"); params.push(filters.type); }
+    if (filters.status) { clauses.push("m.status = ?"); params.push(filters.status); }
+    const where = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = this.#database.prepare(`
+      SELECT m.*,
+        COALESCE(
+          NULLIF((SELECT c.id FROM conversations c WHERE c.id = m.conversation_id AND c.deleted_at IS NULL), ''),
+          NULLIF((SELECT c.id FROM conversations c
+            WHERE c.character_id = m.character_id AND c.deleted_at IS NULL
+            ORDER BY c.updated_at DESC, c.id DESC LIMIT 1), '')
+        ) AS owner_conversation_id
+      FROM memories m ${where}
+      ORDER BY m.importance DESC, m.created_at DESC
+    `).all(...params) as unknown as Array<MemoryRow & { owner_conversation_id: string | null }>;
+
+    const titles = new Map(
+      (this.#database.prepare("SELECT id, title FROM conversations WHERE deleted_at IS NULL").all() as Array<{ id: string; title: string }>)
+        .map((row) => [row.id, row.title]),
+    );
+    const items: Array<{ memory: MemoryRecord; conversationId: string; conversationTitle: string }> = [];
+    for (const row of rows) {
+      const owner = row.owner_conversation_id ?? row.conversation_id;
+      // 用户级记忆若连归属故事都找不到（该角色的故事全删了），就无处可管理，不列出。
+      if (row.scope === "user" && !titles.has(owner)) continue;
+      items.push({ memory: this.memoryFromRow(row), conversationId: owner, conversationTitle: titles.get(owner) ?? "" });
+    }
+    return items;
+  }
+
+  // 记忆可见性：每次开档独立。一个对话就是一次新的游戏，同一张角色卡的另一局
+  // 不能看到这一局发生过什么，所以角色级不再跨对话注入（只认 story + user）。
+  // 但它仍对**自己所在的那一局**可见：否则收窄规则之前产生的角色级记忆会彻底消失，
+  // 用户在记忆面板里既看不到、也改不了删不掉（改删会 404）。
+  //
+  // 用户级记忆单独对待：它描述的是**玩家本人**（跨故事共享），与来源故事是否还存在无关。
+  // 若跟着来源故事一起被隐藏，就会出现"仍在参与检索、却在记忆库里看不到也管不了"的
+  // 幽灵状态——这正是要避免的。
+  //
+  // 三个参数依次是：当前对话（须存在且未删除）、story 来源、character 来源。
+  // user 作用域不做来源校验：那条 conversation_id 只是"从哪一局产生的"记录，
+  // 玩家偏好不因某一局被删而失效（也正因为它仍在参与检索，必须保持可管理）。
+  readonly #memoryVisibilitySql = `EXISTS (SELECT 1 FROM conversations WHERE id = ? AND deleted_at IS NULL)
     AND ((scope = 'story' AND conversation_id = ?)
-      OR (scope = 'character' AND character_id = (SELECT character_id FROM conversations WHERE id = ?))
+      OR (scope = 'character' AND conversation_id = ?)
       OR scope = 'user')`;
 
   getMemoryForConversation(memoryId: string, conversationId: string): MemoryRecord | undefined {
@@ -1021,9 +1095,39 @@ export class RuntimeRepository {
         (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id AND m.branch_id = c.active_branch_id) AS message_count
       FROM conversations c
       JOIN characters ch ON ch.id = c.character_id AND ch.deleted_at IS NULL
+      WHERE c.deleted_at IS NULL
       ORDER BY c.updated_at DESC, c.id DESC
     `).all() as unknown as ConversationRow[];
     return { items: rows.map(summaryFromRow), total: rows.length };
+  }
+
+  /**
+   * 软删除（FR-DATA-004）：只标记 deleted_at，消息、分支、摘要与记忆来源全部保留，
+   * 因此恢复后原样可用。列表/详情在读取时按该列过滤，无需级联改写派生数据。
+   * 返回删除时间；故事不存在或已删除时返回 undefined（幂等）。
+   */
+  softDeleteConversation(id: string): string | undefined {
+    const timestamp = new Date().toISOString();
+    const result = this.#database.prepare(
+      "UPDATE conversations SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+    ).run(timestamp, timestamp, id);
+    return result.changes ? timestamp : undefined;
+  }
+
+  /** 撤销软删除；故事本来可见或不存在时返回 false。 */
+  undeleteConversation(id: string): boolean {
+    const result = this.#database.prepare(
+      "UPDATE conversations SET deleted_at = NULL, updated_at = ? WHERE id = ? AND deleted_at IS NOT NULL",
+    ).run(new Date().toISOString(), id);
+    return result.changes > 0;
+  }
+
+  /** 查询软删除状态，供路由区分「不存在」与「已删除」。 */
+  conversationDeletedAt(id: string): string | null | undefined {
+    const row = this.#database
+      .prepare("SELECT deleted_at FROM conversations WHERE id = ?")
+      .get(id) as { deleted_at: string | null } | undefined;
+    return row?.deleted_at;
   }
 
   /**
@@ -1038,6 +1142,8 @@ export class RuntimeRepository {
     activeBranchId: string;
     createdAt: string;
     updatedAt: string;
+    /** 软删除时间。备份必须带上它，否则恢复后已删故事会重新出现。 */
+    deletedAt?: string;
     messages: ChatMessage[];
     chatMetadata: Record<string, unknown>;
     chatHeader: Record<string, unknown>;
@@ -1053,6 +1159,7 @@ export class RuntimeRepository {
       activeBranchId: row.active_branch_id,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+      ...(row.deleted_at ? { deletedAt: row.deleted_at } : {}),
       // 备份包含全部分支的完整消息树（不止激活分支）。
       messages: this.listAllBranchMessages(row.id),
       chatMetadata: JSON.parse(row.metadata_json) as Record<string, unknown>,
@@ -1112,6 +1219,8 @@ export class RuntimeRepository {
     activeBranchId: string;
     createdAt: string;
     updatedAt: string;
+    /** 备份里的软删除时间；缺省表示这条故事是活跃的（旧备份即如此）。 */
+    deletedAt?: string | undefined;
     chatMetadata?: Record<string, unknown> | undefined;
     chatHeader?: Record<string, unknown> | undefined;
     messages: Array<{
@@ -1131,16 +1240,17 @@ export class RuntimeRepository {
     this.#database.exec("SAVEPOINT restore_conversation");
     try {
       this.#database.prepare(`
-        INSERT INTO conversations (id, character_id, character_name, title, active_branch_id, created_at, updated_at, metadata_json, header_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO conversations (id, character_id, character_name, title, active_branch_id, created_at, updated_at, metadata_json, header_json, deleted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           character_name = excluded.character_name,
           title = excluded.title,
           active_branch_id = excluded.active_branch_id,
           updated_at = excluded.updated_at,
           metadata_json = excluded.metadata_json,
-          header_json = excluded.header_json
-      `).run(entry.id, entry.characterId, entry.characterName, entry.title, entry.activeBranchId, entry.createdAt, entry.updatedAt, JSON.stringify(entry.chatMetadata ?? previous?.chatMetadata ?? {}), JSON.stringify(entry.chatHeader ?? previous?.chatHeader ?? {}));
+          header_json = excluded.header_json,
+          deleted_at = excluded.deleted_at
+      `).run(entry.id, entry.characterId, entry.characterName, entry.title, entry.activeBranchId, entry.createdAt, entry.updatedAt, JSON.stringify(entry.chatMetadata ?? previous?.chatMetadata ?? {}), JSON.stringify(entry.chatHeader ?? previous?.chatHeader ?? {}), entry.deletedAt ?? null);
       // 覆盖恢复：清掉该对话的旧消息/摘要/设置，再写入备份的完整消息树（全部分支）。
       this.#database.prepare("DELETE FROM messages WHERE conversation_id = ?").run(entry.id);
       this.#database.prepare("DELETE FROM stage_summaries WHERE conversation_id = ?").run(entry.id);
@@ -1236,6 +1346,14 @@ export class RuntimeRepository {
       summary.coveredMessageCount, summary.model, summary.previousContent, summary.createdAt);
   }
 
+  /** 读取某故事的自动摘要开关；没有记录时返回 undefined（与"已关闭"区分开）。 */
+  getConversationSetting(conversationId: string): { conversationId: string; autoSummaryEnabled: boolean } | undefined {
+    const row = this.#database
+      .prepare("SELECT conversation_id, auto_summary_enabled FROM conversation_settings WHERE conversation_id = ?")
+      .get(conversationId) as { conversation_id: string; auto_summary_enabled: number } | undefined;
+    return row ? { conversationId: row.conversation_id, autoSummaryEnabled: row.auto_summary_enabled === 1 } : undefined;
+  }
+
   restoreConversationSetting(setting: { conversationId: string; autoSummaryEnabled: boolean }): void {
     this.#database.prepare(`
       INSERT INTO conversation_settings (conversation_id, auto_summary_enabled) VALUES (?, ?)
@@ -1291,14 +1409,18 @@ export class RuntimeRepository {
     return row.n;
   }
 
-  getConversation(id: string, messageLimit?: number): ConversationDetail | undefined {
+  /**
+   * 读取故事详情。软删除的故事默认不可见（列表与详情一致），因此已删除的故事在只读
+   * 路由上表现为 404。备份恢复等需要拿到已删除行的调用方显式传 `includeDeleted`。
+   */
+  getConversation(id: string, messageLimit?: number, options: { includeDeleted?: boolean } = {}): ConversationDetail | undefined {
     const row = this.#database.prepare(`
       SELECT c.*,
         COALESCE((SELECT substr(m.content, 1, 400) FROM messages m
           WHERE m.conversation_id = c.id AND m.branch_id = c.active_branch_id
           ORDER BY m.rowid DESC LIMIT 1), '') AS last_message_preview,
         (SELECT count(*) FROM messages m WHERE m.conversation_id = c.id AND m.branch_id = c.active_branch_id) AS message_count
-      FROM conversations c WHERE c.id = ?
+      FROM conversations c WHERE c.id = ?${options.includeDeleted ? "" : " AND c.deleted_at IS NULL"}
     `).get(id) as ConversationRow | undefined;
     if (!row) return undefined;
     return { ...summaryFromRow(row), messages: this.listMessages(id, messageLimit), chatMetadata: JSON.parse(row.metadata_json) as Record<string, unknown>, chatHeader: JSON.parse(row.header_json) as Record<string, unknown> };

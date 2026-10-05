@@ -7,9 +7,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { parseCharacterCardDocument } from "@mycompanion/character-card";
 import type { ConversationDetail, GenerationSseEvent } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { CharacterRepository } from "./character-repository.js";
-import { RuntimeRepository } from "./runtime-repository.js";
-import type { TavernRegexScript } from "./tavern-regex-core.js";
+import { CharacterRepository } from "./character/character-repository.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
+import type { TavernRegexScript } from "./prompt/tavern-regex-core.js";
 
 type App = ReturnType<typeof buildApp>;
 const nativeFetch = globalThis.fetch;

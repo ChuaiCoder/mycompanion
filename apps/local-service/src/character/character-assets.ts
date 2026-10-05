@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { normalizeZipPath } from "./bounded-zip.js";
+import { normalizeZipPath } from "../bounded-zip.js";
 
 const maximumFileBytes = 16 * 1024 * 1024, maximumTotalBytes = 64 * 1024 * 1024, maximumEntries = 4096;
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";

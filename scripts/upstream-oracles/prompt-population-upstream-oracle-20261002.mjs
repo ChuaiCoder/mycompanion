@@ -6,11 +6,11 @@ import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { source as macroSource, declarations, files } from './native-legacy-upstream-oracle-20261002.mjs';
 import { MacroEngine, MacroEnvironmentBuilder, createVariableStores } from '../../packages/macro-engine/src/index.js';
-import { readPromptManagerSettings } from '../../apps/local-service/dist/prompt-manager-core.js';
-import { assembleModelPrompt, characterWithChatOverrides } from '../../apps/local-service/dist/model-client.js';
-import { MacroEvaluationSession } from '../../apps/local-service/dist/prompt-macros.js';
-import { prepareCharacterMacroFields, bindCharacterMacroEnvironment, buildCharacterDepthPrompt } from '../../apps/local-service/dist/character-macros.js';
-import { countCompatibilityMessagesSync } from '../../apps/local-service/dist/tokenizer-service.js';
+import { readPromptManagerSettings } from '../../apps/local-service/dist/prompt/prompt-manager-core.js';
+import { assembleModelPrompt, characterWithChatOverrides } from '../../apps/local-service/dist/providers/model-client.js';
+import { MacroEvaluationSession } from '../../apps/local-service/dist/prompt/prompt-macros.js';
+import { prepareCharacterMacroFields, bindCharacterMacroEnvironment, buildCharacterDepthPrompt } from '../../apps/local-service/dist/character/character-macros.js';
+import { countCompatibilityMessagesSync } from '../../apps/local-service/dist/tokens/tokenizer-service.js';
 const original=macroSource+'\nconst DEFAULT_ORDER=100,DEFAULT_DEPTH=4,MAX_INJECTION_DEPTH=10000;\n'+
   declarations('scripts/PromptManager.js',['Prompt','PromptCollection','PromptManager'])+'\n'+
   declarations('script.js',['getExtensionPrompt','getExtensionPromptMaxDepth'])+'\n'+

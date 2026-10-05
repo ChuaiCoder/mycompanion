@@ -46,10 +46,18 @@ afterEach(() => {
 
 describe("App", () => {
   it("shows the beginner onboarding path", async () => {
+    // 侧栏状态点现在是模型连通性：它必须由模型探测的结果决定。
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockImplementation(async () =>
-        new Response(
+      vi.fn().mockImplementation(async (input: RequestInfo | URL) => {
+        const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+        if (url === "/api/settings/provider/test") {
+          return new Response(
+            JSON.stringify({ ok: true, message: "连接成功，读取到 1 个模型。", models: ["fixture"] }),
+            { status: 200, headers: { "Content-Type": "application/json" } },
+          );
+        }
+        return new Response(
           JSON.stringify({
             status: "ok",
             service: "mycompanion-local-service",
@@ -59,8 +67,8 @@ describe("App", () => {
             status: 200,
             headers: { "Content-Type": "application/json" },
           },
-        ),
-      ),
+        );
+      }),
     );
 
     render(<App />);
@@ -76,7 +84,7 @@ describe("App", () => {
     expect(screen.getByText("只需要三步")).toBeInTheDocument();
 
     await waitFor(() => {
-      expect(screen.getByText("服务已连接")).toBeInTheDocument();
+      expect(screen.getByText("模型已连接")).toBeInTheDocument();
     });
   });
 
@@ -88,7 +96,9 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: "角色库" }));
 
     await waitFor(() => {
-      expect(screen.getByText("服务未连接")).toBeInTheDocument();
+      // 模型探测也失败 → 状态点必须是"未连接"，不能像以前那样因为本地健康接口
+      // 成功而显示绿灯。
+      expect(screen.getByText("模型未连接")).toBeInTheDocument();
     });
     expect(screen.getByText("只需要三步")).toBeInTheDocument();
   });

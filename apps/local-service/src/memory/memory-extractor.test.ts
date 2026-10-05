@@ -69,7 +69,7 @@ const pair: [ChatMessage, ChatMessage] = [
 ];
 
 const completeTextMock = vi.fn();
-vi.mock("./model-client.js", () => ({
+vi.mock("../providers/model-client.js", () => ({
   get completeText() {
     return completeTextMock;
   },

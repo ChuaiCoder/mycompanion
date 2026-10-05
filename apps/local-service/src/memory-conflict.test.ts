@@ -7,9 +7,9 @@ import { afterEach, expect, it, vi } from "vitest";
 import { parseCharacterCardDocument } from "@mycompanion/character-card";
 import { type MemoryRecord } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { CharacterRepository } from "./character-repository.js";
-import { RuntimeRepository } from "./runtime-repository.js";
-import { applyRestore, assembleBackupPayload, backupChecksum, verifyBackupPayload } from "./backup.js";
+import { CharacterRepository } from "./character/character-repository.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
+import { applyRestore, assembleBackupPayload, backupChecksum, verifyBackupPayload } from "./storage/backup.js";
 
 const resources: Array<{ app: ReturnType<typeof buildApp>; database: DatabaseSync; path: string }> = [];
 afterEach(async () => {
@@ -77,7 +77,8 @@ it.each(["fixed", "edited", "restored-edit", "promoted"])("preserves %s user aut
     await f.update(old, { content: "人工确认玩家仍在北京。" });
     if (kind === "restored-edit") f.runtime.restoreMemory(old.id, "previous_content");
   }
-  if (kind === "promoted") await f.update(old, { scope: "character" });
+  // 用户能做的"提权"只剩改成全局：角色级已废弃（每次开档独立，不再跨对话共享）。
+  if (kind === "promoted") await f.update(old, { scope: "user" });
   const next = f.add(f.make(true));
   expect(f.runtime.getMemory(old.id)).toMatchObject({ status: "active", supersededBy: null });
   expect(next.status).toBe("pending");

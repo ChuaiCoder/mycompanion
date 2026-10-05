@@ -13,11 +13,11 @@ import {
   assembleBackupPayload,
   previewRestore,
 } from "./backup.js";
-import type { CharacterRepository } from "./character-repository.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
+import type { CharacterRepository } from "../character/character-repository.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
 import { buildStoryExportJson, buildStoryExportMarkdown } from "./story-export.js";
-import { sendError } from "./http-errors.js";
-import type { IdParams } from "./route-types.js";
+import { sendError } from "../http-errors.js";
+import type { IdParams } from "../route-types.js";
 
 export function registerBackupRoutes(app: FastifyInstance, runtime: RuntimeRepository, characters: CharacterRepository): void {
   // 完整备份（FR-DATA-003）：导出角色/故事/记忆/世界书/正则/插件/非秘密设置，

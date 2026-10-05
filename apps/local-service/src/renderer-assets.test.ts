@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 import { buildApp } from "./app.js";
-import { apps } from "./test-helpers.js";
+import { apps } from "./testing/helpers.js";
 
 describe("desktop renderer assets", () => {
   it("serves the bundled renderer entry point with desktop security headers", async () => {

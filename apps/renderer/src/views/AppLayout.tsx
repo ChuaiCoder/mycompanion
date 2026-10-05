@@ -24,12 +24,14 @@ import type { useCharacterSelection } from "../hooks/useCharacterSelection";
 import type { useChatGeneration } from "../hooks/useChatGeneration";
 import type { useConversations } from "../hooks/useConversations";
 import type { WorkspaceView } from "../hooks/useExtensionResume";
+import type { ModelConnection } from "../hooks/useModelConnection";
 import type { usePlugins } from "../hooks/usePlugins";
 import type { useProviderSettings } from "../hooks/useProviderSettings";
 import { LibraryView } from "./LibraryView";
 import { ChatView } from "./ChatView";
 import { SettingsView } from "./SettingsView";
 import { PluginsView } from "./PluginsView";
+import { MemoryView } from "./MemoryView";
 import { WorldInfoPanel } from "./WorldInfoPanel";
 import { CharacterPanel } from "./CharacterPanel";
 import { AppSidebar } from "./AppSidebar";
@@ -40,6 +42,8 @@ type SourceFocus = { conversationId: string; messageId: string; revision: number
 // 钩子返回对象整体透传，避免逐字段 props 转手的重复样板。
 export interface AppLayoutProps {
   serviceState: ServiceState;
+  /** 模型连通性：侧栏状态点显示它，与本地服务可达性分开。 */
+  modelConnection: ModelConnection;
   runtimeError: string | null;
   setRuntimeError: Dispatch<SetStateAction<string | null>>;
   isSidebarCollapsed: boolean;
@@ -73,6 +77,7 @@ export interface AppLayoutProps {
 export function AppLayout(props: AppLayoutProps) {
   const {
     serviceState,
+    modelConnection,
     runtimeError,
     setRuntimeError,
     isSidebarCollapsed,
@@ -140,6 +145,7 @@ export function AppLayout(props: AppLayoutProps) {
     providerNotice,
     providerIssue,
     isConnectionReady,
+    markConnectionReady,
     handleSaveProvider,
   } = providerSettings;
   const {
@@ -207,12 +213,13 @@ export function AppLayout(props: AppLayoutProps) {
         onCollapseToggle={() => setIsSidebarCollapsed((value) => !value)}
         onCardFile={(event) => void handleCardFile(event)}
         onChatNav={() => { setMemoryPanelOpen(false); setWorkspaceView("chat"); }}
-        onMemoryNav={() => { if (workspaceView === "chat" && memoryPanelOpen) { setMemoryPanelOpen(false); } else { setMemoryPanelOpen(true); setWorkspaceView("chat"); } }}
+        onMemoryNav={() => setWorkspaceView("memory")}
         onNavigate={setWorkspaceView}
         onOpenConversation={(id) => void handleOpenConversation(id)}
+        onDeleteConversation={conversationsState.handleDeleteConversation}
         onOpenFilePicker={openFilePicker}
         pluginCount={plugins.length}
-        serviceState={serviceState}
+        modelConnection={modelConnection}
         view={workspaceView}
       />
 
@@ -309,16 +316,25 @@ export function AppLayout(props: AppLayoutProps) {
         isSavingProvider={isSavingProvider}
         onApiKeyDraft={setApiKeyDraft}
         onProviderField={(patch) => setProvider((current) => current ? { ...current, ...patch } : current)}
-        onSave={() => void handleSaveProvider(false)}
-        onSaveAndTest={() => void handleSaveProvider(true)}
+        onSave={() => handleSaveProvider(false)}
+        onSaveAndTest={() => handleSaveProvider(true)}
         provider={provider}
         providerNotice={providerNotice}
         providerIssue={providerIssue}
         isConnectionReady={isConnectionReady}
+        onConnectionReady={markConnectionReady}
         selectedCharacterName={selectedCharacter?.name}
         onContinue={() => { if (activeConversation) setWorkspaceView("chat"); else if (selectedCharacter) void handleStartConversation(); else setWorkspaceView("chat"); }}
         runtimeError={runtimeError}
       /></div>
+      {workspaceView === "memory" ? <MemoryView
+        online={serviceState === "online"}
+        onOpenSource={(conversationId, messageId, revision) => {
+          void handleOpenConversation(conversationId);
+          setSourceFocus({ conversationId, messageId, revision });
+          setWorkspaceView("chat");
+        }}
+      /> : null}
       {workspaceView === "plugins" ? <PluginsView
         onPluginToggle={(plugin) => void handlePluginToggle(plugin)}
         onPluginUninstall={(id) => void handlePluginUninstall(id)}

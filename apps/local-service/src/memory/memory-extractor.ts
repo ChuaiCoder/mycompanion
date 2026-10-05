@@ -8,7 +8,7 @@ import {
 } from "@mycompanion/shared";
 import { isCompleteSourceQuote, quoteDirectlyNamesClaim, quoteProvesTransition } from "./memory-conflict-core.js";
 
-import { completeText } from "./model-client.js";
+import { completeText } from "../providers/model-client.js";
 
 /**
  * 长期记忆的自动提取与阶段摘要（FR-MEM-002/006）。

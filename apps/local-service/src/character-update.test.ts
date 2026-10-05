@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { characterDetailSchema } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
-import { apps, commitCard, fullV2Card, type TestApp } from "./test-helpers.js";
+import { apps, commitCard, fullV2Card, type TestApp } from "./testing/helpers.js";
 
 async function exportRawCard(app: TestApp, id: string) {
   const response = await app.inject({ method: "GET", url: `/api/characters/${id}/export?format=json` });

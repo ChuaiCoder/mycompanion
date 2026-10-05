@@ -1,6 +1,6 @@
 import type { ChatMessage, CharacterDetail, LorebookReport, LorebookEntryResult, ProviderSettings, TokenAccounting } from "@mycompanion/shared";
 
-import { estimateTokens } from "./worldbook-engine.js";
+import { estimateTokens } from "../world-info/worldbook-engine.js";
 
 /**
  * 全局 Token 预算（FR-PROMPT-003）。

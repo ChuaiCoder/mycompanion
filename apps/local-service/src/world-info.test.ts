@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { conversationDetailSchema, type ConversationDetail } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { backupChecksum } from "./backup.js";
+import { backupChecksum } from "./storage/backup.js";
 import reference from "./fixtures/prompt-persona-examples-upstream-reference.json" with { type: "json" };
 
 type App = ReturnType<typeof buildApp>;

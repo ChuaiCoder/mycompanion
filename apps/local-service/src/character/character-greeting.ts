@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { CharacterDetail, ExtensionChatMessage } from "@mycompanion/shared";
-import { collectNativeRegexScripts, TavernRegexExecutor } from "./tavern-regex-service.js";
+import { collectNativeRegexScripts, TavernRegexExecutor } from "../prompt/tavern-regex-service.js";
 
 /** Builds an unsaved greeting with the same output-rule engine as generation. */
 export async function buildCharacterGreeting(character: CharacterDetail, settings: Record<string, unknown> = {},

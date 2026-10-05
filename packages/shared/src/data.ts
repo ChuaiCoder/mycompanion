@@ -124,6 +124,11 @@ const backupConversationSchema = z.object({
   chatHeader: z.record(z.string(), z.unknown()).optional(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  /**
+   * 软删除时间（可选，旧备份没有这个字段）。
+   * 不带它的话，恢复后已删除的故事会重新出现，且覆盖恢复也回不到删除前的状态。
+   */
+  deletedAt: z.string().datetime().optional(),
   // 全部分支的完整消息树。
   messages: z.array(
     z.object({
@@ -301,6 +306,7 @@ export const backupRestoreResponseSchema = z.object({
     worldbooks: z.number().int().nonnegative(),
     worldInfoSettings: z.number().int().nonnegative(),
     retainedCharacterChats: z.number().int().nonnegative(),
+    conversationSettings: z.number().int().nonnegative().default(0),
     providerProfiles: z.number().int().nonnegative().optional(),
   }),
   skipped: z.object({
@@ -313,6 +319,7 @@ export const backupRestoreResponseSchema = z.object({
     worldbooks: z.number().int().nonnegative(),
     worldInfoSettings: z.number().int().nonnegative(),
     retainedCharacterChats: z.number().int().nonnegative(),
+    conversationSettings: z.number().int().nonnegative().default(0),
     providerProfiles: z.number().int().nonnegative().optional(),
   }),
 });

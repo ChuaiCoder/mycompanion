@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 
-export type WorkspaceView = "library" | "chat" | "plugins" | "settings";
+export type WorkspaceView = "library" | "chat" | "plugins" | "memory" | "settings";
 
 export interface ExtensionResumeState {
   view?: WorkspaceView | undefined;
@@ -17,7 +17,7 @@ export function readExtensionResume(): ExtensionResumeState {
     const saved = JSON.parse(sessionStorage.getItem(RESUME_STORAGE_KEY) ?? "{}");
     if (!saved || typeof saved !== "object") return {};
     return {
-      view: ["library", "chat", "plugins", "settings"].includes(saved.view) ? saved.view : undefined,
+      view: ["library", "chat", "plugins", "memory", "settings"].includes(saved.view) ? saved.view : undefined,
       characterId: typeof saved.characterId === "string" ? saved.characterId : undefined,
       conversationId: typeof saved.conversationId === "string" ? saved.conversationId : undefined,
       input: typeof saved.input === "string" ? saved.input : undefined,

@@ -3,12 +3,25 @@ export function validateReleaseEvidence(manifest, acceptance, ids) {
   const problems = [];
   const ratio = value => Number.isFinite(value) && value >= 0 && value <= 1;
   const count = value => Number.isInteger(value) && value >= 0;
+  // Checklist entries are `"G04"` or `{ id, void }`. A void entry has no
+  // executable object left (for example the removed compatibility layer), so it
+  // cannot supply passing evidence and must not be required to.
+  const items = ids.map(entry => typeof entry === 'string' ? { id: entry, void: false } : { id: entry.id, void: entry.void === true });
   if (!manifest.checksPassed) problems.push('Candidate source checks did not pass');
   if (acceptance.executableSha256 !== manifest.executableSha256 || acceptance.sourceSha256 !== manifest.sourceSha256)
     problems.push('Acceptance evidence belongs to a different executable/source');
   if (acceptance.criticalDefects !== 0 || acceptance.highDefects !== 0) problems.push('Critical/High defect count must be zero');
-  for (const id of ids) {
+  for (const { id, void: isVoid } of items) {
     const item = acceptance.items?.[id];
+    if (isVoid) {
+      // A void item has nothing left to verify. It may be recorded explicitly as
+      // void with no reports, but it must never present itself as passing: that
+      // would let a stale claim satisfy a gate the product no longer supports.
+      if (item === undefined) continue;
+      if (item.status !== 'void') problems.push(id + ': void checklist item must not claim a passing status');
+      if (Array.isArray(item.reports) && item.reports.length) problems.push(id + ': void checklist item must not carry reports');
+      continue;
+    }
     if (item?.status !== 'passed' || !Array.isArray(item.reports) || !item.reports.length)
       problems.push(id + ': passing evidence is missing');
   }

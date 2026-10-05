@@ -1,7 +1,7 @@
 import { describe,expect,it } from "vitest";
 import { encodeCharacterCardPng,parseCharacterCardDocument,parseCharacterCardPngDocument } from "@mycompanion/character-card";
-import { buildApp } from "./app.js";
-import { fullV2Card } from "./test-helpers.js";
+import { buildApp } from "../app.js";
+import { fullV2Card } from "../testing/helpers.js";
 import { parseCharacterArchive } from "./character-archive.js";
 import { inlineCharacterAssetPath,materializeCharacterInlineAssets } from "./character-inline-assets.js";
 

@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { VectraMetric } from "./vector-metric-upstream.js";
+import { VectraMetric } from "../vector-metric-upstream.js";
 
 /** ST batch request shapes; source/adaptations in ../vector-upstream.json. */
 export interface EmbeddingProvider { kind: string; baseUrl: string; model: string }

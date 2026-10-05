@@ -15,7 +15,7 @@ import {
   parseSse,
   setLorebookEntryEnabled,
   sseResponse,
-} from "./test-helpers.js";
+} from "./testing/helpers.js";
 
 describe("character worldbook (FR-LORE-001/002/003)", () => {
   it("lists imported entries as disabled by default and persists enable state", async () => {

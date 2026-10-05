@@ -5,7 +5,7 @@ import vm from 'node:vm';
 import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { source as macroSource, declarations, files } from './native-legacy-upstream-oracle-20261002.mjs';
-import { PromptManager as AdaptedManager, readPromptManagerSettings, prepareCompletionPrompts } from '../../apps/local-service/dist/prompt-manager-core.js';
+import { PromptManager as AdaptedManager, readPromptManagerSettings, prepareCompletionPrompts } from '../../apps/local-service/dist/prompt/prompt-manager-core.js';
 
 const upstreamSource = macroSource + '\nconst DEFAULT_ORDER=100, DEFAULT_DEPTH=4;\n' +
   declarations('scripts/PromptManager.js', ['Prompt', 'PromptCollection', 'PromptManager']) + '\n' +

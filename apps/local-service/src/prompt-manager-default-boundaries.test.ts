@@ -1,10 +1,10 @@
 import { expect, it } from "vitest";
-import { parseCompletionExample, parseCompatibleCompletionExample } from "./prompt-manager-core.js";
-import { assembleModelPrompt, type PromptAssemblyOptions } from "./model-client.js";
-import { MacroEvaluationSession } from "./prompt-macros.js";
-import { productCardForTests } from "./native-fixtures.js";
+import { parseCompletionExample, parseCompatibleCompletionExample } from "./prompt/prompt-manager-core.js";
+import { assembleModelPrompt, type PromptAssemblyOptions } from "./providers/model-client.js";
+import { MacroEvaluationSession } from "./prompt/prompt-macros.js";
+import { productCardForTests } from "./testing/native-character.js";
 import reference from "./fixtures/prompt-persona-examples-upstream-reference.json" with { type: "json" };
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
 
 it("retains exact Tavern English speaker grouping and confines full-width fallback to known names", () => {
   const english = "<START>\nUser: hello\nUser: again\nActor: welcome\ncontinuation\nUser: thanks";

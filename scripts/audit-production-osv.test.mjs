@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { batchPage, productionInventory } from './audit-production-osv.mjs';
 
 test('inventory deduplicates nested/scoped packages and includes shipped Electron', () => {
@@ -25,4 +27,25 @@ test('pagination follows only original package indices and rejects partial respo
   assert.throws(() => batchPage([{}], [{ index: 7 }, { index: 19 }]), /count/);
   assert.throws(() => batchPage([{ vulns: [{ id: 1 }] }], [{ index: 7 }]), /IDs/);
   assert.throws(() => batchPage([{ next_page_token: '' }], [{ index: 7 }]), /token/);
+});
+
+// An audit that never completed must not read as "no advisories". Before this
+// was enforced, a network failure left the process exit code at zero, so the
+// release gate passed while no dependency was ever queried.
+test('an unreachable OSV endpoint fails the gate instead of reporting success', async () => {
+  const script = fileURLToPath(new URL('./audit-production-osv.mjs', import.meta.url));
+  const result = await new Promise(done => {
+    const child = spawn(process.execPath, [script], {
+      env: { ...process.env, MYCOMPANION_OSV_API: 'http://127.0.0.1:9/v1' },
+      windowsHide: true,
+    });
+    let stdout = '';
+    child.stdout.on('data', bytes => { stdout += bytes; });
+    child.once('exit', code => done({ code, stdout }));
+  });
+  assert.notEqual(result.code, 0, 'an incomplete audit must not exit successfully');
+  const report = JSON.parse(result.stdout.slice(result.stdout.indexOf('{')));
+  assert.equal(report.completed, false);
+  assert.equal(report.passed, false);
+  assert.ok(report.error?.message, 'the failure reason must be recorded in the report');
 });

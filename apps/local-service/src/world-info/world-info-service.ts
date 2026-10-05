@@ -1,9 +1,9 @@
 import type { CharacterDetail, CharacterLorebookEntry, ChatMessage, ExtensionPrompt, LorebookReport, WorldInfoSettings } from "@mycompanion/shared";
 import type { WorldInfoRepository } from "./world-info-repository.js";
 import { matchLorebookEntries, type ScanEntry } from "./worldbook-engine.js";
-import { macroVariableStores, resolveMacroField, MacroEvaluationSession } from "./prompt-macros.js";
-import { collectNativeRegexScripts, type TavernRegexExecutor } from "./tavern-regex-service.js";
-import { countTextTokens } from "./tokenizer-service.js";
+import { macroVariableStores, resolveMacroField, MacroEvaluationSession } from "../prompt/prompt-macros.js";
+import { collectNativeRegexScripts, type TavernRegexExecutor } from "../prompt/tavern-regex-service.js";
+import { countTextTokens } from "../tokens/tokenizer-service.js";
 import { createWorldInfoEffectsDraft, transferWorldInfoEffects } from "./world-info-effects.js";
 import { transferWorldInfoActivations } from "./world-info-activation.js";
 

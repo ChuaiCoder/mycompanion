@@ -6,8 +6,8 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { ProviderProfile, ProviderProfiles } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { apps, parseSse, waitFor } from "./test-helpers.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { apps, parseSse, waitFor } from "./testing/helpers.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { await Promise.all(apps.splice(0).map(app => app.close())); for (const cleanup of cleanups.splice(0)) await cleanup(); });

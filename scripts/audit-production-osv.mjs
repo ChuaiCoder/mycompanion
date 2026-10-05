@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 
 const project = fileURLToPath(new URL('../', import.meta.url));
 const sha256 = value => createHash('sha256').update(value).digest('hex');
-const api = 'https://api.osv.dev/v1';
+// Overridable so tests can point the audit at an unreachable endpoint and assert
+// that an incomplete audit blocks the gate instead of reporting success.
+const api = process.env.MYCOMPANION_OSV_API ?? 'https://api.osv.dev/v1';
 
 // The lockfile is the reproducible input. Installed extraneous packages are not
 // part of this scope. Electron is a dev dependency whose runtime is delivered.
@@ -100,6 +102,12 @@ async function run() {
     exitCode = report.passed ? 0 : 1;
   } catch (error) {
     report.error = { name: error.name, message: error.message, ...(error.cause ? { cause: String(error.cause.message ?? error.cause) } : {}) };
+    // An incomplete audit must block the release gate. Leaving the exit code at
+    // zero would let `npm run check` report success while the dependency audit
+    // never actually happened — a network failure would read as "no advisories".
+    report.completed = false;
+    report.passed = false;
+    exitCode = 1;
   } finally {
     report.finishedAt = new Date().toISOString();
     await mkdir(dirname(reportPath), { recursive: true });

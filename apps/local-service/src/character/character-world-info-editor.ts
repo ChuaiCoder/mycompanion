@@ -3,8 +3,8 @@ import type { FastifyInstance } from "fastify";
 import sanitize from "sanitize-filename";
 import { convertCharacterBook } from "@mycompanion/shared";
 import type { CharacterRepository } from "./character-repository.js";
-import type { WorldInfoRepository } from "./world-info-repository.js";
-import { sendError } from "./http-errors.js";
+import type { WorldInfoRepository } from "../world-info/world-info-repository.js";
+import { sendError } from "../http-errors.js";
 
 /** The embedded source remains part of the card; the valid primary binding is
  * the only source used by world-info-service after this atomic conversion. */

@@ -6,10 +6,10 @@ import {
   lorebookTestRequestSchema,
 } from "@mycompanion/shared";
 
-import type { CharacterRepository } from "./character-repository.js";
+import type { CharacterRepository } from "../character/character-repository.js";
 import { matchLorebookEntries } from "./worldbook-engine.js";
-import { sendError } from "./http-errors.js";
-import type { CharacterParams } from "./route-types.js";
+import { sendError } from "../http-errors.js";
+import type { CharacterParams } from "../route-types.js";
 
 export function registerCharacterLorebookRoutes(app: FastifyInstance, characters: CharacterRepository): void {
   // 角色的世界书条目（FR-LORE-001/002）：展示导入的条目及其运行时启用状态。

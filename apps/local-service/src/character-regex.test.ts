@@ -16,7 +16,7 @@ import {
   parseSse,
   sseResponse,
   type TestApp,
-} from "./test-helpers.js";
+} from "./testing/helpers.js";
 
 // 带自定义正则规则的角色卡：一条只作用于用户输入，一条只作用于模型上下文。
 const regexStagesCard = {

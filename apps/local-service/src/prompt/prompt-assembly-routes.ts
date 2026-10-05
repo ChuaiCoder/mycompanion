@@ -8,13 +8,13 @@ import {
   type MemoryRetrievalReport,
 } from "@mycompanion/shared";
 
-import type { CharacterRepository } from "./character-repository.js";
-import type { GenerationPipeline } from "./generation-pipeline.js";
-import { buildPromptPreview } from "./model-client.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import { sendError } from "./http-errors.js";
-import type { IdParams, SecretCodec } from "./route-types.js";
-import { worldInfoOutletsFromPrompts } from "./world-info-activation.js";
+import type { CharacterRepository } from "../character/character-repository.js";
+import type { GenerationPipeline } from "../chat/generation-pipeline.js";
+import { buildPromptPreview } from "../providers/model-client.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import { sendError } from "../http-errors.js";
+import type { IdParams, SecretCodec } from "../route-types.js";
+import { worldInfoOutletsFromPrompts } from "../world-info/world-info-activation.js";
 
 export function registerPromptAssemblyRoutes(app: FastifyInstance, runtime: RuntimeRepository, characters: CharacterRepository, pipeline: GenerationPipeline, secretCodec?: SecretCodec): void {
   const { applyRegexStage, buildLorebookReport, memoryShutdown, createRegexContext, retrieveMemory, snapshotKey } = pipeline;

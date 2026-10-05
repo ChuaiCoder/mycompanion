@@ -4,7 +4,7 @@ import {
   type MemoryRetrievalResult,
 } from "@mycompanion/shared";
 
-import { estimateTokens } from "./worldbook-engine.js";
+import { estimateTokens } from "../world-info/worldbook-engine.js";
 
 /**
  * 长期记忆检索引擎（FR-MEM-005/008）。

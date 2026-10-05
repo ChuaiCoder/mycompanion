@@ -7,9 +7,9 @@ import { inspect } from "node:util";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ProviderSettings } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { completeText } from "./model-client.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { apps, parseSse, waitFor } from "./test-helpers.js";
+import { completeText } from "./providers/model-client.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { apps, parseSse, waitFor } from "./testing/helpers.js";
 
 const sentinel = "PROVIDER_ECHO_SENTINEL";
 const cleanup: Array<() => Promise<void>> = [];

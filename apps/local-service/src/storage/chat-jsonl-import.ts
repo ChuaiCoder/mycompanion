@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import type { StoredCharacter } from "./character-repository.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import type { StoredCharacter } from "../character/character-repository.js";
 
 const object = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value);
 // Independent adapter for Tavern 1.19.0 JSONL and its Chub message shape. Parse

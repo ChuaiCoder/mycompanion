@@ -1,9 +1,11 @@
-import type {
-  MemoryListQuery,
-  MemoryRecord,
-  MemoryRetrievalReport,
-  MemoryUpdateRequest,
-  StageSummary,
+import {
+  memoryInventoryResponseSchema,
+  type MemoryInventoryResponse,
+  type MemoryListQuery,
+  type MemoryRecord,
+  type MemoryRetrievalReport,
+  type MemoryUpdateRequest,
+  type StageSummary,
 } from "@mycompanion/shared";
 
 import { readApiPayload } from "./core";
@@ -24,6 +26,26 @@ export async function listMemories(
   );
   const payload = (await readApiPayload(response)) as { items: MemoryRecord[] };
   return payload.items;
+}
+
+/**
+ * 记忆库（跨故事清单）：每条记忆只出现一次，附归属故事标题，供「记忆」一级页面使用。
+ * 与 listMemories 的区别是不按故事过滤。
+ */
+export async function listMemoryInventory(
+  filters: MemoryListQuery = {},
+  signal?: AbortSignal,
+): Promise<MemoryInventoryResponse> {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(filters)) {
+    if (value !== undefined) params.set(key, value);
+  }
+  const query = params.toString();
+  const response = await fetch(`/api/memories${query ? `?${query}` : ""}`, {
+    headers: { Accept: "application/json" },
+    ...(signal ? { signal } : {}),
+  });
+  return memoryInventoryResponseSchema.parse(await readApiPayload(response));
 }
 
 export async function updateMemory(

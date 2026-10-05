@@ -11,9 +11,9 @@ import {
 } from "@mycompanion/shared";
 
 import { PRESET_STORAGE_KEY } from "./preset-routes.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import { sendError } from "./http-errors.js";
-import type { IdParams } from "./route-types.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import { sendError } from "../http-errors.js";
+import type { IdParams } from "../route-types.js";
 
 export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepository): void {
   app.get("/api/plugins", async () => {

@@ -2,8 +2,8 @@ import { describe,expect,it } from "vitest";
 import { tokenAccountingSchema,providerTokenUsageSchema } from "@mycompanion/shared";
 import { accountCompletionTokens } from "./token-accounting.js";
 import { imageTokenCost } from "./image-token-cost.js";
-import { readProviderTokenUsage,providerInputDifference,sumProviderTokenUsages } from "./provider-usage.js";
-import { measureChatCompletionRequest } from "./chat-completion-budget.js";
+import { readProviderTokenUsage,providerInputDifference,sumProviderTokenUsages } from "../providers/provider-usage.js";
+import { measureChatCompletionRequest } from "../providers/chat-completion-budget.js";
 
 const image=(width:number,height:number)=>{
   // Authored header fixture; the header-only parser does not decode pixels.

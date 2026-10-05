@@ -2,7 +2,7 @@ import { type NativeCompletionRequest, type ProviderTokenUsage, type TokenAccoun
 import { measureChatCompletionRequest, assertChatCompletionBudget } from "./chat-completion-budget.js";
 import { normalizeChatCompletionRequest } from "./chat-completion-request.js";
 import { ModelRequestError } from "./model-request-error.js";
-import { MacroVariableConflictError } from "./macro-variable-conflict.js";
+import { MacroVariableConflictError } from "../prompt/macro-variable-conflict.js";
 export { ModelRequestError } from "./model-request-error.js";
 import type {
   ChatMessage,
@@ -14,13 +14,13 @@ import type {
   ExtensionPrompt,
 } from "@mycompanion/shared";
 
-import type { PromptBudgetReport } from "./prompt-budget.js";
-import { getPersonaUserName } from "./power-user-core.js";
-import { macroVariableStores, MacroEvaluationSession } from "./prompt-macros.js";
-import { readPromptManagerSettings } from "./prompt-manager-core.js";
-import { assembleManagedModelPrompt } from "./managed-prompt-assembly.js";
+import type { PromptBudgetReport } from "../prompt/prompt-budget.js";
+import { getPersonaUserName } from "../prompt/power-user-core.js";
+import { macroVariableStores, MacroEvaluationSession } from "../prompt/prompt-macros.js";
+import { readPromptManagerSettings } from "../prompt/prompt-manager-core.js";
+import { assembleManagedModelPrompt } from "../prompt/managed-prompt-assembly.js";
 import { providerHttpError, providerPayloadError } from "./provider-errors.js";
-import { accountCompletionTokens } from "./token-accounting.js";
+import { accountCompletionTokens } from "../tokens/token-accounting.js";
 import { replayProviderResponseMessages, requestProviderCompletion } from "./provider-transport.js";
 import { decodeProviderReply, readProviderJson, readProviderStream, tavernProviderReply } from "./provider-response.js";
 import type { ModelCandidateSnapshot, ModelResponseState, ModelToolRound } from "@mycompanion/shared";

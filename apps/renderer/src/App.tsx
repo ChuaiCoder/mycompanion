@@ -31,6 +31,7 @@ import { useConversations } from "./hooks/useConversations";
 import { readExtensionResume, useExtensionResume, type WorkspaceView } from "./hooks/useExtensionResume";
 import { usePlugins } from "./hooks/usePlugins";
 import { useProviderSettings } from "./hooks/useProviderSettings";
+import { useModelConnection } from "./hooks/useModelConnection";
 import { AppLayout } from "./views/AppLayout";
 import "./styles.css";
 import { initializeUiLanguage } from "./i18n";
@@ -71,6 +72,8 @@ export function App() {
   }, []);
 
   // 健康检查须先于各领域 hook 的挂载请求发出（与原单一挂载 effect 的请求顺序一致）。
+  // 它只表示"本地服务可达"，用于放行依赖服务就绪的面板；侧栏显示的是模型连通性，
+  // 见 useModelConnection。
   useEffect(() => {
     const controller = new AbortController();
     void fetchHealth(controller.signal)
@@ -81,6 +84,9 @@ export function App() {
       });
     return () => controller.abort();
   }, []);
+
+  // 启动时探测一次模型是否连得上（不轮询；保存新设置后再查一次）。
+  const modelConnection = useModelConnection();
 
   const characterSelection = useCharacterSelection({
     navigationRevision,
@@ -184,6 +190,7 @@ export function App() {
   return (
     <AppLayout
       serviceState={serviceState}
+      modelConnection={modelConnection}
       runtimeError={runtimeError}
       setRuntimeError={setRuntimeError}
       isSidebarCollapsed={isSidebarCollapsed}

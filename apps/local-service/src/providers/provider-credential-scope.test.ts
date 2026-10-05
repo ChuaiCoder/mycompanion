@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
-import { buildApp } from "./app.js";
-import { apps, completionResponse, sseResponse } from "./test-helpers.js";
-import { createTestCharacter } from "./native-fixtures.js";
+import { buildApp } from "../app.js";
+import { apps, completionResponse, sseResponse } from "../testing/helpers.js";
+import { createTestCharacter } from "../testing/native-character.js";
 import { sameProviderCredentialScope } from "./provider-credential-scope.js";
 
 const settings={kind:"openai-compatible" as const,baseUrl:"https://old-provider.example/v1",model:"gpt-4o",maxTokens:128,contextLimitTokens:4096};

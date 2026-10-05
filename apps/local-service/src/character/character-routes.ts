@@ -36,11 +36,11 @@ import {
   type CharacterImport,
 } from "./character-repository.js";
 import { checkCharacterExport } from "./export-compatibility.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import { sendError } from "./http-errors.js";
-import type { CharacterExportQuery, CharacterParams } from "./route-types.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import { sendError } from "../http-errors.js";
+import type { CharacterExportQuery, CharacterParams } from "../route-types.js";
 import { encodeCharacterArchive, parseCharacterArchive, characterAssetContentType, characterCardForPng, mainIconPath } from "./character-archive.js";
-import { BoundedZipError } from "./bounded-zip.js";
+import { BoundedZipError } from "../bounded-zip.js";
 import { parseCharacterCardYaml } from "./character-yaml.js";
 import { parseCharacterByaf, importByafScenarios, type ByafImport } from "./character-byaf.js";
 import { materializeCharacterInlineAssets } from "./character-inline-assets.js";

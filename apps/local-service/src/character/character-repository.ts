@@ -15,7 +15,7 @@ import {
   type CharacterCard,
   type ParsedCharacterCard,
 } from "@mycompanion/character-card";
-import { parseCharacterRegexRules } from "./regex-engine.js";
+import { parseCharacterRegexRules } from "../prompt/regex-engine.js";
 import { CharacterAssetRepository } from "./character-assets.js";
 import { replaceCharacterMainIcon } from "./character-archive.js";
 

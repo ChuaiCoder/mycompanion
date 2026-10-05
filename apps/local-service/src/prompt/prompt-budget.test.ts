@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ChatMessage, CharacterDetail, LorebookReport } from "@mycompanion/shared";
 
 import { applyPromptBudget, selectRecentMessages } from "./prompt-budget.js";
-import { countTextTokens } from "./tokenizer-service.js";
+import { countTextTokens } from "../tokens/tokenizer-service.js";
 
 const NOW = "2026-09-20T00:00:00.000Z";
 

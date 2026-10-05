@@ -76,7 +76,23 @@ export function useChatGeneration(deps: {
   const inputRevision = useRef(0), firstComposer = useRef(true);
   const composerDrafts = useRef<ComposerDraftStore | null>(null);
   const [draftTarget, setDraftTarget] = useState<string | undefined>();
-  const setChatInput: Dispatch<SetStateAction<string>> = value => { inputRevision.current++; setInput(value); };
+  /**
+   * 允许写入草稿存储的 input 版本号。
+   * 发送时的清空是程序性动作（内容已经发出去了），若照常落盘就会把草稿抹掉；
+   * 它在原故事仍打开时执行，所以持久化里那条会被真的清空——失败时就再也找不回来。
+   * 做法是把"这一版不要落盘"记下来，只有版本号匹配时才写入。
+   */
+  const persistRevision = useRef(0);
+  const setChatInput: Dispatch<SetStateAction<string>> = value => {
+    // 用户输入（含代写回填）都允许落盘。
+    persistRevision.current = ++inputRevision.current;
+    setInput(value);
+  };
+  /** 程序性地清空输入（发送时）：这一版不写草稿存储，避免把用户草稿抹掉。 */
+  const clearChatInput = (): void => {
+    inputRevision.current++;
+    setInput("");
+  };
   const renderedComposer = useRef({ id: activeConversation?.id, revision: inputRevision.current });
   const inputEditedAtNavigation = useRef(false);
   if (renderedComposer.current.id !== activeConversation?.id) {
@@ -105,7 +121,10 @@ export function useChatGeneration(deps: {
     return () => { disposed = true; };
   }, [activeConversation?.id]);
   useEffect(() => {
-    if (draftTarget && draftTarget === activeConversation?.id) composerDrafts.current?.write(draftTarget, chatInput);
+    if (!draftTarget || draftTarget !== activeConversation?.id) return;
+    // 只有"允许落盘的那一版"才写：发送时的清空不写，否则原故事的草稿会被真的抹掉。
+    if (persistRevision.current !== inputRevision.current) return;
+    composerDrafts.current?.write(draftTarget, chatInput);
   }, [draftTarget, activeConversation?.id, chatInput]);
 
   useEffect(() => {
@@ -214,11 +233,26 @@ export function useChatGeneration(deps: {
     };
   };
 
+  /**
+   * 刷新侧栏故事列表。
+   * 单独捕获错误：它是一个只读的附属动作，失败**不能**被当成"发送/生成失败"——
+   * 否则发送已经成功、消息也已落库，却因为列表读不出来而把内容退回输入框，
+   * 用户再点一次就重复发送了。
+   */
+  const refreshConversationList = async (): Promise<string | null> => {
+    try {
+      setConversations((await listConversations()).items);
+      return null;
+    } catch (error) {
+      return error instanceof Error ? error.message : "故事列表刷新失败。";
+    }
+  };
+
   const handleSendMessage = async (input?: string, options: NativeGenerationOptions = {}): Promise<NativeGenerationResult> => {
     const content = options.dryRun ? "" : (input ?? chatInput).trim();
     if (!activeConversation || (!content && !options.allowEmpty && !options.dryRun) || isGenerating || streamControllerRef.current) return { status: "skipped" };
     const story = activeConversation.id;
-    if (!options.dryRun) setChatInput("");
+    if (!options.dryRun) clearChatInput();
     setRuntimeError(null);
     setIsGenerating(true);
     const controller = new AbortController();
@@ -229,8 +263,10 @@ export function useChatGeneration(deps: {
     const observed = resultObserver(makeStreamHandler(story));
     try {
       await streamChatMessage(story, content, controller.signal, observed.onEvent, options);
-      setConversations((await listConversations()).items);
+      // 到这里发送已经成功：之后任何失败都不得再影响草稿或把它判成发送失败。
+      const listError = await refreshConversationList();
       if (observed.state.result.status === "failed" && isCurrentStory(story)) setRuntimeError(observed.state.result.error.message);
+      else if (listError && isCurrentStory(story)) setRuntimeError(listError);
       return observed.state.result;
     } catch (error) {
       if (controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError")) {
@@ -240,8 +276,15 @@ export function useChatGeneration(deps: {
         } catch { /* keep partial state */ }
         return { status: "stopped" };
       }
+      // 请求没被接收（网络失败/服务拒绝）时，用户刚打的字必须留住。
+      // 注意要**按原故事 id 写回草稿存储**：发送时已经把它清成空串，
+      // 而清空发生在原故事还打开的时候，所以持久化里那条已经被抹掉了。
+      // 不能只用 setChatInput —— 那仅在"用户还停在原故事"时才有意义，
+      // 切走再失败时原故事的草稿就永久丢了。
+      if (content) composerDrafts.current?.write(story, content);
       if (isCurrentStory(story)) {
         setRuntimeError(error instanceof Error ? error.message : "消息发送失败。");
+        if (content) setChatInput((current) => current ? current : content);
       }
       try {
         await reloadStory(story);
@@ -298,8 +341,9 @@ export function useChatGeneration(deps: {
       if (mode) await streamForegroundMode(story, mode, controller.signal, observed.onEvent, options);
       else await streamRegenerate(story, controller.signal, observed.onEvent, options);
       await reloadStory(story);
-      setConversations((await listConversations()).items);
+      const listError = await refreshConversationList();
       if (observed.state.result.status === "failed" && isCurrentStory(story)) setRuntimeError(observed.state.result.error.message);
+      else if (listError && isCurrentStory(story)) setRuntimeError(listError);
       return observed.state.result;
     } catch (error) {
       if (isCurrentStory(story) && !controller.signal.aborted && !(error instanceof DOMException && error.name === "AbortError")) {

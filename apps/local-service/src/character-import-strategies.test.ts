@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { encodeCharacterCardPng } from "@mycompanion/character-card";
 import { buildApp } from "./app.js";
-import { CharacterRepository } from "./character-repository.js";
-import { apps, fullV2Card } from "./test-helpers.js";
+import { CharacterRepository } from "./character/character-repository.js";
+import { apps, fullV2Card } from "./testing/helpers.js";
 
 const payload = (card: unknown = fullV2Card) => ({ filename: "original.json", card });
 const setup = () => { const app = buildApp({ databasePath: ":memory:" }); apps.push(app); return app; };

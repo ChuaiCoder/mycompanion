@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const reportPath = resolve(process.argv[2] ?? resolve(root, '.cache/reports', `image-header-security-${Date.now()}.json`));
-const modulePath = resolve(root, 'apps/local-service/dist/image-token-cost.js');
+const modulePath = resolve(root, 'apps/local-service/dist/tokens/image-token-cost.js');
 const report = { checkedAt: new Date().toISOString(), passed: false, scope: 'Real compiled Token header boundary in an isolated Node child with a hard process timeout', errors: [] };
 try {
   report.moduleSha256 = createHash('sha256').update(await readFile(modulePath)).digest('hex');

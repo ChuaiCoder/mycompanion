@@ -2,8 +2,8 @@ import {
   createCharacterMacroFieldsLazy, readCharacterMacroFields,
   type CharacterDetail, type ProviderSettings, type ExtensionPrompt,
 } from "@mycompanion/shared";
-import { getPersonaDescription, getPersonaUserName, POWER_USER_SETTINGS_KEY } from "./power-user-core.js";
-import { MacroEvaluationSession, macroVariableStores } from "./prompt-macros.js";
+import { getPersonaDescription, getPersonaUserName, POWER_USER_SETTINGS_KEY } from "../prompt/power-user-core.js";
+import { MacroEvaluationSession, macroVariableStores } from "../prompt/prompt-macros.js";
 
 /** Bind the selected raw card for later independent substituteParams calls.
  * Public assembly binds this environment without performing native first-card

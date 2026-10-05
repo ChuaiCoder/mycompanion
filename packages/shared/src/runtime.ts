@@ -198,6 +198,12 @@ export const conversationListResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 
+// 软删除（FR-DATA-004）：删除后可恢复，列表与详情默认不再返回该故事。
+export const deleteConversationResponseSchema = z.object({
+  id: z.string().uuid(),
+  deletedAt: z.string().datetime(),
+});
+
 export const createConversationRequestSchema = z.object({
   characterId: z.string().uuid(),
   greetingIndex: z.number().int().min(0).optional(),
@@ -329,6 +335,34 @@ export const setPluginEnabledRequestSchema = z.object({
 });
 
 export type ProviderKind = z.infer<typeof providerKindSchema>;
+
+/**
+ * 列出模型时的草稿校验（比写入宽松）：模型名可以为空。
+ * 「获取模型」的目的正是**还不知道**该填哪个模型，要求 model 非空会让自定义服务
+ * 永远拿不到列表（400）。
+ *
+ * 注意：**不要**加 `.strict()`。前端发来的是完整草稿（还带 temperature / maxTokens /
+ * contextLimitTokens / clearApiKey 等），多余字段必须被忽略而不是拒绝——否则同样 400。
+ */
+export const listProviderModelsRequestSchema = z.object({
+  kind: providerKindSchema,
+  baseUrl: z.string().min(1).max(2_048),
+  model: z.string().max(200).default(""),
+  apiKey: z.string().max(8_192).optional(),
+  clearApiKey: z.boolean().optional().default(false),
+});
+export type ListProviderModelsRequest = z.infer<typeof listProviderModelsRequestSchema>;
+
+/**
+ * 模型列表（设置页「测试获取模型」）：按协议向服务商要一份可选的模型名，
+ * 让用户从真实结果里挑，而不是手打模型名猜。
+ */
+export const providerModelsResponseSchema = z.object({
+  ok: z.boolean(),
+  message: z.string(),
+  models: z.array(z.string()).max(500),
+});
+export type ProviderModelsResponse = z.infer<typeof providerModelsResponseSchema>;
 export type ProviderSettings = z.infer<typeof providerSettingsSchema>;
 export type PromptBudgetReport = z.infer<typeof promptBudgetReportSchema>;
 export type UpdateProviderSettings = z.infer<typeof updateProviderSettingsSchema>;
@@ -337,6 +371,7 @@ export type ChatMessage = z.infer<typeof chatMessageSchema>;
 export type ConversationSummary = z.infer<typeof conversationSummarySchema>;
 export type ConversationDetail = z.infer<typeof conversationDetailSchema>;
 export type ConversationListResponse = z.infer<typeof conversationListResponseSchema>;
+export type DeleteConversationResponse = z.infer<typeof deleteConversationResponseSchema>;
 export type SendMessageResponse = z.infer<typeof sendMessageResponseSchema>;
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 export type InstalledPlugin = z.infer<typeof installedPluginSchema>;

@@ -1,7 +1,7 @@
 import { worldInfoSettingsSchema, type CharacterLorebookEntry, type LorebookEntryResult, type LorebookReport } from "@mycompanion/shared";
-import { MacroEvaluationSession } from "./prompt-macros.js";
-import { countTextTokens } from "./tokenizer-service.js";
-import { createWorldInfoRuntime } from "./world-info-upstream-runtime.js";
+import { MacroEvaluationSession } from "../prompt/prompt-macros.js";
+import { countTextTokens } from "../tokens/tokenizer-service.js";
+import { createWorldInfoRuntime } from "../world-info-upstream-runtime.js";
 import { attachWorldInfoEffects, type WorldInfoEffectsDraft } from "./world-info-effects.js";
 import { attachWorldInfoActivations } from "./world-info-activation.js";
 import { encodeWorldInfoGraph, decodeWorldInfoGraph, type WorldInfoGraph } from "./world-info-event-graph.js";

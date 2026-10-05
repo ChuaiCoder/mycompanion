@@ -5,11 +5,11 @@ import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import type { ModelResponseState, ProviderSettings } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { parseSse } from "./test-helpers.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { readProviderStream, decodeProviderReply, readProviderJson } from "./provider-response.js";
-import { normalizeChatCompletionRequest } from "./chat-completion-request.js";
-import { providerRequestBody, requestProviderCompletion } from "./provider-transport.js";
+import { parseSse } from "./testing/helpers.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { readProviderStream, decodeProviderReply, readProviderJson } from "./providers/provider-response.js";
+import { normalizeChatCompletionRequest } from "./providers/chat-completion-request.js";
+import { providerRequestBody, requestProviderCompletion } from "./providers/provider-transport.js";
 
 const apps:ReturnType<typeof buildApp>[]=[],cleanups:Array<()=>Promise<void>>=[];
 afterEach(async()=>{await Promise.all(apps.splice(0).map(app=>app.close()));for(const close of cleanups.splice(0))await close();});

@@ -1,7 +1,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
-import { RuntimeRepository } from "./runtime-repository.js";
-import { apps, commitCard, completionResponse, fullV2Card, sseResponse } from "./test-helpers.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
+import { apps, commitCard, completionResponse, fullV2Card, sseResponse } from "./testing/helpers.js";
 
 afterEach(() => vi.restoreAllMocks());
 

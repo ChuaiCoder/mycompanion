@@ -93,19 +93,31 @@ export function LibraryView({
   const text = (value: string) => libraryText(i18n.language, value);
   const locale = uiLocale();
   const currentTitle = preview?.name ?? selectedCharacter?.name ?? text("角色库");
+  // 角色库只是浏览已保存角色（网格或角色详情）时，导入助手整栏没有内容可做，却要
+  // 占掉约 62% 宽度，并把库网格挤成一条窄缝；此时收起助手，让库区占满。导入入口仍
+  // 保留在侧边栏「导入角色卡」、页面右上「新建导入」和 Ctrl/Cmd+I。只有在还没有任何
+  // 角色（首启引导）或已选中角色卡文件进入预览（审核与确认）时才显示助手。
+  const showAssistant = preview !== null || characters.length === 0;
+  // 导入结果提示（成功、失败、批量进度）挂在右侧检视栏而不是左侧助手栏：确认导入
+  // 成功的那一刻助手正好收起（角色已入库、进入详情），提示若留在助手栏就会随之一并
+  // 消失，用户看不到"已保存"的确认。
+  const notices = (
+    <div aria-live="polite" className="notice-stack">
+      {importError ? <Notice tone="error"><strong>{text(importError)}</strong>{importErrorDetails.length > 0 ? <details><summary>{text("查看具体问题")}</summary><ul>{importErrorDetails.map((detail) => <li key={detail}>{text(detail)}</li>)}</ul></details> : null}</Notice> : null}
+      {successMessage ? <Notice tone="success">{text(successMessage)}</Notice> : null}
+      {batchItems.length > 1 ? <section className="import-batch" aria-label={text("批量导入结果")}><h2>{text(`逐文件导入 · ${batchItems.filter(item => ["saved", "opened", "skipped"].includes(item.status)).length} / ${batchItems.length}`)}</h2><ol>{batchItems.map(item => <li key={item.id}><strong>{item.fileName}</strong><span>{{ waiting: text("待检查"), previewing: text("正在检查"), ready: text("等待确认"), failed: text("失败"), saved: text("已导入"), opened: text("已打开既有角色"), skipped: text("已跳过") }[item.status]}</span>{item.error ? <p role="status">{text(item.error)}</p> : null}{item.status === "failed" ? <button type="button" disabled={isImporting || isSaving || Boolean(preview)} onClick={() => onRetryFile?.(item.id)}>{text("重试此文件")}</button> : null}</li>)}</ol></section> : null}
+    </div>
+  );
   return (
-    <main className="workspace-shell">
+    <main className={`workspace-shell${showAssistant ? "" : " workspace-shell--solo"}`}>
+      {showAssistant ? (
       <section className="conversation-pane" aria-label={text("角色导入助手")}>
         <header className="pane-header">
           <div className="pane-heading"><strong>{text("角色导入助手")}</strong><span>{text("上下文：")}{currentTitle}</span></div>
           <div className="pane-header-actions"><button className="button button--quiet" type="button" id="world_button" aria-pressed={worldEditorOpen} onClick={onWorldEditorToggle}><Icon name="book" size={16} />{text("世界书")}</button><button className="button button--quiet" disabled type="button"><Icon name="history" size={16} />{text("历史记录")}</button><button className="button button--primary" disabled={isImporting || isSaving} onClick={onOpenFilePicker} type="button"><Icon name="plus" size={16} />{text("新建导入")}</button></div>
         </header>
         <div className="conversation-scroll">
-          <div aria-live="polite" className="notice-stack">
-            {importError ? <Notice tone="error"><strong>{text(importError)}</strong>{importErrorDetails.length > 0 ? <details><summary>{text("查看具体问题")}</summary><ul>{importErrorDetails.map((detail) => <li key={detail}>{text(detail)}</li>)}</ul></details> : null}</Notice> : null}
-            {successMessage ? <Notice tone="success">{text(successMessage)}</Notice> : null}
-            {batchItems.length > 1 ? <section className="import-batch" aria-label={text("批量导入结果")}><h2>{text(`逐文件导入 · ${batchItems.filter(item => ["saved", "opened", "skipped"].includes(item.status)).length} / ${batchItems.length}`)}</h2><ol>{batchItems.map(item => <li key={item.id}><strong>{item.fileName}</strong><span>{{ waiting: text("待检查"), previewing: text("正在检查"), ready: text("等待确认"), failed: text("失败"), saved: text("已导入"), opened: text("已打开既有角色"), skipped: text("已跳过") }[item.status]}</span>{item.error ? <p role="status">{text(item.error)}</p> : null}{item.status === "failed" ? <button type="button" disabled={isImporting || isSaving || Boolean(preview)} onClick={() => onRetryFile?.(item.id)}>{text("重试此文件")}</button> : null}</li>)}</ol></section> : null}
-          </div>
+          {notices}
           {preview ? (
             <div className="assistant-flow">
               <div className="request-bubble"><span>{text("请帮我检查并导入角色卡")}</span><strong>{draftFileName}</strong></div>
@@ -135,9 +147,11 @@ export function LibraryView({
           <small className="composer-hint">{text("支持 Character Card V2/V3 · 导入前始终预览")}</small>
         </div>
       </section>
+      ) : null}
 
       <aside className="inspector-pane">
         <header className="inspector-header"><div className="breadcrumb" aria-label={text("当前位置")}>{!preview && selectedCharacter && onBackToLibrary ? <button className="breadcrumb__link" onClick={onBackToLibrary} type="button">{text("角色库")}</button> : <span>{text("角色库")}</span>}<i>/</i><strong>{currentTitle}</strong></div><span className={`local-save-state ${preview ? "local-save-state--pending" : ""}`}>{preview ? text("尚未保存") : selectedCharacter ? text("✓ 已保存到本地") : text("本地工作区")}</span></header>
+        {!showAssistant ? notices : null}
         {preview ? (
           <section className="inspector-scroll preview-inspector" aria-labelledby="preview-title">
             <header className="character-hero"><span aria-hidden="true" className="character-avatar character-avatar--large">{characterInitial(preview.name)}</span><div><p className="eyebrow">{text("导入预览 · ")}{preview.format.toUpperCase()}</p><h1 id="preview-title" ref={previewHeadingRef} tabIndex={-1}>{preview.name}</h1><ExpandableDescription translate={text} text={preview.descriptionPreview} emptyText={text("这张角色卡没有填写人物简介。")} /></div></header>

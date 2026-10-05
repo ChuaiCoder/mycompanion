@@ -25,11 +25,48 @@ it("retains a rejected draft and structured correction without writing provider 
   expect(api.saveProviderSettings).not.toHaveBeenCalled(); expect(result.current.providerIssue?.field).toBe("model"); expect(result.current.provider?.model).toBe("fixture");
 });
 
+it("reports save failure as an explicit false instead of resolving silently", async () => {
+  // 这是界面判断"能否进聊天"的依据：hook 吞掉异常后必须返回 false，
+  // 否则调用方只能靠"有没有抛异常"猜，会把失败当成成功。
+  vi.mocked(api.testProvider).mockResolvedValue({ ok: true, message: "Model replied", models: [] });
+  vi.mocked(api.saveProviderSettings).mockRejectedValue(new Error("磁盘写入失败"));
+  const setRuntimeError = vi.fn();
+  const { result } = renderHook(() => useProviderSettings({ setRuntimeError }));
+  act(() => result.current.setProvider(configured));
+
+  let outcome: boolean | undefined;
+  await act(async () => { outcome = await result.current.handleSaveProvider(true); });
+  // 明确返回 false，同时仍然给出可读的错误提示。
+  expect(outcome).toBe(false);
+  expect(setRuntimeError).toHaveBeenCalled();
+  expect(result.current.isConnectionReady).toBe(false);
+  expect(result.current.providerNotice).toBeNull();
+});
+
+it("reports a refused connection test as false too", async () => {
+  vi.mocked(api.testProvider).mockResolvedValue({ ok: false, message: "Missing model", models: [], issue: { code: "MODEL_NOT_FOUND", field: "model", suggestion: "x", retryable: false } });
+  const { result } = renderHook(() => useProviderSettings({ setRuntimeError: vi.fn() }));
+  act(() => result.current.setProvider(configured));
+  let outcome: boolean | undefined;
+  await act(async () => { outcome = await result.current.handleSaveProvider(true); });
+  expect(outcome).toBe(false);
+});
+
+it("reports a successful save as true", async () => {
+  vi.mocked(api.testProvider).mockResolvedValue({ ok: true, message: "Model replied", models: [] });
+  vi.mocked(api.saveProviderSettings).mockResolvedValue({ ...configured, hasApiKey: true });
+  const { result } = renderHook(() => useProviderSettings({ setRuntimeError: vi.fn() }));
+  act(() => result.current.setProvider(configured));
+  let outcome: boolean | undefined;
+  await act(async () => { outcome = await result.current.handleSaveProvider(true); });
+  expect(outcome).toBe(true);
+});
+
 it("discards a late draft test after the user edits the model or key", async () => {
   let resolve!: (value: { ok: boolean; message: string; models: string[] }) => void;
   vi.mocked(api.testProvider).mockReturnValue(new Promise(yes => { resolve = yes; }));
   const { result } = renderHook(() => useProviderSettings({ setRuntimeError: vi.fn() }));
-  act(() => result.current.setProvider(configured)); let operation!: Promise<void>;
+  act(() => result.current.setProvider(configured)); let operation!: Promise<boolean>;
   await act(async () => { operation = result.current.handleSaveProvider(true); await Promise.resolve(); });
   act(() => { result.current.setProvider({ ...configured, model: "new-model" }); result.current.setApiKeyDraft("new-key"); });
   await act(async () => { resolve({ ok: true, message: "Old model replied", models: [] }); await operation; });
@@ -48,7 +85,7 @@ it.each(["success", "failure"])("ignores a late connection test %s after another
   const { result } = renderHook(() => useProviderSettings({ setRuntimeError: error }));
   try {
     act(() => result.current.setProvider(old));
-    let operation!: Promise<void>;
+    let operation!: Promise<boolean>;
     await act(async () => { operation = result.current.handleSaveProvider(true); await Promise.resolve(); });
     expect(api.testProvider).toHaveBeenCalledOnce();
     const current = { ...old, baseUrl: "https://new.test/v1" };

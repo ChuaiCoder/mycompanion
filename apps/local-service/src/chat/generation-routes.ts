@@ -11,11 +11,11 @@ import {
   stopGenerationResponseSchema,
 } from "@mycompanion/shared";
 
-import type { CharacterRepository } from "./character-repository.js";
+import type { CharacterRepository } from "../character/character-repository.js";
 import type { GenerationPipeline } from "./generation-pipeline.js";
-import { SwipeSelectionError, type RuntimeRepository } from "./runtime-repository.js";
-import { sendError } from "./http-errors.js";
-import type { IdParams } from "./route-types.js";
+import { SwipeSelectionError, type RuntimeRepository } from "../persistence/runtime-repository.js";
+import { sendError } from "../http-errors.js";
+import type { IdParams } from "../route-types.js";
 
 export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeRepository, characters: CharacterRepository, pipeline: GenerationPipeline): void {
   const { applyRegexStage, createRegexContext, streamGenerationToReply, inFlightGenerations } = pipeline;

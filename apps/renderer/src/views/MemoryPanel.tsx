@@ -165,7 +165,7 @@ export function MemoryPanel({ conversationId, conversationTitle, runtimeError, n
             <select aria-label={text("按范围筛选")} onChange={(event) => applyFilters({ scope: (event.target.value || undefined) as MemoryListQuery["scope"] })} value={filters.scope ?? ""}>
               <option value="">{text("全部范围")}</option>
               <option value="story">{text("本故事")}</option>
-              <option value="character">{text("角色共享")}</option>
+              <option value="character">{text("角色共享（旧数据）")}</option>
               <option value="user">{text("用户全局")}</option>
             </select>
             <select aria-label={text("按类型筛选")} onChange={(event) => applyFilters({ type: (event.target.value || undefined) as MemoryListQuery["type"] })} value={filters.type ?? ""}>

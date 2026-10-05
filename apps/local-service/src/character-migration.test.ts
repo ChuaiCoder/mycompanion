@@ -1,6 +1,6 @@
 import {expect,it} from "vitest";
 import {buildApp} from "./app.js";
-import {apps} from "./test-helpers.js";
+import {apps} from "./testing/helpers.js";
 
 it.each([
   {filename:"v1.json",card:{name:"V1",description:"description",first_mes:"greeting",unknown:{kept:true}},format:"tavern-v1-json"},

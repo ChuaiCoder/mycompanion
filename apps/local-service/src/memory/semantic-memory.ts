@@ -1,7 +1,7 @@
 import type { MemoryRecord, MemoryRetrievalReport } from "@mycompanion/shared";
-import { EMBEDDING_BATCH_SIZE, embedTexts, embeddingSignature, vectorContentFingerprint, type EmbeddingProvider } from "./embedding-client.js";
+import { EMBEDDING_BATCH_SIZE, embedTexts, embeddingSignature, vectorContentFingerprint, type EmbeddingProvider } from "../providers/embedding-client.js";
 import { retrieveMemories, type MemoryRetrievalInput } from "./memory-engine.js";
-import type { VectorStore } from "./vector-store.js";
+import type { VectorStore } from "../providers/vector-store.js";
 
 export const MEMORY_SIMILARITY_THRESHOLD = 0.4;
 export interface EmbeddingSelection { profileId: string; settings: EmbeddingProvider; apiKey?: string | undefined }

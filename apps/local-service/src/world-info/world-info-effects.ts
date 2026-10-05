@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ChatMessage, LorebookReport } from "@mycompanion/shared";
-import type { RuntimeRepository } from "./runtime-repository.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
 
 /** Stored in existing chat metadata, so backup/restore includes every branch. */
 export const WORLD_INFO_STATE_KEY = "__mycompanion_world_info_state";

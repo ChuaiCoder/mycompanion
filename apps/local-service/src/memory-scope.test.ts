@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it } from "vitest";
 import type { ConversationDetail, MemoryRecord, MemoryScope } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { RuntimeRepository } from "./runtime-repository.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
 
 type App = ReturnType<typeof buildApp>;
 const resources: Array<{ app: App; database: DatabaseSync; path: string }> = [];
@@ -63,21 +63,23 @@ const forbidden = [
   { scope: "story" as const, target: "sibling" as const },
   { scope: "story" as const, target: "other" as const },
   { scope: "character" as const, target: "other" as const },
+  // 每次开档独立：同一角色卡的另一局（sibling）也看不到这一局的角色级记忆。
+  { scope: "character" as const, target: "sibling" as const },
 ].flatMap(test => operations.map(operation => ({ ...test, operation })));
 it.each(forbidden)("rejects $operation of $scope memory through $target story without changing the owner", async ({ scope, target, operation }) => {
   const fixture = await setup(), record = fixture.memory(scope), before = fixture.runtime.getMemory(record.id);
+  // 前提：这条记忆在目标故事里本来就不可见（否则不该出现在 forbidden 里）。
   expect((await fixture.list(fixture[target].id)).some(item => item.id === record.id)).toBe(false);
   const response = await mutate(fixture.app, fixture[target].id, record.id, operation);
   expect(response.statusCode, response.body).toBe(404);
   expect(response.json().error.code).toBe("MEMORY_NOT_FOUND");
+  // 记忆本身不变；也不能因为"操作被拒"反而变得可见。
   expect(fixture.runtime.getMemory(record.id)).toEqual(before);
-  expect((await fixture.list(fixture.owner.id)).find(item => item.id === record.id)).toEqual(before);
   expect((await fixture.list(fixture[target].id)).some(item => item.id === record.id)).toBe(false);
 });
 
 const allowed = [
   { scope: "story" as const, target: "owner" as const },
-  { scope: "character" as const, target: "sibling" as const },
   { scope: "user" as const, target: "other" as const },
 ].flatMap(test => operations.map(operation => ({ ...test, operation })));
 it.each(allowed)("allows $operation of visible $scope memory through $target story", async ({ scope, target, operation }) => {
@@ -95,18 +97,37 @@ it.each(allowed)("allows $operation of visible $scope memory through $target sto
   }
 });
 
-it("uses the same scope rules after explicit promotion or narrowing, without transferring ownership", async () => {
+it("keeps each playthrough independent while leaving legacy character memories manageable in place", async () => {
+  const fixture = await setup();
+  const story = fixture.memory("story");
+  const legacy = fixture.memory("character");
+  // 另一局（同一角色卡）看不到这一局的任何记忆。
+  for (const record of [story, legacy]) {
+    expect((await fixture.list(fixture.sibling.id)).some(item => item.id === record.id)).toBe(false);
+    expect((await fixture.list(fixture.other.id)).some(item => item.id === record.id)).toBe(false);
+  }
+  // 但它对自己所在的那一局可见 —— 收窄规则之前产生的角色级记忆必须还能被管理，
+  // 否则用户在记忆面板里既看不到也删不掉。
+  expect((await fixture.list(fixture.owner.id)).some(item => item.id === legacy.id)).toBe(true);
+  // 只有"用户全局"是跨局共享的，因为它描述的是玩家本人而不是这一局的剧情。
+  const shared = fixture.memory("user");
+  expect((await fixture.list(fixture.sibling.id)).some(item => item.id === shared.id)).toBe(true);
+  expect((await fixture.list(fixture.other.id)).some(item => item.id === shared.id)).toBe(true);
+});
+
+it("promotes and narrows scope without letting a memory leak into another playthrough", async () => {
   const fixture = await setup(), record = fixture.memory("story");
   const update = async (conversationId: string, scope: MemoryScope) => {
     const response = await fixture.app.inject({ method: "PUT", url: `/api/conversations/${conversationId}/memories/${record.id}`, payload: { scope } });
     expect(response.statusCode, response.body).toBe(200);
   };
-  await update(fixture.owner.id, "character");
+  // 提成全局后两局都能看到。
+  await update(fixture.owner.id, "user");
   expect((await fixture.list(fixture.sibling.id)).some(item => item.id === record.id)).toBe(true);
-  expect((await fixture.list(fixture.other.id)).some(item => item.id === record.id)).toBe(false);
-  await update(fixture.sibling.id, "user");
   expect((await fixture.list(fixture.other.id)).some(item => item.id === record.id)).toBe(true);
-  await update(fixture.other.id, "story");
+  // 收回本局后，另一局立刻看不到（不再有任何跨局通道）。
+  await update(fixture.owner.id, "story");
+  expect((await fixture.list(fixture.sibling.id)).some(item => item.id === record.id)).toBe(false);
   expect((await fixture.list(fixture.other.id)).some(item => item.id === record.id)).toBe(false);
   expect((await fixture.list(fixture.owner.id)).some(item => item.id === record.id)).toBe(true);
   expect(fixture.runtime.getMemory(record.id)).toMatchObject({ conversationId: fixture.owner.id, characterId: fixture.owner.characterId });

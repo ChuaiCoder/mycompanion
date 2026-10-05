@@ -4,10 +4,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
-import { RuntimeRepository } from "./runtime-repository.js";
+import { buildApp } from "../app.js";
+import { RuntimeRepository } from "../persistence/runtime-repository.js";
 import { importChatJsonl } from "./chat-jsonl-import.js";
-import { CharacterRepository } from "./character-repository.js";
+import { CharacterRepository } from "../character/character-repository.js";
 import { parseCharacterCardDocument } from "@mycompanion/character-card";
 
 const directories: string[] = [];

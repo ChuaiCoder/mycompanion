@@ -1,7 +1,7 @@
 import { createRef, useState } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { characterCardPreviewResponseSchema, characterDetailSchema, type CharacterDetail } from "@mycompanion/shared";
+import { characterCardPreviewResponseSchema, characterDetailSchema, characterSummarySchema, type CharacterDetail } from "@mycompanion/shared";
 import i18n from "../i18n";
 import { App } from "../App";
 import { useCharacterImport } from "../hooks/useCharacterImport";
@@ -25,7 +25,18 @@ const character = characterDetailSchema.parse({
   regexEnabled: [], lorebookEnabled: [], lorebookEntryCount: 1, regexScriptCount: 1, lorebookEntries: preview.lorebookEntries, regexScripts: preview.regexScripts,
   deletedAt: null, createdAt: updatedAt, updatedAt,
 });
+// 测试里的 librarySummary 供"已在库中"的网格/浏览场景复用；从 character 派生可避免
+// 手写字段与 characterSummarySchema 漂移（此前手写版本缺 7 个必填字段）。名称沿用
+// 该夹具已有的「角色库」，以免与预览/详情断言里的名称不一致。
+const librarySummary = characterSummarySchema.parse({
+  id, name: character.name, description: character.description, tags: character.tags,
+  sourceFormat: character.sourceFormat, sourceVersion: character.sourceVersion,
+  alternateGreetingsCount: character.alternateGreetingsCount,
+  lorebookEntryCount: character.lorebookEntryCount, regexScriptCount: character.regexScriptCount,
+  deletedAt: character.deletedAt, createdAt: character.createdAt, updatedAt: character.updatedAt,
+});
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } });
+
 function props(overrides: Partial<LibraryViewProps> = {}): LibraryViewProps {
   return { preview: null, selectedCharacter: null, draftFileName: null, characters: [], listError: null, importError: null, importErrorDetails: [], successMessage: null,
     isImporting: false, isSaving: false, isLoadingCharacter: false, regexPanelOpen: false, lorebookPanelOpen: false, worldEditorOpen: false, previewHeadingRef: createRef(),
@@ -63,7 +74,7 @@ it("keeps the three-step route and character content while English actions invok
   fireEvent.click(screen.getByRole("button", { name: "Start chatting" })); expect(selected.onStartConversation).toHaveBeenCalledOnce();
   expect(screen.getByRole("link", { name: "Export CHARX" })).toHaveAttribute("href", `/api/characters/${id}/export?format=charx`);
   cleanup(); vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("offline"))); render(<App />);
-  await screen.findByText("Service unavailable");
+  await screen.findByText("Model unavailable");
   const input = screen.getByLabelText("Choose character card files"), click = vi.spyOn(input, "click").mockImplementation(() => {});
   // 默认落地为对话页，导入入口在侧边导航。
   fireEvent.click(screen.getByRole("button", { name: /Import character/ })); expect(click).toHaveBeenCalledOnce();
@@ -126,6 +137,35 @@ it("retries a failed batch file through the real import hook, then cancels witho
   fireEvent.click(screen.getByRole("button", { name: "Cancel batch" }));
   expect(screen.queryByRole("button", { name: "Confirm import" })).not.toBeInTheDocument();
   expect(fetch).toHaveBeenCalledTimes(3);
+});
+
+it("hides the import assistant while browsing a populated library so the grid takes the width", () => {
+  const { container } = render(<LibraryView {...props({ characters: [librarySummary] })} />);
+  // 网格浏览时不应再出现占掉大半宽度的导入助手整栏。
+  expect(screen.queryByLabelText("角色导入助手")).not.toBeInTheDocument();
+  expect(screen.queryByText("导入喜欢的角色，直接开始故事。")).not.toBeInTheDocument();
+  expect(container.querySelector(".workspace-shell--solo")).not.toBeNull();
+  expect(screen.getByRole("heading", { name: "我的角色" })).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: /角色库/ })).toBeInTheDocument();
+});
+
+it("keeps the import assistant for an empty library so first-run guidance is not lost", () => {
+  const { container } = render(<LibraryView {...props()} />);
+  expect(screen.getByLabelText("角色导入助手")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "只需要三步" })).toBeInTheDocument();
+  expect(container.querySelector(".workspace-shell--solo")).toBeNull();
+});
+
+it("hides the import assistant when a character detail is open", () => {
+  const { container } = render(<LibraryView {...props({ characters: [librarySummary], selectedCharacter: character })} />);
+  expect(screen.queryByLabelText("角色导入助手")).not.toBeInTheDocument();
+  expect(container.querySelector(".workspace-shell--solo")).not.toBeNull();
+});
+
+it("restores the import assistant for a pending preview so review and confirm stay reachable", () => {
+  const { container } = render(<LibraryView {...props({ characters: [librarySummary], preview })} />);
+  expect(screen.getByLabelText("角色导入助手")).toBeInTheDocument();
+  expect(container.querySelector(".workspace-shell--solo")).toBeNull();
 });
 
 it("localizes asset counts and preview disclosures while preserving expanded state, HTML and imported names", async () => {

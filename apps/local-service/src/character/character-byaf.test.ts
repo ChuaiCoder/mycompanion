@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ZipFile } from "yazl";
 import { describe, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "../app.js";
 import { parseCharacterByaf } from "./character-byaf.js";
-import { defaultByafPortrait } from "./character-byaf-utils.js";
+import { defaultByafPortrait } from "../character-byaf-utils.js";
 import { parseCharacterArchive } from "./character-archive.js";
 
 const date="2025-06-13T12:00:00.000Z";

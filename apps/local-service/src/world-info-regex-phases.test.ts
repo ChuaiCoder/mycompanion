@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
 import { buildApp } from "./app.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { apps } from "./test-helpers.js";
-import { MacroEvaluationSession } from "./prompt-macros.js";
-import { TavernRegexExecutor } from "./tavern-regex-service.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { apps } from "./testing/helpers.js";
+import { MacroEvaluationSession } from "./prompt/prompt-macros.js";
+import { TavernRegexExecutor } from "./prompt/tavern-regex-service.js";
 
 it.each([false, true])("escapes macro values without escaping authored regex syntax (experimental=%s)", async experimental => {
   const session = new MacroEvaluationSession({ variables: { token: "A+B" } }, { __mycompanion_power_user: { experimental_macro_engine: experimental } });

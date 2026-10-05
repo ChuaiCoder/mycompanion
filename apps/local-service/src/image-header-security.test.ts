@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { imageTokenCost } from "./image-token-cost.js";
+import { imageTokenCost } from "./tokens/image-token-cost.js";
 
 const cost = (bytes: Uint8Array, mime = "png") => imageTokenCost({ image_url: {
   url: `data:image/${mime};base64,${Buffer.from(bytes).toString("base64")}`, detail: "high" } }, "gpt-4o");

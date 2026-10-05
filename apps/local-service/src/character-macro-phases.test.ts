@@ -1,7 +1,7 @@
 import { expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { apps, sseResponse } from "./test-helpers.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { apps, sseResponse } from "./testing/helpers.js";
 import { readFileSync } from "node:fs";
 
 type PromptMessage = { role: string; content: string };

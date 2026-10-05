@@ -1,6 +1,6 @@
 import { afterEach, expect, it } from "vitest";
-import { buildApp } from "./app.js";
-import { createTestCharacter, editTestCharacter } from "./native-fixtures.js";
+import { buildApp } from "../app.js";
+import { createTestCharacter, editTestCharacter } from "../testing/native-character.js";
 
 const apps: ReturnType<typeof buildApp>[] = [];
 afterEach(async () => { for (const app of apps.splice(0)) await app.close(); });

@@ -1,7 +1,7 @@
-import { PNG } from "./image-header-upstream/png.js";
-import { JPG } from "./image-header-upstream/jpg.js";
-import { GIF } from "./image-header-upstream/gif.js";
-import { WEBP } from "./image-header-upstream/webp.js";
+import { PNG } from "../image-header-upstream/png.js";
+import { JPG } from "../image-header-upstream/jpg.js";
+import { GIF } from "../image-header-upstream/gif.js";
+import { WEBP } from "../image-header-upstream/webp.js";
 
 interface ImageCost { tokens: number; complete: boolean; reason: "image-rule-estimate" | "unknown-image-size" | "unknown-image-model" }
 interface PatchRule { edge: number; budget?: number; multiplier: number }

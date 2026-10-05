@@ -6,10 +6,10 @@ import { DatabaseSync } from "node:sqlite";
 import { afterEach, expect, it } from "vitest";
 import { parseCharacterCardDocument } from "@mycompanion/character-card";
 import type { BackupPayload } from "@mycompanion/shared";
-import { applyRestore, assembleBackupPayload, backupChecksum, previewRestore } from "./backup.js";
+import { applyRestore, assembleBackupPayload, backupChecksum, previewRestore } from "./storage/backup.js";
 import { buildApp } from "./app.js";
-import { CharacterRepository } from "./character-repository.js";
-import { RuntimeRepository } from "./runtime-repository.js";
+import { CharacterRepository } from "./character/character-repository.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
 
 const databases: DatabaseSync[] = [], paths: string[] = [];
 afterEach(() => {

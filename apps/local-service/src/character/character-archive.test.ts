@@ -5,12 +5,12 @@ import { DatabaseSync } from "node:sqlite";
 import { ZipFile } from "yazl";
 import { describe, expect, it } from "vitest";
 import { encodeCharacterCardPng, parseCharacterCardDocument, parseCharacterCardPngDocument } from "@mycompanion/character-card";
-import { buildApp } from "./app.js";
+import { buildApp } from "../app.js";
 import { parseCharacterArchive, encodeCharacterArchive } from "./character-archive.js";
 import { CharacterRepository } from "./character-repository.js";
-import { backupChecksum } from "./backup.js";
+import { backupChecksum } from "../storage/backup.js";
 import { validateCharacterAssetBackup } from "./character-assets.js";
-import { apps, fullV2Card } from "./test-helpers.js";
+import { apps, fullV2Card } from "../testing/helpers.js";
 
 const original = parseCharacterCardDocument(fullV2Card).card;
 const image = Buffer.from(encodeCharacterCardPng(original));

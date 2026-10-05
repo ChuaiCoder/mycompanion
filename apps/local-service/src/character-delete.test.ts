@@ -5,8 +5,8 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { type BackupPayload } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { backupChecksum } from "./backup.js";
-import { createTestCharacter } from "./native-fixtures.js";
+import { backupChecksum } from "./storage/backup.js";
+import { createTestCharacter } from "./testing/native-character.js";
 
 type App = ReturnType<typeof buildApp>;
 const applications: App[] = [], paths: string[] = [];

@@ -5,9 +5,9 @@ import vm from 'node:vm';
 import { writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { makeContext, productCard } from './prompt-population-upstream-oracle-20261002.mjs';
-import { assembleModelPrompt } from '../../apps/local-service/dist/model-client.js';
-import { MacroEvaluationSession } from '../../apps/local-service/dist/prompt-macros.js';
-import { bindCharacterMacroEnvironment } from '../../apps/local-service/dist/character-macros.js';
+import { assembleModelPrompt } from '../../apps/local-service/dist/providers/model-client.js';
+import { MacroEvaluationSession } from '../../apps/local-service/dist/prompt/prompt-macros.js';
+import { bindCharacterMacroEnvironment } from '../../apps/local-service/dist/character/character-macros.js';
 const json=value=>JSON.parse(JSON.stringify(value)),runs=[];
 const settings={kind:'ollama',baseUrl:'http://provider.test/v1',model:'gpt-4o',maxTokens:128,contextLimitTokens:4096,temperature:0.7,hasApiKey:false};
 for(const experimental of [false,true])for(const mode of ['public-single','public-readonly','extension-residual']){

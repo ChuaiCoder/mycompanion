@@ -1,5 +1,5 @@
 import type { FastifyInstance } from "fastify";
-import type { RuntimeRepository } from "./runtime-repository.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
 
 // Part of the existing extension-settings backup domain, but written through
 // preset routes so an older browser settings snapshot cannot erase new presets.

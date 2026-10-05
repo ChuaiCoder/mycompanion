@@ -4,8 +4,8 @@ import { once } from "node:events";
 import { afterEach, expect, it, vi } from "vitest";
 import type { MemoryRecord } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import * as memory from "./memory-extractor.js";
-import { commitCard, fullV2Card, parseSse, sseResponse } from "./test-helpers.js";
+import * as memory from "./memory/memory-extractor.js";
+import { commitCard, fullV2Card, parseSse, sseResponse } from "./testing/helpers.js";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 

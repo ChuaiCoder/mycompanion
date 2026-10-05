@@ -1,6 +1,6 @@
 import { expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
-import { apps, commitCard, completionResponse, fullV2Card, parseSse } from "./test-helpers.js";
+import { apps, commitCard, completionResponse, fullV2Card, parseSse } from "./testing/helpers.js";
 
 it.each([
   { finish: "stop", status: "complete", outcome: "complete", extracts: 1 },

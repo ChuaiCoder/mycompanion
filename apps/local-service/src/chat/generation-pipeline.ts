@@ -12,29 +12,29 @@ import type {
   ProviderTask,
 } from "@mycompanion/shared";
 
-import type { CharacterRepository } from "./character-repository.js";
+import type { CharacterRepository } from "../character/character-repository.js";
 import {
   characterWithChatOverrides,
   completeText,
   ModelRequestError,
   streamReply,
-} from "./model-client.js";
-import { extractMemories, summarizeMessages } from "./memory-extractor.js";
-import { reconcileMemoryReport } from "./memory-engine.js";
-import { SemanticMemoryRetriever, type SemanticMemoryInput, type EmbeddingSelection } from "./semantic-memory.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import { collectNativeRegexScripts, TavernRegexExecutor } from "./tavern-regex-service.js";
-import { buildWorldInfoReport, finalizeWorldInfoRegex, collectWorldInfoEntries } from "./world-info-service.js";
-import { normalizeWorldInfoEntries } from "./worldbook-engine.js";
-import { worldInfoVectorSettings, worldInfoVectorQueryText, activateWorldInfoVectors, type WorldInfoVectorActivation } from "./world-info-vectors.js";
-import { commitWorldInfoEffects, getCommittedWorldInfoState, getWorldInfoTimerSnapshot, replaceWorldInfoTimerSnapshot } from "./world-info-effects.js";
-import { buildAuthorNotePrompt } from "./author-note-core.js";
-import { getPersonaUserName } from "./power-user-core.js";
-import { MacroEvaluationSession } from "./prompt-macros.js";
-import { MacroVariableConflictError } from "./macro-variable-conflict.js";
-import { bindCharacterMacroEnvironment, buildCharacterDepthPrompt, prepareCharacterMacroFields } from "./character-macros.js";
-import type { SecretCodec } from "./route-types.js";
-import { getWorldInfoOutlets, getWorldInfoActivatedEntries, worldInfoOutletsFromPrompts } from "./world-info-activation.js";
+} from "../providers/model-client.js";
+import { extractMemories, summarizeMessages } from "../memory/memory-extractor.js";
+import { reconcileMemoryReport } from "../memory/memory-engine.js";
+import { SemanticMemoryRetriever, type SemanticMemoryInput, type EmbeddingSelection } from "../memory/semantic-memory.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import { collectNativeRegexScripts, TavernRegexExecutor } from "../prompt/tavern-regex-service.js";
+import { buildWorldInfoReport, finalizeWorldInfoRegex, collectWorldInfoEntries } from "../world-info/world-info-service.js";
+import { normalizeWorldInfoEntries } from "../world-info/worldbook-engine.js";
+import { worldInfoVectorSettings, worldInfoVectorQueryText, activateWorldInfoVectors, type WorldInfoVectorActivation } from "../world-info/world-info-vectors.js";
+import { commitWorldInfoEffects, getCommittedWorldInfoState, getWorldInfoTimerSnapshot, replaceWorldInfoTimerSnapshot } from "../world-info/world-info-effects.js";
+import { buildAuthorNotePrompt } from "../prompt/author-note-core.js";
+import { getPersonaUserName } from "../prompt/power-user-core.js";
+import { MacroEvaluationSession } from "../prompt/prompt-macros.js";
+import { MacroVariableConflictError } from "../prompt/macro-variable-conflict.js";
+import { bindCharacterMacroEnvironment, buildCharacterDepthPrompt, prepareCharacterMacroFields } from "../character/character-macros.js";
+import type { SecretCodec } from "../route-types.js";
+import { getWorldInfoOutlets, getWorldInfoActivatedEntries, worldInfoOutletsFromPrompts } from "../world-info/world-info-activation.js";
 
 export interface GenerationPipelineDeps {
   runtime: RuntimeRepository;

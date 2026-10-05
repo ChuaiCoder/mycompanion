@@ -8,10 +8,10 @@ import type {
   RetainedCharacterChats,
 } from "@mycompanion/shared";
 import { backupPayloadSchemaShared, backupRestoreResponseSchema, worldInfoSettingsSchema } from "@mycompanion/shared";
-import type { CharacterRepository } from "./character-repository.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import { imageType, validAvatarId } from "./persona-avatars.js";
-import { validateCharacterAssetBackup } from "./character-assets.js";
+import type { CharacterRepository } from "../character/character-repository.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import { imageType, validAvatarId } from "../character/persona-avatars.js";
+import { validateCharacterAssetBackup } from "../character/character-assets.js";
 
 /**
  * 完整备份与恢复（FR-DATA-003）。
@@ -46,6 +46,10 @@ export function backupChecksum(payload: Omit<BackupPayload, "manifest"> & { mani
 function sameConversation(entry: BackupPayload["conversations"][number], runtime: RuntimeRepository): boolean {
   const existing = runtime.getConversation(entry.id);
   if (!existing || existing.title !== entry.title || existing.characterId !== entry.characterId || existing.characterName !== entry.characterName || existing.activeBranchId !== entry.activeBranchId) return false;
+  // 删除状态也是内容的一部分：库里的故事是活跃的、备份里是已删除的（或反之）时必须
+  // 视为"不同"，否则覆盖恢复会被当成"完全相同"而跳过，删除状态永远同步不过来。
+  // 旧备份没有 deletedAt 字段 → 视为活跃。
+  if ((runtime.conversationDeletedAt(entry.id) ?? null) !== (entry.deletedAt ?? null)) return false;
   if (entry.chatMetadata !== undefined && canonicalJson(existing.chatMetadata) !== canonicalJson(entry.chatMetadata)) return false;
   if (entry.chatHeader !== undefined && canonicalJson(existing.chatHeader) !== canonicalJson(entry.chatHeader)) return false;
   const saved = new Map(entry.messages.map(message => [`${message.branchId}/${message.id}`, message]));
@@ -99,6 +103,8 @@ export function assembleBackupPayload(sources: BackupSources): BackupPayload {
       ...(Object.keys(conversation.chatHeader).length ? { chatHeader: conversation.chatHeader } : {}),
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
+      // 软删除状态必须随备份走（FR-DATA-004）：漏掉它，恢复后已删故事会重新出现。
+      ...(conversation.deletedAt ? { deletedAt: conversation.deletedAt } : {}),
       messages: conversation.messages.map((message) => ({
         id: message.id,
         branchId: message.branchId,
@@ -527,6 +533,7 @@ function applyRestoreSections(
     worldbooks: 0,
     worldInfoSettings: 0,
     retainedCharacterChats: 0,
+    conversationSettings: 0,
   };
   const skipped: BackupRestoreResponse["skipped"] = {
     characters: 0,
@@ -538,6 +545,7 @@ function applyRestoreSections(
     worldbooks: 0,
     worldInfoSettings: 0,
     retainedCharacterChats: 0,
+    conversationSettings: 0,
   };
 
   // 角色先行（后续故事/记忆依赖角色存在）。
@@ -621,7 +629,14 @@ function applyRestoreSections(
     runtime.restoreStageSummary(summary);
   }
   for (const setting of backup.conversationSettings) {
+    // 与 retainedCharacterChats / extensionSettings 保持一致：skip 策略下不覆盖现有设置。
+    const existing = runtime.getConversationSetting(setting.conversationId);
+    if (existing && (strategy === "skip" || existing.autoSummaryEnabled === setting.autoSummaryEnabled)) {
+      skipped.conversationSettings += 1;
+      continue;
+    }
     runtime.restoreConversationSetting(setting);
+    applied.conversationSettings += 1;
   }
 
   // Older backups omit this field and must not reset current extension data.

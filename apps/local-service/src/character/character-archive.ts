@@ -2,7 +2,7 @@ import { extname } from "node:path";
 import { ZipFile } from "yazl";
 import { CharacterCardParseError, parseCharacterCardDocument } from "@mycompanion/character-card";
 import type { CharacterImport, StoredCharacter } from "./character-repository.js";
-import { readBoundedZip, normalizeZipPath } from "./bounded-zip.js";
+import { readBoundedZip, normalizeZipPath } from "../bounded-zip.js";
 import { inlineCharacterAssetPath, materializeCharacterInlineAssets } from "./character-inline-assets.js";
 
 export const characterAssetLimits = { archiveBytes: 32 * 1024 * 1024, fileBytes: 16 * 1024 * 1024, totalBytes: 64 * 1024 * 1024, entries: 4096 };

@@ -5,7 +5,9 @@ import {
   conversationDetailSchema,
   conversationListResponseSchema,
   createConversationRequestSchema,
+  deleteConversationResponseSchema,
   memoryListQuerySchema,
+  memoryInventoryResponseSchema,
   memoryRecordSchema,
   memoryRestoreRequestSchema,
   memoryRetrievalReportSchema,
@@ -16,12 +18,12 @@ import {
   type MemoryListQuery,
 } from "@mycompanion/shared";
 
-import { buildCharacterGreeting } from "./character-greeting.js";
-import type { CharacterRepository } from "./character-repository.js";
+import { buildCharacterGreeting } from "../character/character-greeting.js";
+import type { CharacterRepository } from "../character/character-repository.js";
 import type { GenerationPipeline } from "./generation-pipeline.js";
-import type { RuntimeRepository } from "./runtime-repository.js";
-import { sendError } from "./http-errors.js";
-import type { IdParams } from "./route-types.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
+import { sendError } from "../http-errors.js";
+import type { IdParams } from "../route-types.js";
 
 export function registerConversationRoutes(app: FastifyInstance, runtime: RuntimeRepository, characters: CharacterRepository, pipeline: GenerationPipeline): void {
   const { applyRegexStage, createRegexContext } = pipeline;
@@ -64,6 +66,30 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
     return conversationDetailSchema.parse(conversation);
   });
 
+  // 删除故事（FR-DATA-004）：默认软删除，可恢复；已有删除标记时幂等返回同一时间。
+  app.delete<{ Params: IdParams }>("/api/conversations/:id", async (request, reply) => {
+    const { id } = request.params;
+    // 先取消在途生成：否则模型请求会继续跑完，把新消息写进一个已经删除的故事里。
+    pipeline.inFlightGenerations.get(id)?.abort();
+    const deletedAt = runtime.softDeleteConversation(id) ?? runtime.conversationDeletedAt(id);
+    if (!deletedAt) {
+      return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
+    }
+    return deleteConversationResponseSchema.parse({ id, deletedAt });
+  });
+
+  // 恢复软删除的故事：内容从未被改写，恢复后立即可读。
+  app.post<{ Params: IdParams }>("/api/conversations/:id/restore", async (request, reply) => {
+    const { id } = request.params;
+    if (!runtime.undeleteConversation(id)) {
+      // 区分「本来就没删」与「根本不存在」，避免把幂等写成误报成功。
+      return runtime.conversationDeletedAt(id) === null
+        ? sendError(reply, 409, "CONVERSATION_NOT_DELETED", "这个故事没有被删除。")
+        : sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
+    }
+    return conversationDetailSchema.parse(runtime.getConversation(id));
+  });
+
   // 记忆中心（FR-MEM-007）：按作用域/类型/状态筛选。
   app.get<{ Params: IdParams; QueryString: MemoryListQuery }>(
     "/api/conversations/:id/memories",
@@ -77,6 +103,20 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
       runtime.syncMemoryReachability(conversation.id);
       const items = runtime.listMemories(conversation.id, query);
       return { conversationId: conversation.id, items, total: items.length };
+    },
+  );
+
+  // 记忆库（跨故事清单）：供「记忆」一级页面一次列出全部记忆。
+  // 与 /api/conversations/:id/memories 的区别是不按故事过滤，且每条记忆只出现一次。
+  app.get<{ Querystring: MemoryListQuery }>(
+    "/api/memories",
+    async (request, reply) => {
+      const query = memoryListQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return sendError(reply, 400, "INVALID_REQUEST", "记忆筛选条件无效。");
+      }
+      const items = runtime.listMemoryInventory(query.data);
+      return memoryInventoryResponseSchema.parse({ items, total: items.length });
     },
   );
 

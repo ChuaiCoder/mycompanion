@@ -16,6 +16,8 @@ export function useProviderSettings(deps: {
   const [providerNotice, setProviderNotice] = useState<string | null>(null);
   const [providerIssue, setProviderIssue] = useState<ProviderConnectionResponse["issue"]>();
   const [isConnectionReady, setIsConnectionReady] = useState(false);
+  /** 供"测试获取模型"在拿到模型列表后放行下一步——那已经证明密钥与地址都通了。 */
+  const markConnectionReady = () => setIsConnectionReady(true);
   const revision = useRef(0), operation = useRef(0);
   function changed() { revision.current++; setProviderNotice(null); setProviderIssue(undefined); setIsConnectionReady(false); }
   function setProvider(value: SetStateAction<ProviderSettings | null>) { changed(); updateProvider(value); }
@@ -29,8 +31,13 @@ export function useProviderSettings(deps: {
     return () => { revision.current++; window.removeEventListener("mycompanion:provider-saved", update); };
   }, []);
 
-  const handleSaveProvider = async (shouldTest: boolean): Promise<void> => {
-    if (!provider) return;
+  /**
+   * 保存模型设置。返回**明确的成败信号**：调用方不能靠"有没有抛异常"判断，
+   * 因为这里所有异常都被 catch 掉并转成界面提示，函数总是正常 resolve。
+   * 之前界面因此把失败的保存当成成功，允许带着未保存的配置进聊天。
+   */
+  const handleSaveProvider = async (shouldTest: boolean): Promise<boolean> => {
+    if (!provider) return false;
     const snapshot: UpdateProviderSettings = { kind: provider.kind, baseUrl: provider.baseUrl, model: provider.model,
       temperature: provider.temperature, maxTokens: provider.maxTokens, contextLimitTokens: provider.contextLimitTokens,
       clearApiKey: false, ...(apiKeyDraft ? { apiKey: apiKeyDraft } : {}) };
@@ -45,20 +52,22 @@ export function useProviderSettings(deps: {
       let result: ProviderConnectionResponse | undefined;
       if (shouldTest) {
         result = await testProvider(snapshot);
-        if (!current()) return;
-        if (!result.ok) { setProviderIssue(result.issue); setRuntimeError(result.message); return; }
+        if (!current()) return false;
+        if (!result.ok) { setProviderIssue(result.issue); setRuntimeError(result.message); return false; }
       }
       const saved = await saveProviderSettings(snapshot);
-      if (!current()) return;
+      if (!current()) return false;
       updateProvider(saved); updateApiKey("");
       window.dispatchEvent(new CustomEvent("mycompanion:provider-saved", { detail: saved }));
       connectionIsCurrent = observeProviderConnection();
       setIsConnectionReady(Boolean(result?.ok));
       setProviderNotice(result ? `${result.message} 设置已安全保存，可以开始对话。` : "模型设置已安全保存到本机。");
       if (result) window.dispatchEvent(new CustomEvent("mycompanion:provider-tested", { detail: { ok: true, model: saved.model } }));
+      return true;
     } catch (error) {
-      if (!current()) return;
+      if (!current()) return false;
       setRuntimeError(error instanceof ApiRequestError ? error.message : "无法完成连接检查或保存，请修改当前配置后重试。");
+      return false;
     } finally {
       if (attempt === operation.current) setIsSavingProvider(false);
     }
@@ -73,6 +82,7 @@ export function useProviderSettings(deps: {
     providerNotice,
     providerIssue,
     isConnectionReady,
+    markConnectionReady,
     handleSaveProvider,
   };
 }

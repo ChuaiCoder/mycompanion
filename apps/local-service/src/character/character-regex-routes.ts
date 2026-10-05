@@ -9,10 +9,10 @@ import {
 } from "@mycompanion/shared";
 
 import type { CharacterRepository } from "./character-repository.js";
-import type { GenerationPipeline } from "./generation-pipeline.js";
-import { testRegexRules } from "./regex-engine.js";
-import { sendError } from "./http-errors.js";
-import type { CharacterParams } from "./route-types.js";
+import type { GenerationPipeline } from "../chat/generation-pipeline.js";
+import { testRegexRules } from "../prompt/regex-engine.js";
+import { sendError } from "../http-errors.js";
+import type { CharacterParams } from "../route-types.js";
 
 export function registerCharacterRegexRoutes(app: FastifyInstance, characters: CharacterRepository, pipeline: GenerationPipeline): void {
   const { allowNativeCharacterRegex } = pipeline;

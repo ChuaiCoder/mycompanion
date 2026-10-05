@@ -4,8 +4,8 @@ import { mkdtempSync,rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join,resolve } from "node:path";
 import { buildApp } from "./app.js";
-import { RuntimeRepository } from "./runtime-repository.js";
-import { createTestCharacter } from "./native-fixtures.js";
+import { RuntimeRepository } from "./persistence/runtime-repository.js";
+import { createTestCharacter } from "./testing/native-character.js";
 
 it("reads only the current branch's latest requested window in stable insertion order while keeping complete history available",async()=>{
   const prefix=join(tmpdir(),"mycompanion-window-"),folder=mkdtempSync(prefix),databasePath=join(folder,"runtime.sqlite");

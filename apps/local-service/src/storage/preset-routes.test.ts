@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from "vitest";
-import { buildApp } from "./app.js";
+import { buildApp } from "../app.js";
 import { PRESET_STORAGE_KEY } from "./preset-routes.js";
 const apps: ReturnType<typeof buildApp>[] = [];
 function fixture() {

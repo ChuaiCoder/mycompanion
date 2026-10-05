@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ProviderSettings } from "@mycompanion/shared";
 import { probeProvider } from "./provider-probe.js";
-import { apps, completionResponse } from "./test-helpers.js";
-import { buildApp } from "./app.js";
+import { apps, completionResponse } from "../testing/helpers.js";
+import { buildApp } from "../app.js";
 
 const settings: ProviderSettings = { kind: "openai-compatible", baseUrl: "https://provider.example/v1", model: "selected-model",
   hasApiKey: false, temperature: 0.8, maxTokens: 1024, contextLimitTokens: 32768 };

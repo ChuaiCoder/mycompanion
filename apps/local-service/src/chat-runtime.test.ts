@@ -7,7 +7,7 @@ import {
 } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
 import {
   apps,
   completionResponse,
@@ -16,7 +16,7 @@ import {
   parseSse,
   sseResponse,
   stoppableSseResponse,
-} from "./test-helpers.js";
+} from "./testing/helpers.js";
 
 describe("desktop chat runtime", () => {
   it.each(["foreground", "memory"] as const)("closes the independent service while %s is waiting on the model", async (kind) => {

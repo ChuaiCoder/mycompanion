@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ConversationDetail, ConversationSummary } from "@mycompanion/shared";
 
-import { ApiRequestError, activateBranch, createConversation, fetchConversation } from "../api";
+import { ApiRequestError, activateBranch, createConversation, deleteConversation, fetchConversation } from "../api";
 import { flushSharedExtensionSettings } from "../extension-settings";
 import type { WorkspaceView } from "./useExtensionResume";
 
@@ -89,6 +89,28 @@ export function useConversations(deps: {
     } finally { branchOperation.current = false; setBranchBusy(false); }
   };
 
+  /**
+   * 删除故事（FR-DATA-004 软删除）：服务端只打删除标记，因此这是可恢复操作。删除的是
+   * 当前打开的故事时一并清空激活态，避免详情继续显示一条已删除的记录。
+   * 返回是否成功，供侧边栏决定收起还是保留确认态。
+   */
+  const handleDeleteConversation = async (id: string): Promise<boolean> => {
+    // 只推进 revision，让在途的"打开会话"读取作废，避免它把已删项写回列表。
+    ++navigationRevision.current;
+    setRuntimeError(null);
+    try {
+      await deleteConversation(id);
+      // 删除是按 id 的幂等操作，结果必须落地：以前这里在用户切过故事时提前 return，
+      // 导致已删除的故事继续留在侧栏。
+      setConversations(current => current.filter(item => item.id !== id));
+      setActiveConversation(current => current?.id === id ? null : current);
+      return true;
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "无法删除这个故事。");
+      return false;
+    }
+  };
+
   return {
     conversations,
     setConversations,
@@ -97,6 +119,7 @@ export function useConversations(deps: {
     handleStartConversation,
     handleOpenConversation,
     handleActivateBranch,
+    handleDeleteConversation,
     branchBusy,
   };
 }

@@ -1,11 +1,11 @@
 import type { ChatMessage } from "@mycompanion/shared";
-import type { MacroEvaluationSession } from "./prompt-macros.js";
-import type { EmbeddingSelection } from "./semantic-memory.js";
+import type { MacroEvaluationSession } from "../prompt/prompt-macros.js";
+import type { EmbeddingSelection } from "../memory/semantic-memory.js";
 import type { ScanEntry } from "./worldbook-engine.js";
-import { createWorldInfoRuntime } from "./world-info-upstream-runtime.js";
-import { createWorldInfoVectorRuntime, createVectorMultiQuery } from "./world-info-vector-upstream.js";
-import { VectorCollectionSession, type VectorCollectionRepository } from "./vector-collections.js";
-import { EmbeddingRequestError } from "./embedding-client.js";
+import { createWorldInfoRuntime } from "../world-info-upstream-runtime.js";
+import { createWorldInfoVectorRuntime, createVectorMultiQuery } from "../world-info-vector-upstream.js";
+import { VectorCollectionSession, type VectorCollectionRepository } from "../providers/vector-collections.js";
+import { EmbeddingRequestError } from "../providers/embedding-client.js";
 
 export interface WorldInfoVectorSettings {enabled_world_info:boolean;enabled_for_all:boolean;query:number;max_entries:number;score_threshold:number}
 export interface WorldInfoVectorActivation {entries:ScanEntry[];diagnostics:string[]}

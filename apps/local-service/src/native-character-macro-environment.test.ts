@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
 import type { CharacterMacroFieldSources } from "@mycompanion/shared";
-import { MacroEvaluationSession, resolveMacros } from "./prompt-macros.js";
+import { MacroEvaluationSession, resolveMacros } from "./prompt/prompt-macros.js";
 import { buildApp } from "./app.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { apps } from "./test-helpers.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { apps } from "./testing/helpers.js";
 
 const order = ["system", "mesExamples", "description", "personality", "persona", "scenario", "jailbreak", "charDepthPrompt", "creatorNotes", "firstMessage", "alternateGreetings"];
 const sources: CharacterMacroFieldSources = Object.fromEntries(order.map(name => [name,

@@ -1,10 +1,10 @@
 import { expect, it, vi } from "vitest";
 import type { MemoryRetrievalResult } from "@mycompanion/shared";
 import { buildApp } from "./app.js";
-import { apps } from "./test-helpers.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { assembleModelPrompt, streamReply, type PromptAssemblyOptions } from "./model-client.js";
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
+import { apps } from "./testing/helpers.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { assembleModelPrompt, streamReply, type PromptAssemblyOptions } from "./providers/model-client.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
 
 async function fixture(managed: boolean): Promise<PromptAssemblyOptions> {
   const app = buildApp(); apps.push(app);

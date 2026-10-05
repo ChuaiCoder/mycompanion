@@ -15,7 +15,7 @@ import {
 } from "@mycompanion/shared";
 
 import { buildApp } from "./app.js";
-import { apps, fullV2Card } from "./test-helpers.js";
+import { apps, fullV2Card } from "./testing/helpers.js";
 
 describe("character persistence and export", () => {
   it("does not persist a preview, then commits and reads the full character", async () => {

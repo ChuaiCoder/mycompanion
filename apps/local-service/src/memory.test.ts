@@ -20,7 +20,7 @@ import {
   sseResponse,
   waitFor,
   type TestApp,
-} from "./test-helpers.js";
+} from "./testing/helpers.js";
 
 describe("long-term memory (FR-MEM-001…008)", () => {
   async function setupConversation(): Promise<{

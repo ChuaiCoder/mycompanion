@@ -1,13 +1,13 @@
 import type { CharacterDetail, ChatMessage, ExtensionPrompt } from "@mycompanion/shared";
-import type { ModelMessage, PromptAssemblyOptions } from "./model-client.js";
-import { prepareCharacterMacroFields, buildCharacterDepthPrompt } from "./character-macros.js";
+import type { ModelMessage, PromptAssemblyOptions } from "../providers/model-client.js";
+import { prepareCharacterMacroFields, buildCharacterDepthPrompt } from "../character/character-macros.js";
 import { buildAuthorNotePrompt } from "./author-note-core.js";
 import { getPersonaDescription, getPersonaUserName, personaDescriptionPositions } from "./power-user-core.js";
 import { CONTEXT_RESERVE_TOKENS, type PromptBudgetReport, type PromptBudgetRegion } from "./prompt-budget.js";
 import { PromptManager, prepareCompletionPrompts, parseCompatibleCompletionExample, INJECTION_POSITION, type PromptManagerSettings, type Prompt } from "./prompt-manager-core.js";
 import { MacroEvaluationSession, macroVariableStores } from "./prompt-macros.js";
-import { countCompatibilityMessagesSync, countTextTokens } from "./tokenizer-service.js";
-import { isModelImageInliningSupported, materializePromptImage } from "./model-prompt-image.js";
+import { countCompatibilityMessagesSync, countTextTokens } from "../tokens/tokenizer-service.js";
+import { isModelImageInliningSupported, materializePromptImage } from "../providers/model-prompt-image.js";
 import { canReplayNativeCandidateTools } from "@mycompanion/shared";
 
 /** Imported Chat Completion presets share one preparation/budget/transport path.

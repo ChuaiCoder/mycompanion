@@ -1,9 +1,9 @@
 import { expect, it, vi } from "vitest";
 import { buildApp } from "./app.js";
-import { apps, completionResponse, isCompletionRequest, sseResponse } from "./test-helpers.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
-import { CONTEXT_RESERVE_TOKENS } from "./prompt-budget.js";
+import { apps, completionResponse, isCompletionRequest, sseResponse } from "./testing/helpers.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
+import { CONTEXT_RESERVE_TOKENS } from "./prompt/prompt-budget.js";
 
 async function fixture(settings: Record<string, unknown>, experimental = true) {
   const app = buildApp(); apps.push(app);

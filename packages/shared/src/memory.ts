@@ -99,6 +99,20 @@ export const memoryListQuerySchema = z.object({
   status: memoryStatusSchema.optional(),
 });
 
+/**
+ * 记忆库（跨故事清单）：一条记忆只出现一次，附上它归属的故事标题。
+ * 归属规则：story 归自己的故事；character 归该角色最近更新的故事；user 属于全局。
+ * 这样角色级/用户级记忆不会在每个故事下重复出现。
+ */
+export const memoryInventoryResponseSchema = z.object({
+  items: z.array(z.object({
+    memory: memoryRecordSchema,
+    conversationId: z.string().uuid(),
+    conversationTitle: z.string(),
+  })),
+  total: z.number().int().nonnegative(),
+});
+
 export const memoryUpdateRequestSchema = z.object({
   content: z.string().trim().min(1).max(2_000).optional(),
   scope: memoryScopeSchema.optional(),
@@ -151,6 +165,7 @@ export type MemoryRecord = z.infer<typeof memoryRecordSchema>;
 export type MemoryRetrievalResult = z.infer<typeof memoryRetrievalResultSchema>;
 export type MemoryRetrievalReport = z.infer<typeof memoryRetrievalReportSchema>;
 export type MemoryListQuery = z.infer<typeof memoryListQuerySchema>;
+export type MemoryInventoryResponse = z.infer<typeof memoryInventoryResponseSchema>;
 export type MemoryUpdateRequest = z.infer<typeof memoryUpdateRequestSchema>;
 export type MemoryTestRequest = z.infer<typeof memoryTestRequestSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;

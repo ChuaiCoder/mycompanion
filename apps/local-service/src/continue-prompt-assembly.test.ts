@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { expect, it } from "vitest";
-import { assembleModelPrompt, type PromptAssemblyOptions } from "./model-client.js";
-import { productCardForTests } from "./native-fixtures.js";
-import { MacroEvaluationSession } from "./prompt-macros.js";
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
+import { assembleModelPrompt, type PromptAssemblyOptions } from "./providers/model-client.js";
+import { productCardForTests } from "./testing/native-character.js";
+import { MacroEvaluationSession } from "./prompt/prompt-macros.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
 
 function fixture(experimental:boolean,prefill=false):PromptAssemblyOptions {
   const character=productCardForTests("Actor"),conversationId=randomUUID(),branchId=randomUUID();

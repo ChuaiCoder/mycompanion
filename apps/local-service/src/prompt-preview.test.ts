@@ -14,7 +14,7 @@ import {
   isCompletionRequest,
   sseResponse,
   type TestApp,
-} from "./test-helpers.js";
+} from "./testing/helpers.js";
 
 describe("提示词预览 (FR-PROMPT-004)", () => {
   async function setupPreview(): Promise<{

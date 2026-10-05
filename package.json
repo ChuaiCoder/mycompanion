@@ -26,8 +26,9 @@
     "promote:release": "node scripts/promote-release.mjs",
     "test": "npm run build:character-card && node --test scripts/*.test.mjs && npm run test --workspaces --if-present",
     "typecheck": "npm run build:character-card && npm run typecheck --workspaces --if-present",
-    "check": "npm run typecheck && npm run test && npm run build",
+    "check": "npm run typecheck && npm run test && npm run build && npm run verify:provenance && npm run audit:production:osv",
     "prepare:source": "node scripts/package-source.mjs",
+    "verify:provenance": "node scripts/verify-provenance-pins.mjs",
     "audit:production:osv": "node scripts/audit-production-osv.mjs"
   },
   "devDependencies": {

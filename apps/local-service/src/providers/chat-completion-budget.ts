@@ -1,6 +1,6 @@
 import { nativeCompletionRequestSchema, type ProviderSettings } from "@mycompanion/shared";
-import { CONTEXT_RESERVE_TOKENS } from "./prompt-budget.js";
-import { accountCompletionTokens } from "./token-accounting.js";
+import { CONTEXT_RESERVE_TOKENS } from "../prompt/prompt-budget.js";
+import { accountCompletionTokens } from "../tokens/token-accounting.js";
 import { ModelRequestError } from "./model-request-error.js";
 
 /** Measure the normalized outgoing payload, after extension/custom-body edits. */

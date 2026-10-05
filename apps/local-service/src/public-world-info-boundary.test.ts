@@ -1,9 +1,9 @@
 import { expect, it } from "vitest";
 import { buildApp } from "./app.js";
-import { createTestCharacter } from "./native-fixtures.js";
-import { apps } from "./test-helpers.js";
-import { countCompatibilityMessagesSync } from "./tokenizer-service.js";
-import { CONTEXT_RESERVE_TOKENS } from "./prompt-budget.js";
+import { createTestCharacter } from "./testing/native-character.js";
+import { apps } from "./testing/helpers.js";
+import { countCompatibilityMessagesSync } from "./tokens/tokenizer-service.js";
+import { CONTEXT_RESERVE_TOKENS } from "./prompt/prompt-budget.js";
 
 // 原生 prompt-preview 不再接受调用方直接供给的世界书文本（那是已删除的
 // extension-prompt-assembly 兼容接口的能力）。这里的边界是：预览/组装不得

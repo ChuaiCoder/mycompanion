@@ -5,7 +5,7 @@ import { parseCharacterCardDocument } from "@mycompanion/character-card";
 import { parseCharacterCardYaml } from "./character-yaml.js";
 import { parseCharacterByaf } from "./character-byaf.js";
 
-const reference=JSON.parse(readFileSync(new URL("./fixtures/character-import-upstream-reference.json",import.meta.url),"utf8"));
+const reference=JSON.parse(readFileSync(new URL("../fixtures/character-import-upstream-reference.json",import.meta.url),"utf8"));
 const core=(data:Record<string,unknown>,expected:Record<string,unknown>)=>Object.fromEntries(Object.keys(expected).map(key=>[key,data[key]]));
 async function archive(input:{manifest?:Record<string,unknown>;character?:Record<string,unknown>;scenarios:Array<Record<string,unknown>>}){
   const zip=new ZipFile(),parts:Buffer[]=[];

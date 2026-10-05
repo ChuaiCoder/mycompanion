@@ -1,6 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
 import { retainedCharacterChatsSchema, type CharacterDetail, type RetainedCharacterChats } from "@mycompanion/shared";
-import type { RuntimeRepository } from "./runtime-repository.js";
+import type { RuntimeRepository } from "../persistence/runtime-repository.js";
 
 /** Detached, avatar-keyed histories reuse the application's backup projection.
  * Deleting the actual character still triggers normal foreign-key cascades. */
