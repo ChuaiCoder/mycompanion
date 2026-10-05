@@ -1,19 +1,42 @@
+# 依赖与构建产物
 node_modules/
 dist/
 coverage/
+.vite/
+*.tsbuildinfo
+apps/desktop/build/
+
+# 环境与密钥
 .env
 .env.*
 !.env.example
+
+# 运行期缓存与一次性证据
+# .cache/ 实测约 2.9 GB（含 .cache/reports 的 1100+ 份日志与报告），
+# 只应作为 CI artifact 上传，不入库。
+.cache/
+.playwright-cli/
 *.log
+
+# 仅仓库根目录下的产物目录：写死顶层以免误伤源码里同名的子目录。
+# 注意不要反过来用 `data/` 这种未锚定目录名——它会连源码目录一起忽略；
+# 需要按内容的（如本地 SQLite 库）改为按文件名模式忽略，见下。
+/data/
+/vendor/
+/output/
+/release/
+
+# 本地运行期数据库与 WAL 边车文件（例如 apps/local-service/data/ 下的开发库）
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3
+
+# 编辑器与系统临时文件
 .DS_Store
 Thumbs.db
-.vite/
-.cache/
-*.tsbuildinfo
-data/
-vendor/
-output/
-release/
-.playwright-cli/
-apps/desktop/build/
+*.swp
+*~
+
+# 本地导入残留
 card-info.txt
