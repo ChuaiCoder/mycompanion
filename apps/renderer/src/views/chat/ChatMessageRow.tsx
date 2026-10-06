@@ -1,10 +1,11 @@
-import { useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 
 import type { ChatMessage, ConversationDetail, WorldInfoDocument } from "@mycompanion/shared";
 
 import { characterInitial } from "../../components";
-import { fetchCardVariables, mutateCardVariables } from "../../api";
+import { fetchCardVariables, fetchCharacter, mutateCardVariables } from "../../api";
+import { buildRuntimeModuleScript, planCardRuntime } from "../../frontend-card-runtime";
 import { listWorldInfoNames, loadWorldInfo, saveWorldInfo } from "../../world-info-api";
 import { frontendCardOf } from "../../frontend-card";
 import { useDisplayText } from "../../display-text";
@@ -14,6 +15,10 @@ import { MessageTokenUsage } from "../TokenAccountingDetails";
 import { ReplyCandidates } from "../ReplyCandidates";
 import { GenerationDetails } from "../GenerationDetails";
 import { FrontendCardMessage } from "./FrontendCardMessage";
+
+// 卡自带运行时（MVU 等）的模块源码按角色缓存：同一张卡的所有故事共用一份，
+// 避免每条卡片消息都重新拉取角色详情。
+const runtimeSourceCache = new Map<string, string | undefined>();
 
 function statusLabel(message: ChatMessage): string | null {
   if (message.status === "failed") return "生成失败";
@@ -43,6 +48,31 @@ function MessageContent({ message, index, characterName, conversation, onSwiped,
   const isUser = message.role === "user";
   // 前端卡内容交给隔离 iframe 渲染：它自带整份 HTML 文档与样式，放进主文档会污染界面。
   const card = frontendCardOf(content);
+  // 卡自带的运行时（MVU 等）以数据形式存在角色卡的扩展字段里，需要按角色取一次。
+  const [runtimeSource, setRuntimeSource] = useState<string | undefined>(undefined);
+  const characterId = conversation.characterId;
+  useEffect(() => {
+    if (!card) return;
+    if (runtimeSourceCache.has(characterId)) {
+      setRuntimeSource(runtimeSourceCache.get(characterId));
+      return;
+    }
+    let active = true;
+    void (async () => {
+      let source: string | undefined;
+      try {
+        const character = await fetchCharacter(characterId);
+        const plan = planCardRuntime(character.rawExtensions as Record<string, unknown> | undefined);
+        source = plan ? buildRuntimeModuleScript(plan) : undefined;
+      } catch {
+        // 取不到角色详情时只是没有运行时，卡片其余部分照常工作。
+        source = undefined;
+      }
+      runtimeSourceCache.set(characterId, source);
+      if (active) setRuntimeSource(source);
+    })();
+    return () => { active = false; };
+  }, [card, characterId]);
   useLayoutEffect(() => {
     if (card || !element.current) return;
     renderMessageContent(element.current, content, name, isSystem, isUser, index);
@@ -52,6 +82,7 @@ function MessageContent({ message, index, characterName, conversation, onSwiped,
       <FrontendCardMessage
         markup={card.markup}
         messageId={message.id}
+        runtimeSource={runtimeSource}
         bridge={{
           messages: conversation.messages,
           characterName,

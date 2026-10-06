@@ -14,11 +14,13 @@ const MAX_HEIGHT = 4000;
 //
 // 这里刻意不消毒卡片 HTML —— 消毒会抹掉文档级结构（整段变空），而且无法阻止卡片 CSS
 // 污染应用界面。隔离文档 + 不透明源 iframe 才是有效边界。
-export function FrontendCardMessage({ markup, messageId, bridge }: {
+export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource }: {
   markup: string;
   messageId: string;
   /** 卡片可调用的宿主能力；缺省时卡片脚本会走自己的降级分支。 */
   bridge: CardBridgeHost;
+  /** 卡自带运行时（MVU 等）的模块源码；缺省表示这张卡没有脚本库。 */
+  runtimeSource?: string | undefined;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(FALLBACK_HEIGHT);
@@ -32,8 +34,8 @@ export function FrontendCardMessage({ markup, messageId, bridge }: {
   useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;
-    element.srcdoc = buildCardDocument(markup);
-  }, [markup]);
+    element.srcdoc = buildCardDocument(markup, runtimeSource);
+  }, [markup, runtimeSource]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {

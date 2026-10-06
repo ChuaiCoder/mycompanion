@@ -52,6 +52,9 @@ it("allows card runtimes to load from their CDNs while still refusing navigation
   expect(CARD_IFRAME_CSP).toContain("script-src *");
   expect(CARD_IFRAME_CSP).toContain("connect-src *");
   expect(CARD_IFRAME_CSP).toContain("img-src *");
+  // 卡自带运行时通过 Blob 模块 URL 加载；不透明源下是 `blob:null/…`，
+  // 所以 script-src 必须包含 blob:，否则模块装载直接失败（实测过）。
+  expect(CARD_IFRAME_CSP).toContain("script-src * blob:");
   // 仍然拒绝改基址与提交表单。
   expect(CARD_IFRAME_CSP).toContain("form-action 'none'");
   expect(CARD_IFRAME_CSP).toContain("base-uri 'none'");

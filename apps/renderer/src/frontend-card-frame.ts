@@ -25,7 +25,10 @@ export const CARD_IFRAME_SANDBOX = "allow-scripts";
  */
 export const CARD_IFRAME_CSP = [
   "default-src * data: blob:",
-  "script-src * 'unsafe-inline' 'unsafe-eval'",
+  // 卡自带运行时（MVU 等）是通过 Blob 模块 URL 加载的；在不透明源文档里该 URL 形如
+  // `blob:null/…`，因此 `script-src` 必须显式包含 `blob:`，否则模块装载直接失败
+  // （实测报 "Failed to fetch dynamically imported module"）。
+  "script-src * blob: 'unsafe-inline' 'unsafe-eval'",
   "style-src * 'unsafe-inline'",
   "img-src * data: blob:",
   "media-src * data: blob:",
@@ -41,7 +44,7 @@ export const CARD_IFRAME_CSP = [
  * 直接把卡片 HTML 放进 `srcdoc`（不做消毒）：消毒会把 `body`/`head` 这类文档级结构连同
  * 内容一起抹掉（实测整段变空），而且治不了 CSS 污染。隔离文档 + 不透明源才是正确的边界。
  */
-export function buildCardDocument(markup: string): string {
+export function buildCardDocument(markup: string, runtimeSource?: string): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${CARD_IFRAME_CSP}">`;
   return [
     "<!DOCTYPE html>",
@@ -59,6 +62,10 @@ export function buildCardDocument(markup: string): string {
     "<body>",
     // 存储垫片必须在卡片脚本之前：卡脚本常在初始化阶段就读 localStorage。
     `<script>${CARD_STORAGE_SCRIPT}</script>`,
+    // 卡自带运行时（MVU 等）作为**模块**加载：它们是 ES module，且必须先于卡片脚本
+    // 提供全局（`_`、`Mvu`）。module 是延迟执行的，所以卡脚本里对运行时的使用必须
+    // 是运行时判断（卡的脚本普遍如此），而不是顶层立即调用。
+    ...(runtimeSource ? [`<script type="module">${runtimeSource}</script>`] : []),
     markup,
     // 桥与测量脚本都必须**内联进文档**：iframe 是不透明源，父页面拿不到 contentDocument，
     // 无法从外面注入。文档自身的 CSP 允许内联脚本（这是卡片脚本能跑的前提）。
