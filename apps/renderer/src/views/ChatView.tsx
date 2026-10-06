@@ -16,6 +16,7 @@ import type { MessageListRef } from "../components";
 import { MemoryPanel } from "./MemoryPanel";
 import { ChatHeader } from "./chat/ChatHeader";
 import { ChatMessageRow } from "./chat/ChatMessageRow";
+import { DisplayTextProvider } from "../display-text";
 import { ChatAuxiliary } from "./chat/ChatAuxiliary";
 import { ChatComposer } from "./chat/ChatComposer";
 import { PromptPreviewPanel } from "./chat/PromptPreviewPanel";
@@ -123,6 +124,8 @@ export function ChatView({
           onOpenSettings={onOpenSettings}
         />
         <div id="chat" className="chat-message-list" ref={messageListRef} />
+        {/* 显示阶段正则的结果按故事批量取一次，消息渲染前用它替换要显示的文本。 */}
+        <DisplayTextProvider conversationId={activeConversation?.id ?? ""} messages={activeConversation?.messages ?? []}>
           {surface.rows.map(({ message, index, element, name, key }) => activeConversation ? createPortal(
             <ChatMessageRow
               conversation={activeConversation}
@@ -142,6 +145,7 @@ export function ChatView({
               onSendMessage={onSendMessage}
               onSwiped={onSwiped}
             />, element, key) : null)}
+        </DisplayTextProvider>
         {createPortal(
           <ChatAuxiliary
             activeConversation={activeConversation}

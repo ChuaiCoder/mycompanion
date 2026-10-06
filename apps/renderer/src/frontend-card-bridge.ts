@@ -17,27 +17,27 @@ export const CARD_BRIDGE_RESPONSE = "mycompanion:card-api-result";
 export const CARD_BRIDGE_EVENT = "mycompanion:card-event";
 
 /**
- * 被禁止的宿主能力。卡片调用它们会收到明确错误，而不是静默失败。
- * 这些能力要么会读写用户数据，要么会扩大攻击面（装扩展、改配置、联网）。
+ * 被禁止的宿主能力。
+ *
+ * 策略已按"开放优先"调整为**默认放行**：名单只保留两类——
+ *  1. 本应用**没有实现**的方法（放行也只会得到"未实现"，留着只会误导卡片）；
+ *  2. 与沙箱本身冲突的逃逸入口（`parent` / `top` / `eval` / `fetch` 等），
+ *     它们的可用性由 iframe 的**不透明源**与隔离文档的 **CSP** 决定，
+ *     名单在这里只是把"已被结构性阻断"这件事明确回给卡片。
+ *
+ * 真正的安全边界是 iframe 的 sandbox（不给 allow-same-origin）与 `default-src 'none'`，
+ * 不是这份名单——名单拦不住结构性访问，结构性访问也不需要名单来拦。
  */
 export const CARD_API_DENYLIST = [
-  // 世界书 / 角色卡 / 人设 / 预设
-  "getWorldbookNames", "getWorldbook", "createWorldbook", "deleteWorldbook", "replaceWorldbook",
-  "getCharWorldbookNames", "getLorebookEntries", "setLorebookEntries", "createLorebookEntries",
-  "deleteLorebookEntries", "getCharacter", "setCharacter", "getUserPersona", "setUserPersona",
-  "getPreset", "setPreset", "getPresetNames", "loadPreset",
-  // 扩展安装与配置
+  // 未实现：放行也只会得到"未实现"，保留以免卡片误判环境
+  "generate", "generateRaw", "injectPrompts", "injectPromptsInMode", "getPrompts",
   "installExtension", "updateExtension", "uninstallExtension", "getExtensionStatus",
   "getTavernHelperVersion", "updateTavernHelper",
-  // 生成与提示词注入
-  "generate", "generateRaw", "injectPrompts", "injectPromptsInMode", "getPrompts",
-  // 通信、存储与外部能力
-  "fetch", "XMLHttpRequest", "importScripts", "eval", "Function",
-  "open", "postMessage", "localStorage", "sessionStorage", "indexedDB",
-  // 宿主页面
-  "getHostDocument", "getHostWindow", "parent", "top",
-  // 变量系统里尚未实现的两项（其余变量函数已独立实现，见 runCardBridgeRequest）
   "registerVariableSchema", "updateVariablesWith",
+  // 逃逸入口：由不透明源与 CSP 结构性阻断，这里给出明确答复
+  "fetch", "XMLHttpRequest", "importScripts", "eval", "Function",
+  "open", "localStorage", "sessionStorage", "indexedDB",
+  "getHostDocument", "getHostWindow", "parent", "top",
 ] as const;
 
 const DENIED = new Set<string>(CARD_API_DENYLIST);
@@ -96,6 +96,16 @@ export interface CardBridgeHost {
   onReadVariables: (target?: { type?: string; messageId?: string | "latest" }) => Promise<Record<string, unknown>>;
   /** 写入变量；实现方负责落到正确的层级。 */
   onWriteVariables: (mutation: CardVariableMutation) => Promise<void>;
+  /** 世界书：列出名字（对应卡片的 getLorebooks）。 */
+  onListLorebooks: () => Promise<string[]>;
+  /** 世界书：读取整份文档。 */
+  onReadLorebook: (name: string) => Promise<Record<string, unknown> | null>;
+  /** 世界书：写入整份文档（不存在则创建）。 */
+  onWriteLorebook: (name: string, document: Record<string, unknown>) => Promise<void>;
+  /** 删除一条消息（对应 `/cut <id>`）。 */
+  onDeleteMessage?: ((messageId: string) => Promise<void> | void) | undefined;
+  /** 触发一次生成（对应 `/trigger`）。 */
+  onTrigger?: (() => Promise<void> | void) | undefined;
 }
 
 export interface CardBridgeRequest {
@@ -121,6 +131,44 @@ export function parseCardBridgeRequest(data: unknown): CardBridgeRequest | null 
 export function parseSlashSend(command: string): string | null {
   const match = /^\s*\/send(?:-as-user)?\s+([\s\S]+)$/i.exec(command);
   return match ? match[1]!.trim() : null;
+}
+
+/** 支持的斜杠命令。未列出的会被明确拒绝，避免"看起来执行了其实没做"。 */
+const SUPPORTED_SLASH = new Set(["send", "send-as-user", "sys", "trigger", "cut"]);
+
+/**
+ * 执行一条斜杠命令。
+ *
+ * 卡片的开局流程把多个命令用 `|` 串联（`/sys … | /cut <id> | /trigger`），因此这里按
+ * 管道符切分后逐条执行。`/sys` 与 `/send` 都映射为"以用户身份发言"——本应用没有
+ * system 角色消息，把它当成用户发言是语义上最接近且不会静默丢弃的做法。
+ */
+export async function executeSlashCommand(
+  id: number,
+  command: string,
+  host: CardBridgeHost,
+): Promise<CardBridgeResult> {
+  // 按 ` | ` 切分，但不破坏文本里普通的分隔符：只在命令边界处切。
+  const parts = command.split(/\s*\|\s*(?=\/)/).map(part => part.trim()).filter(Boolean);
+  const rejected: string[] = [];
+  for (const part of parts) {
+    const match = /^\/([\w-]+)\s*([\s\S]*)$/.exec(part);
+    if (!match) continue;
+    const name = match[1]!.toLowerCase();
+    const rest = match[2]!.trim();
+    if (!SUPPORTED_SLASH.has(name)) { rejected.push(name); continue; }
+    if (name === "trigger") { await host.onTrigger?.(); continue; }
+    if (name === "cut") {
+      // 允许 `/cut` 不带参数（默认删当前最后一条），也允许显式 id 或 "last"。
+      const messageId = rest && rest !== "last" ? rest : host.messages.at(-1)?.id;
+      if (messageId) await host.onDeleteMessage?.(messageId);
+      continue;
+    }
+    // send / send-as-user / sys → 以用户身份发送
+    if (rest) host.onSend(rest);
+  }
+  if (rejected.length) return { id, ok: false, error: `本应用未支持这些指令：/${rejected.join(" /")}` };
+  return { id, ok: true, value: "" };
 }
 
 const VARIABLE_TYPES = new Set(["chat", "character", "preset", "global", "message"]);
@@ -191,10 +239,7 @@ export async function runCardBridgeRequest(request: CardBridgeRequest, host: Car
       case "triggerSlash": {
         const command = args[0];
         if (typeof command !== "string") return { id, ok: false, error: "triggerSlash 需要命令文本。" };
-        const text = parseSlashSend(command);
-        if (text === null) return { id, ok: false, error: `本应用未支持该指令：${command}` };
-        host.onSend(text);
-        return { id, ok: true, value: "" };
+        return executeSlashCommand(id, command, host);
       }
       // 变量：本应用独立实现。作用域为 chat / character / preset / global / message。
       case "getVariables": {
@@ -250,6 +295,66 @@ export async function runCardBridgeRequest(request: CardBridgeRequest, host: Car
         if ("error" in target) return { id, ok: false, error: target.error };
         await host.onWriteVariables({ action: "set", key, value: null, remove: true, ...target } as CardVariableMutation);
         return { id, ok: true, value: true };
+      }
+      // 世界书（对应卡片的 getLorebooks / createLorebook / createLorebookEntry）。
+      case "getLorebooks":
+      case "getWorldbookNames": {
+        return { id, ok: true, value: await host.onListLorebooks() };
+      }
+      case "getLorebook":
+      case "getWorldbook": {
+        const name = args[0];
+        if (typeof name !== "string") return { id, ok: false, error: "需要世界书名称。" };
+        const document = await host.onReadLorebook(name);
+        if (!document) return { id, ok: false, error: `世界书不存在：${name}` };
+        // 卡片按 `entries` 为数组的形态读取时也给数组视图。
+        const entries = record(document.entries);
+        return { id, ok: true, value: { ...document, entries: Object.values(entries) } };
+      }
+      case "createLorebook": {
+        const name = args[0];
+        if (typeof name !== "string" || !name.trim()) return { id, ok: false, error: "需要世界书名称。" };
+        // 已存在则保持原内容：创建不应清空既有世界书。
+        const existing = await host.onReadLorebook(name);
+        if (!existing) await host.onWriteLorebook(name, { entries: {} });
+        return { id, ok: true, value: true };
+      }
+      case "createLorebookEntry":
+      case "createWorldbookEntries": {
+        const name = args[0];
+        const entries = args[1];
+        if (typeof name !== "string") return { id, ok: false, error: "需要世界书名称。" };
+        const list = Array.isArray(entries) ? entries : [entries];
+        const existing = (await host.onReadLorebook(name)) ?? { entries: {} };
+        const current = record(existing.entries);
+        // 条目 id：助手用递增字符串键；沿用同名条目时覆盖而不是重复追加。
+        let next = Object.keys(current).reduce((max, key) => Math.max(max, Number(key) + 1 || 0), 0);
+        for (const raw of list) {
+          const entry = record(raw);
+          if (!Object.keys(entry).length) continue;
+          const comment = typeof entry.comment === "string" ? entry.comment : "";
+          const duplicate = comment
+            ? Object.entries(current).find(([, value]) => record(value).comment === comment)
+            : undefined;
+          if (duplicate) current[duplicate[0]] = { ...record(duplicate[1]), ...entry };
+          else current[String(next++)] = entry;
+        }
+        await host.onWriteLorebook(name, { ...existing, entries: current });
+        return { id, ok: true, value: true };
+      }
+      case "replaceLorebook":
+      case "replaceWorldbook": {
+        const name = args[0];
+        if (typeof name !== "string") return { id, ok: false, error: "需要世界书名称。" };
+        await host.onWriteLorebook(name, record(args[1]));
+        return { id, ok: true, value: true };
+      }
+      // 斜杠命令：只实现开局真正需要的两个，其余明确拒绝而不是静默忽略。
+      case "executeSlashCommands":
+      case "executeSlashCommandsWithOptions": {
+        const command = typeof args[0] === "string" ? args[0] : record(args[0]).command;
+        if (typeof command !== "string") return { id, ok: false, error: "需要命令文本。" };
+        return executeSlashCommand(id, command, host);
       }
       default:
         return { id, ok: false, error: `本应用尚未实现该能力：${method}` };
@@ -308,6 +413,15 @@ export const CARD_BRIDGE_SCRIPT = `(function () {
   window.insertOrAssignVariables = function (variables, option) { return call('insertOrAssignVariables', [variables, option]); };
   window.setVariables = function (variables, option) { return call('setVariables', [variables, option]); };
   window.deleteVariable = function (option) { return call('deleteVariable', [option]); };
+  // 世界书：卡片开局会新建一本世界书并逐条注入（功法 / 气运 / 天定道侣）。
+  window.getLorebooks = function () { return call('getLorebooks', []); };
+  window.getLorebook = function (name) { return call('getLorebook', [name]); };
+  window.createLorebook = function (name) { return call('createLorebook', [name]); };
+  window.createLorebookEntry = function (name, entry) { return call('createLorebookEntry', [name, entry]); };
+  window.replaceLorebook = function (name, document) { return call('replaceLorebook', [name, document]); };
+  // 斜杠命令：executeSlashCommands 用于本应用支持的子集（/send /sys /cut /trigger）。
+  window.executeSlashCommands = function (command) { return call('executeSlashCommands', [command]); };
+  window.executeSlashCommandsWithOptions = function (command) { return call('executeSlashCommandsWithOptions', [command]); };
   window.TavernHelper = window.TavernHelper || {};
   window.TavernHelper.getChatMessages = window.getChatMessages;
   window.TavernHelper.setChatMessage = window.setChatMessage;
@@ -319,6 +433,10 @@ export const CARD_BRIDGE_SCRIPT = `(function () {
   window.TavernHelper.insertOrAssignVariables = window.insertOrAssignVariables;
   window.TavernHelper.setVariables = window.setVariables;
   window.TavernHelper.deleteVariable = window.deleteVariable;
+  window.TavernHelper.getLorebooks = window.getLorebooks;
+  window.TavernHelper.createLorebook = window.createLorebook;
+  window.TavernHelper.createLorebookEntry = window.createLorebookEntry;
+  window.TavernHelper.executeSlashCommands = window.executeSlashCommands;
   window.eventOn = function (name, handler) { (listeners[name] = listeners[name] || []).push(handler); return { stop: function () {} }; };
   window.waitGlobalInitialized = function () { return Promise.resolve(); };
 })();`;

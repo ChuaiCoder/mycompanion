@@ -1,11 +1,13 @@
 import { useLayoutEffect, useRef } from "react";
 import type { KeyboardEvent } from "react";
 
-import type { ChatMessage, ConversationDetail } from "@mycompanion/shared";
+import type { ChatMessage, ConversationDetail, WorldInfoDocument } from "@mycompanion/shared";
 
 import { characterInitial } from "../../components";
 import { fetchCardVariables, mutateCardVariables } from "../../api";
+import { listWorldInfoNames, loadWorldInfo, saveWorldInfo } from "../../world-info-api";
 import { frontendCardOf } from "../../frontend-card";
+import { useDisplayText } from "../../display-text";
 import { renderMessageContent } from "../../message-rendering";
 import { selectMessageSwipe } from "../../swipe-runtime";
 import { MessageTokenUsage } from "../TokenAccountingDetails";
@@ -23,14 +25,19 @@ function statusLabel(message: ChatMessage): string | null {
 
 // Extensions own the rendered children. React only replaces them when the
 // underlying message changes, so typing and navigation preserve their UI.
-function MessageContent({ message, index, characterName, conversation, onSwiped, onSendMessage }: {
+function MessageContent({ message, index, characterName, conversation, onSwiped, onSendMessage, onDeleteMessage, onRegenerate }: {
   message: ChatMessage; index: number; characterName: string; conversation: ConversationDetail;
   onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
   onSendMessage?: ((input: string) => void) | undefined;
+  onDeleteMessage: (messageId: string) => void;
+  onRegenerate: () => void;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const extra = message.extensionData?.extra as Record<string, unknown> | undefined;
-  const content = typeof extra?.display_text === "string" ? extra.display_text : message.content;
+  const stored = typeof extra?.display_text === "string" ? extra.display_text : message.content;
+  // 显示阶段正则的结果优先：卡把界面放在 `markdownOnly` 规则里时，这里才拿得到真实内容。
+  const displayText = useDisplayText();
+  const content = displayText.get(message.id) ?? stored;
   const name = typeof message.extensionData?.name === "string" ? message.extensionData.name : message.role === "user" ? "User" : characterName;
   const isSystem = message.extensionData?.is_system === true;
   const isUser = message.role === "user";
@@ -64,6 +71,17 @@ function MessageContent({ message, index, characterName, conversation, onSwiped,
           onWriteVariables: async (mutation) => {
             await mutateCardVariables(conversation.id, mutation);
           },
+          // 世界书：复用应用自己的世界书接口（保存即创建）。
+          onListLorebooks: () => listWorldInfoNames(),
+          onReadLorebook: async (name) => {
+            const document = await loadWorldInfo(name);
+            return document as unknown as Record<string, unknown> | null;
+          },
+          onWriteLorebook: async (name, document) => {
+            await saveWorldInfo(name, document as unknown as WorldInfoDocument);
+          },
+          onDeleteMessage: async (messageId) => { await onDeleteMessage(messageId); },
+          onTrigger: () => onRegenerate(),
         }}
       />
     );
@@ -192,7 +210,7 @@ export function ChatMessageRow({
           </div>
         </div>
       ) : (
-        <MessageContent message={message} index={index} characterName={name} conversation={conversation} onSwiped={onSwiped} onSendMessage={onSendMessage} />
+        <MessageContent message={message} index={index} characterName={name} conversation={conversation} onSwiped={onSwiped} onSendMessage={onSendMessage} onDeleteMessage={onDeleteMessage} onRegenerate={onRegenerate} />
       )}
       <MessageTokenUsage metadata={message.generationMetadata} />
       <GenerationDetails metadata={message.generationMetadata} />

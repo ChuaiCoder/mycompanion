@@ -240,6 +240,19 @@ export type CardVariableMutation = z.infer<typeof cardVariableMutationSchema>;
 
 export const cardVariableMutationRequestSchema = z.object({ mutation: cardVariableMutationSchema }).strict();
 
+// 显示阶段正则（`markdownOnly` 规则）：只影响渲染，不落库、不提交宏变量副作用。
+// 卡常把整段界面放在这类规则里，靠它把占位符换成真实界面——例如把 `[重塑仙缘]`
+// 替换成人物创建界面。没有这条通路时，这类规则无论启用与否都不会执行。
+export const displayRegexRequestSchema = z.object({
+  /** 待转换的文本；按顺序与响应 results 对应。 */
+  items: z.array(z.object({ messageId: z.string().uuid(), text: z.string() })).max(200),
+}).strict();
+
+export const displayRegexResponseSchema = z.object({
+  results: z.array(z.object({ messageId: z.string().uuid(), text: z.string() })),
+});
+export type DisplayRegexResponse = z.infer<typeof displayRegexResponseSchema>;
+
 // 软删除（FR-DATA-004）：删除后可恢复，列表与详情默认不再返回该故事。
 export const deleteConversationResponseSchema = z.object({
   id: z.string().uuid(),

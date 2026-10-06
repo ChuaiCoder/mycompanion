@@ -186,8 +186,32 @@ export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeR
       const message = conversation.messages.find(item => item.id === request.params.messageId);
       if (!message) return sendError(reply, 404, "MESSAGE_NOT_FOUND", "要切换的消息不存在或不在当前分支。");
       inFlightGenerations.get(conversation.id)?.abort();
+
+      // 候选内容按需过输出正则：卡常把占位符交给输出正则换成真正的界面，
+      // 若只在生成时转换，用户切到该候选会先看到占位符。
+      // 异步转换放在事务外（仓储事务是同步的），宏变量变更与候选写入在同一事务内提交。
+      const character = characters.get(conversation.characterId);
+      const raw = (message.extensionData?.swipes as unknown[] | undefined)?.[parsed.data.swipeId];
+      let transformed: string | undefined;
+      let regexContext: ReturnType<typeof createRegexContext> | undefined;
+      if (character && typeof raw === "string" && raw) {
+        regexContext = createRegexContext(character, conversation.id);
+        try {
+          transformed = await applyRegexStage(character, "output", raw, "assistant", undefined, false,
+            pipeline.memoryShutdown.signal, regexContext);
+        } catch {
+          // 转换失败不应阻断切换：退回原始候选内容。
+          transformed = undefined;
+          regexContext = undefined;
+        }
+      }
+
       try {
-        return chatMessageSchema.parse(runtime.selectMessageSwipe(conversation.id, message, parsed.data.swipeId));
+        const selected = runtime.withTransaction(() => {
+          if (regexContext) runtime.commitMacroVariables(conversation.id, regexContext.macroSession.changes());
+          return runtime.selectMessageSwipe(conversation.id, message, parsed.data.swipeId, transformed);
+        });
+        return chatMessageSchema.parse(selected);
       } catch (error) {
         if (error instanceof SwipeSelectionError) return sendError(reply, 409, "SWIPE_NOT_AVAILABLE", error.message);
         throw error;

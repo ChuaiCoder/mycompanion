@@ -25,3 +25,22 @@ export async function mutateCardVariables(
   });
   return readApiPayload(response) as Promise<CardVariablesResponse>;
 }
+
+/**
+ * 显示阶段正则转换：只影响渲染的文本，不落库。
+ * 卡把整段界面放在 `markdownOnly` 规则里时，靠它把占位符换成真实界面。
+ */
+export async function transformDisplayText(
+  conversationId: string,
+  items: Array<{ messageId: string; text: string }>,
+  signal?: AbortSignal,
+): Promise<Array<{ messageId: string; text: string }>> {
+  const response = await fetch(`/api/conversations/${encodeURIComponent(conversationId)}/display-regex`, {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+    ...(signal ? { signal } : {}),
+  });
+  const payload = await readApiPayload(response) as { results: Array<{ messageId: string; text: string }> };
+  return payload.results;
+}

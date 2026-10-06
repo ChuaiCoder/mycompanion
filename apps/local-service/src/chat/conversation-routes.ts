@@ -6,6 +6,8 @@ import {
   conversationListResponseSchema,
   createConversationRequestSchema,
   deleteConversationResponseSchema,
+  displayRegexRequestSchema,
+  displayRegexResponseSchema,
   memoryListQuerySchema,
   memoryInventoryResponseSchema,
   memoryRecordSchema,
@@ -48,6 +50,8 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
     // Preserve the native greeting's existing name expansion with the selected persona.
     const firstMessage = greeting.replaceAll(/{{\s*(char|user)\s*}}/gi, (_match, name: string) =>
       name.toLowerCase() === "char" ? character.name : regexContext.macroContext.userName ?? "User");
+    // 备用开场白**不在此处预转换**：输出正则会写入变量（宏副作用），提前转换所有候选会让
+    // 副作用多跑一遍。未选中的候选留给切换接口按需转换（见 selectMessageSwipe 的路由）。
     const conversation = runtime.withTransaction(() => {
       const created = runtime.createConversation({ ...character, firstMessage });
       runtime.commitMacroVariables(created.id, regexContext.macroSession.changes());
@@ -275,6 +279,39 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
       return { conversationId: conversation.id, autoSummaryEnabled: parsed.data.enabled };
     },
   );
+
+  // 显示阶段正则（`markdownOnly` 规则）——只影响渲染，不改动已存内容。
+  //
+  // 为什么需要单独一条通路：`markdownOnly` 规则在酒馆语义里属于"显示"阶段，
+  // 只有 `isMarkdown` 为真时才会被执行（见 tavern-regex-core 的 applies 判定）。
+  // 卡普遍把整段界面放进这类规则，靠它把占位符换成真实界面；若没有显示阶段，
+  // 这些规则无论启用与否都不会生效。
+  //
+  // 两条克制：
+  //  1. 用**独立的** regexContext，且**不提交**它的宏会话——显示转换不产生任何副作用；
+  //  2. 只转换调用方明确送来的内容，未送来的消息保持原样。
+  app.post<{ Params: IdParams; Body: unknown }>("/api/conversations/:id/display-regex", async (request, reply) => {
+    const conversation = runtime.getConversation(request.params.id);
+    const character = conversation && characters.get(conversation.characterId);
+    if (!conversation || !character) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事或角色不存在。");
+    const parsed = displayRegexRequestSchema.safeParse(request.body);
+    if (!parsed.success) return sendError(reply, 400, "INVALID_REQUEST", "显示转换请求无效。");
+    // 独立上下文：读取当前变量用于宏求值，但不把任何变更写回。
+    const regexContext = createRegexContext(character, conversation.id);
+    const results: Array<{ messageId: string; text: string }> = [];
+    for (const item of parsed.data.items) {
+      let text = item.text;
+      try {
+        text = await applyRegexStage(character, "display", item.text, "assistant", undefined, false,
+          pipeline.memoryShutdown.signal, regexContext);
+      } catch {
+        // 单条转换失败退回原文，不影响其它消息。
+        text = item.text;
+      }
+      results.push({ messageId: item.messageId, text });
+    }
+    return reply.header("Cache-Control", "no-store").send(displayRegexResponseSchema.parse({ results }));
+  });
 
   // Preview only: the editor applies the result through the shared chat bridge,
   // after extension events, and explicitly saves it just like other chat edits.

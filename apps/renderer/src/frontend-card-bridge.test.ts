@@ -25,16 +25,25 @@ const host = (messages: ChatMessage[] = [message()]): CardBridgeHost & {
   sent: string[];
   variables: Record<string, Record<string, unknown>>;
   writes: CardVariableMutation[];
+  lorebooks: Record<string, Record<string, unknown>>;
+  deleted: string[];
+  triggered: number;
 } => {
   const swipes: Array<[string, number]> = [];
   const sent: string[] = [];
   // 用一个内存实现替身模拟三级存储，测试桥的语义而不重复后端的落点逻辑。
   const variables: Record<string, Record<string, unknown>> = { global: {}, chat: {}, message: {} };
   const writes: CardVariableMutation[] = [];
+  const lorebooks: Record<string, Record<string, unknown>> = {};
+  const deleted: string[] = [];
+  let triggered = 0;
   return {
-    messages, characterName: "道渊", swipes, sent, variables, writes,
+    messages, characterName: "道渊", swipes, sent, variables, writes, lorebooks, deleted,
+    get triggered() { return triggered; },
     onSelectSwipe: async (messageId, swipeId) => { swipes.push([messageId, swipeId]); },
     onSend: text => { sent.push(text); },
+    onDeleteMessage: async (messageId) => { deleted.push(messageId); },
+    onTrigger: () => { triggered++; },
     onReadVariables: async target => {
       const scope = target?.type ?? "merged";
       if (scope === "merged") return { ...variables.global, ...variables.chat, ...variables.message };
@@ -51,21 +60,26 @@ const host = (messages: ChatMessage[] = [message()]): CardBridgeHost & {
         if (mutation.remove) delete store[mutation.key]; else store[mutation.key] = mutation.value;
       } else if (mutation.subject === "key") delete store[String(mutation.target)];
     },
+    onListLorebooks: async () => Object.keys(lorebooks),
+    onReadLorebook: async name => lorebooks[name] ?? null,
+    onWriteLorebook: async (name, document) => { lorebooks[name] = document; },
   };
 };
 
 describe("card capability bridge", () => {
-  it("denies data, extension and network capabilities while allowing the card's own calls", () => {
-    // 黑名单里的能力必须被拒绝。（变量已改为独立实现，不再属于拒绝项。）
-    for (const method of ["getWorldbook", "setCharacter", "installExtension", "generate", "fetch", "registerVariableSchema"]) {
+  it("denies only unimplemented and sandbox-escaping capabilities while allowing the card's own calls", () => {
+    // 策略已改为默认放行：名单只保留"未实现"与"结构性逃逸入口"两类。
+    for (const method of ["generate", "installExtension", "registerVariableSchema", "fetch", "eval", "parent", "top", "localStorage"]) {
       expect(isCardApiAllowed(method)).toBe(false);
     }
-    // 卡片实际使用的 API 必须放行，否则开场白按钮与变量读写无效。
-    for (const method of ["getChatMessages", "setChatMessage", "triggerSlash", "getVariables", "setVariables"]) {
+    // 卡片实际使用的 API 必须放行，否则开场流程走不通。
+    for (const method of ["getChatMessages", "setChatMessage", "triggerSlash", "getVariables", "setVariables",
+      "getLorebooks", "createLorebook", "createLorebookEntry", "getWorldbook", "setCharacter"]) {
       expect(isCardApiAllowed(method)).toBe(true);
     }
-    // 名单本身保持可审计。
-    expect(CARD_API_DENYLIST.length).toBeGreaterThan(20);
+    // 名单本身保持可审计，且明显比"逐项禁止一切"更短。
+    expect(CARD_API_DENYLIST.length).toBeGreaterThan(10);
+    expect(CARD_API_DENYLIST.length).toBeLessThan(40);
   });
 
   it("resolves the card's swipe switch to the app's own swipe endpoint", async () => {
@@ -137,6 +151,56 @@ describe("card capability bridge", () => {
     expect(parseCardBridgeRequest({ type: CARD_BRIDGE_REQUEST, id: "1", method: "x" })).toBeNull();
     expect(parseCardBridgeRequest(null)).toBeNull();
     expect(parseCardBridgeRequest("text")).toBeNull();
+  });
+
+  it("creates a lorebook and injects entries the way the card's opening does", async () => {
+    const bridge = host();
+    // 卡的创建流程：先建书，再逐条注入功法/气运/天定道侣。
+    expect(await runCardBridgeRequest({ id: 60, method: "getLorebooks", args: [] }, bridge))
+      .toEqual({ id: 60, ok: true, value: [] });
+    expect(await runCardBridgeRequest({ id: 61, method: "createLorebook", args: ["道渊开局创建人物"] }, bridge))
+      .toEqual({ id: 61, ok: true, value: true });
+    expect(bridge.lorebooks["道渊开局创建人物"]).toEqual({ entries: {} });
+
+    const entry = { type: "constant", position: "before_character_definition", order: 100, comment: "甲-功法设定", content: "【甲的主修功法】：御剑" };
+    expect(await runCardBridgeRequest({ id: 62, method: "createLorebookEntry", args: ["道渊开局创建人物", entry] }, bridge))
+      .toEqual({ id: 62, ok: true, value: true });
+    const document = bridge.lorebooks["道渊开局创建人物"]!;
+    expect(Object.values(document.entries as Record<string, unknown>)).toHaveLength(1);
+    expect(Object.values(document.entries as Record<string, unknown>)[0]).toMatchObject({ comment: "甲-功法设定", type: "constant" });
+
+    // 只建书、不注入内容：不能把已有条目清空。
+    await runCardBridgeRequest({ id: 63, method: "createLorebook", args: ["道渊开局创建人物"] }, bridge);
+    expect(Object.values((bridge.lorebooks["道渊开局创建人物"]!.entries as Record<string, unknown>))).toHaveLength(1);
+
+    // 同 comment 再次注入应覆盖而不是重复追加。
+    await runCardBridgeRequest({ id: 64, method: "createLorebookEntry", args: ["道渊开局创建人物", { ...entry, content: "【甲的主修功法】：炼丹" }] }, bridge);
+    const after = Object.values(bridge.lorebooks["道渊开局创建人物"]!.entries as Record<string, unknown>);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatchObject({ content: "【甲的主修功法】：炼丹" });
+  });
+
+  it("runs the card's chained opening command and refuses unsupported ones", async () => {
+    const bridge = host();
+    // 卡的开局指令形态：/sys 正文 | /cut <id> | /trigger
+    const lastId = bridge.messages.at(-1)!.id;
+    const result = await runCardBridgeRequest({
+      id: 70, method: "triggerSlash",
+      args: [`/sys [仙缘已定]\n**道号**: 甲 | /cut ${lastId} | /trigger`],
+    }, bridge);
+    expect(result).toEqual({ id: 70, ok: true, value: "" });
+    // /sys 当作一次用户发言
+    expect(bridge.sent).toHaveLength(1);
+    expect(bridge.sent[0]).toContain("仙缘已定");
+    // /cut 删掉占位消息
+    expect(bridge.deleted).toEqual([lastId]);
+    // /trigger 触发一次生成
+    expect(bridge.triggered).toBe(1);
+
+    // 不支持的指令要明确失败，而不是静默忽略
+    const unsupported = await runCardBridgeRequest({ id: 71, method: "triggerSlash", args: ["/extension install evil"] }, bridge);
+    expect(unsupported).toMatchObject({ id: 71, ok: false });
+    expect((unsupported as { error: string }).error).toContain("未支持");
   });
 
   it("implements the variable API independently of the macro engine", async () => {
@@ -227,7 +291,7 @@ describe("card capability bridge", () => {
     // 而且未实现的能力返回失败——卡脚本不会拿到假数据而做出错误决定。
     const bridge = host();
     const checked = await Promise.all(
-      ["getWorldbook", "setCharacter", "installExtension", "generate", "fetch", "eval", "parent", "top", "localStorage", "registerVariableSchema"]
+      ["generate", "installExtension", "fetch", "eval", "parent", "top", "localStorage", "registerVariableSchema"]
         .map((method, index) => runCardBridgeRequest({ id: 100 + index, method, args: [] }, bridge)),
     );
     for (const result of checked) expect(result).toMatchObject({ ok: false });

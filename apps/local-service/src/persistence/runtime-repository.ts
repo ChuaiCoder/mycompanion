@@ -1625,7 +1625,7 @@ export class RuntimeRepository {
 
   // 选择候选回复（FR-CHAT）：swipe_id/内容/扩展数据/投影的服务端原子更新。
   // 语义与投影逻辑保持一致：原候选保留当前展示状态，新候选继承自己的 extra。
-  selectMessageSwipe(conversationId: string, message: ChatMessage, swipeId: number): ChatMessage {
+  selectMessageSwipe(conversationId: string, message: ChatMessage, swipeId: number, contentOverride?: string): ChatMessage {
     if (message.role !== "assistant" || message.status === "streaming") throw new SwipeSelectionError("此消息暂时不能切换候选回复。");
     const extensionData = structuredClone(message.extensionData ?? {});
     const swipes = extensionData.swipes;
@@ -1647,6 +1647,9 @@ export class RuntimeRepository {
         gen_started: extensionData.gen_started, gen_finished: extensionData.gen_finished, extra: currentExtra };
     }
     const info = record(infos[swipeId]);
+    // 调用方按需转换过候选内容时（输出正则），把转换结果写回该候选槽，
+    // 避免只改消息正文、候选列表里仍留着未转换的原文。
+    if (typeof contentOverride === "string" && contentOverride) swipes[swipeId] = contentOverride;
     extensionData.swipe_info = infos;
     extensionData.swipe_id = swipeId;
     extensionData.send_date = info.send_date;
