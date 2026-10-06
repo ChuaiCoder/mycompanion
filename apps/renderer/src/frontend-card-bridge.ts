@@ -439,4 +439,88 @@ export const CARD_BRIDGE_SCRIPT = `(function () {
   window.TavernHelper.executeSlashCommands = window.executeSlashCommands;
   window.eventOn = function (name, handler) { (listeners[name] = listeners[name] || []).push(handler); return { stop: function () {} }; };
   window.waitGlobalInitialized = function () { return Promise.resolve(); };
+
+  // ── 宿主桩件：对齐酒馆前端的对象形状 ──────────────────────────────────────
+  //
+  // 卡自带的运行时（本卡为 MVU 与配置助手）直接引用这些对象，例如
+  // SillyTavern.extensionSettings / SillyTavern.chat / TavernHelper.getWorldbookNames()。
+  // 缺了它们，模块会在顶层抛 ReferenceError 而完全不执行（实测过）。
+  //
+  // 这里的取舍是：按调用点实测出的成员逐个提供，而不是伪造一个完整的酒馆。
+  // 读操作尽量给出真实数据（聊天记录、角色、世界书），写操作交给宿主桥；
+  // 纯界面类成员（弹窗、宏注册、日志）给出不会崩的安全实现。
+  var noop = function () {};
+  var context = function () {
+    return {
+      chat: (window.__hostChat || []),
+      characters: {},
+      characterId: undefined,
+      name1: 'User',
+      name2: (window.__hostCharacterName || 'Character'),
+      extensionSettings: {},
+      chatCompletionSettings: {},
+      extensionPrompts: {},
+      getCurrentChatId: function () { return window.__hostConversationId || ''; },
+      getRequestHeaders: function () { return {}; },
+      saveChat: noop, saveSettingsDebounced: noop, saveMetadataDebounced: noop,
+      registerMacro: noop, unregisterMacro: noop,
+      registerFunctionTool: noop, unregisterFunctionTool: noop,
+      callGenericPopup: function () { return Promise.resolve(1); },
+      getTokenizerModel: function () { return 'gpt-3.5-turbo'; },
+      getChatCompletionModel: function () { return window.__hostModel || ''; },
+      eventSource: { on: window.eventOn, emit: window.eventEmit, once: window.eventOn, removeListener: noop },
+      eventTypes: {},
+    };
+  };
+  window.SillyTavern = new Proxy({
+    getContext: context,
+    extensionSettings: {},
+    chatCompletionSettings: {},
+    chat: [],
+    characters: {},
+    characterId: undefined,
+    name2: (window.__hostCharacterName || 'Character'),
+    getCurrentChatId: function () { return window.__hostConversationId || ''; },
+    getRequestHeaders: function () { return {}; },
+    getTokenizerModel: function () { return 'gpt-3.5-turbo'; },
+    getChatCompletionModel: function () { return window.__hostModel || ''; },
+    saveChat: noop, saveSettingsDebounced: noop,
+    registerMacro: noop, unregisterMacro: noop,
+    registerFunctionTool: noop, unregisterFunctionTool: noop,
+    callGenericPopup: function () { return Promise.resolve(1); },
+    POPUP_TYPE: { TEXT: 1, CONFIRM: 2, INPUT: 3, DISPLAY: 4 },
+    POPUP_RESULT: { AFFIRMATIVE: 1, NEGATIVE: 0, CANCELLED: null },
+    // 工具调用管理器：本应用没有同名设施，给一个不会崩的空实现。
+    ToolManager: { registerFunctionTool: noop, unregisterFunctionTool: noop, isToolCallingSupported: function () { return false; } },
+  }, {
+    // 未实现的成员一律回落到"可调用的空函数"，避免任何一处读取就中断整个模块。
+    get: function (target, key) {
+      if (key in target) return target[key];
+      return noop;
+    },
+  });
+  window.TavernHelper = window.TavernHelper || {};
+  // 配置助手读取的世界书/正则/脚本树接口；前四个已在桥里实现，这里补别名。
+  window.TavernHelper.getWorldbookNames = function () { return call('getLorebooks', []); };
+  window.TavernHelper.getCharWorldbookNames = function () { return call('getLorebooks', []); };
+  window.TavernHelper.getWorldbook = function (name) { return call('getLorebook', [name]); };
+  window.TavernHelper.replaceWorldbook = function (name, document) { return call('replaceLorebook', [name, document]); };
+  // 正则与脚本树：本应用没有可写的对应设施，明确失败而不是假装成功。
+  window.TavernHelper.getTavernRegexes = function () { return Promise.resolve([]); };
+  window.TavernHelper.updateTavernRegexesWith = function () { return Promise.reject(new Error('本应用不支持通过卡片修改正则规则。')); };
+  window.TavernHelper.getScriptTrees = function () { return Promise.resolve([]); };
+  window.TavernHelper.updateScriptTreesWith = function () { return Promise.reject(new Error('本应用不支持通过卡片修改脚本库。')); };
+  // 变量 schema 注册：本应用的变量存储不校验 schema，接受注册但不强制。
+  window.registerVariableSchema = window.registerVariableSchema || function () { return true; };
+  window.updateVariablesWith = window.updateVariablesWith || function (updater, option) {
+    return call('getVariables', [option]).then(function (current) {
+      var next = typeof updater === 'function' ? updater(current) : updater;
+      return call('replaceVariables', [next, option]);
+    });
+  };
+  window.substitudeMacros = window.substitudeMacros || function (text) { return Promise.resolve(String(text == null ? '' : text)); };
+  window.getLastMessageId = window.getLastMessageId || function () { return Promise.resolve((window.__hostChat || []).length - 1); };
+  window.toastr = window.toastr || {
+    info: noop, success: noop, warning: noop, error: noop, clear: noop,
+  };
 })();`;

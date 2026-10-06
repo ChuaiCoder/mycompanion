@@ -83,6 +83,19 @@ function MessageContent({ message, index, characterName, conversation, onSwiped,
         markup={card.markup}
         messageId={message.id}
         runtimeSource={runtimeSource}
+        hostGlobals={{
+          // 卡自带运行时（MVU 等）直接引用这些对象；缺了它们模块会在顶层抛错。
+          __hostConversationId: conversation.id,
+          __hostCharacterName: characterName,
+          __hostChat: conversation.messages.map(item => ({
+            name: item.role === "user" ? "User" : characterName,
+            is_user: item.role === "user",
+            is_system: false,
+            mes: item.content,
+            send_date: item.createdAt,
+            extra: item.extensionData ?? {},
+          })),
+        }}
         bridge={{
           messages: conversation.messages,
           characterName,

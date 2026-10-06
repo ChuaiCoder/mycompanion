@@ -9,8 +9,15 @@
 
 import { CARD_BRIDGE_SCRIPT } from "./frontend-card-bridge";
 
-/** iframe 的 sandbox：允许脚本，但**不给** allow-same-origin（父页面因此不可达）。 */
-export const CARD_IFRAME_SANDBOX = "allow-scripts";
+/**
+ * iframe 的 sandbox。
+ *
+ * **已按要求加上 `allow-same-origin`，以便卡自带运行时能访问宿主环境。**
+ * 这确实移除了唯一的结构性隔离：卡脚本因此可以读取应用页面（DOM、内存中的状态），
+ * 也能直接调用本地服务的 HTTP 接口。保留它是为了让功能先跑通；
+ * 相关影响记录在 spec §5.10，后续若要做防护，应在这里收紧并同时给本地服务加请求令牌。
+ */
+export const CARD_IFRAME_SANDBOX = "allow-scripts allow-same-origin";
 /**
  * 隔离文档的内容安全策略。
  *
@@ -44,7 +51,7 @@ export const CARD_IFRAME_CSP = [
  * 直接把卡片 HTML 放进 `srcdoc`（不做消毒）：消毒会把 `body`/`head` 这类文档级结构连同
  * 内容一起抹掉（实测整段变空），而且治不了 CSS 污染。隔离文档 + 不透明源才是正确的边界。
  */
-export function buildCardDocument(markup: string, runtimeSource?: string): string {
+export function buildCardDocument(markup: string, runtimeSource?: string, hostGlobals?: Record<string, unknown>): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${CARD_IFRAME_CSP}">`;
   return [
     "<!DOCTYPE html>",
@@ -62,16 +69,15 @@ export function buildCardDocument(markup: string, runtimeSource?: string): strin
     "<body>",
     // 存储垫片必须在卡片脚本之前：卡脚本常在初始化阶段就读 localStorage。
     `<script>${CARD_STORAGE_SCRIPT}</script>`,
-    // 卡自带运行时（MVU 等）作为**模块**加载：它们是 ES module，且必须先于卡片脚本
-    // 提供全局（`_`、`Mvu`）。module 是延迟执行的，所以卡脚本里对运行时的使用必须
-    // 是运行时判断（卡的脚本普遍如此），而不是顶层立即调用。
+    // 宿主数据（当前故事、角色、聊天记录）先落到全局，桥脚本的桩件会读它们。
+    ...(hostGlobals ? [`<script>${`Object.assign(window, ${JSON.stringify(hostGlobals)});`}</script>`] : []),
+    // 桥要在卡片脚本之前挂好，否则卡片的 `typeof getChatMessages !== 'undefined'` 判断
+    // 会走降级分支；桩件（SillyTavern / TavernHelper）也必须先于卡自带运行时存在。
+    `<script>${CARD_BRIDGE_SCRIPT}</script>`,
+    // 卡自带运行时（MVU 等）作为**模块**加载：它们是 ES module，且需要读取上面挂好的全局。
+    // module 是延迟执行的，所以卡脚本里对运行时的使用必须是运行时判断（卡的脚本普遍如此）。
     ...(runtimeSource ? [`<script type="module">${runtimeSource}</script>`] : []),
     markup,
-    // 桥与测量脚本都必须**内联进文档**：iframe 是不透明源，父页面拿不到 contentDocument，
-    // 无法从外面注入。文档自身的 CSP 允许内联脚本（这是卡片脚本能跑的前提）。
-    // 桥要在卡片脚本之前挂好，否则卡片的 `typeof getChatMessages !== 'undefined'` 判断
-    // 会走降级分支。
-    `<script>${CARD_BRIDGE_SCRIPT}</script>`,
     `<script>${CARD_HEIGHT_SCRIPT}</script>`,
     "</body>",
     "</html>",

@@ -14,13 +14,15 @@ const MAX_HEIGHT = 4000;
 //
 // 这里刻意不消毒卡片 HTML —— 消毒会抹掉文档级结构（整段变空），而且无法阻止卡片 CSS
 // 污染应用界面。隔离文档 + 不透明源 iframe 才是有效边界。
-export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource }: {
+export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, hostGlobals }: {
   markup: string;
   messageId: string;
   /** 卡片可调用的宿主能力；缺省时卡片脚本会走自己的降级分支。 */
   bridge: CardBridgeHost;
   /** 卡自带运行时（MVU 等）的模块源码；缺省表示这张卡没有脚本库。 */
   runtimeSource?: string | undefined;
+  /** 暴露给卡自带运行时的宿主数据（聊天记录、角色、当前故事）。 */
+  hostGlobals?: Record<string, unknown> | undefined;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(FALLBACK_HEIGHT);
@@ -34,8 +36,11 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource }
   useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;
-    element.srcdoc = buildCardDocument(markup, runtimeSource);
-  }, [markup, runtimeSource]);
+    element.srcdoc = buildCardDocument(markup, runtimeSource, hostGlobals);
+    // hostGlobals 每次渲染都是新对象，但它只是同一份数据的投影；用序列化值做依赖，
+    // 避免每次父组件重渲染都重载整个卡片文档。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markup, runtimeSource, JSON.stringify(hostGlobals ?? null)]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {

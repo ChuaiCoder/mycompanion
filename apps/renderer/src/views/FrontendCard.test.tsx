@@ -61,9 +61,10 @@ it("allows card runtimes to load from their CDNs while still refusing navigation
   expect(document).toContain('http-equiv="Content-Security-Policy"');
   // 脚本能力保留（卡片自带动画与运行时依赖它）。
   expect(CARD_IFRAME_CSP).toContain("'unsafe-inline'");
-  // 真正的边界仍是沙箱：不加 allow-same-origin，卡脚本无法访问应用页面。
-  expect(CARD_IFRAME_SANDBOX).toBe("allow-scripts");
-  expect(CARD_IFRAME_SANDBOX).not.toContain("allow-same-origin");
+  // 卡自带运行时需要访问宿主环境（SillyTavern/TavernHelper 桩件、父页面状态），
+  // 因此沙箱按需求已加上 allow-same-origin。这移除了结构性隔离，影响记录在 spec §5.10。
+  expect(CARD_IFRAME_SANDBOX).toContain("allow-scripts");
+  expect(CARD_IFRAME_SANDBOX).toContain("allow-same-origin");
 });
 
 it("expands the frame to the card's real content height instead of clipping it", () => {
@@ -94,8 +95,9 @@ it("gives card scripts a working storage shim instead of a hard SecurityError", 
   const document = buildCardDocument("<p>card</p>");
   expect(document.indexOf(CARD_STORAGE_SCRIPT)).toBeGreaterThan(-1);
   expect(document.indexOf(CARD_STORAGE_SCRIPT)).toBeLessThan(document.indexOf("<p>card</p>"));
-  // 不能为了存储而放宽沙箱。
-  expect(CARD_IFRAME_SANDBOX).not.toContain("allow-same-origin");
+  // 沙箱已按需求放开同源（见上一处说明）；存储垫片仍然保留，作为
+  // 将来收紧沙箱时的兜底。
+  expect(CARD_IFRAME_SANDBOX).toContain("allow-scripts");
 });
 
 it("never feeds the frame height back into the measurement", () => {
@@ -131,7 +133,7 @@ it("renders an escaped fenced greeting as an isolated card instead of visible ma
   // 而是渲染成一个隔离子文档。
   const frame = container.querySelector<HTMLIFrameElement>(".frontend-card__frame");
   expect(frame).not.toBeNull();
-  expect(frame!.getAttribute("sandbox")).toBe("allow-scripts");
+  expect(frame!.getAttribute("sandbox")).toBe(CARD_IFRAME_SANDBOX);
   expect(frame!.srcdoc).toContain("你好，旅人。");
   // 卡片脚本存在时给出可见提示（黑名单模式下仍要告知边界）。
   expect(container.querySelector(".frontend-card__notice")).not.toBeNull();
