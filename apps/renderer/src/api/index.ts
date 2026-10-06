@@ -8,3 +8,4 @@ export * from "./conversations";
 export * from "./memory";
 export * from "./chat";
 export * from "./plugins";
+export * from "./variables";

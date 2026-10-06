@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ChatMessage } from "@mycompanion/shared";
+import type { CardVariableMutation, ChatMessage } from "@mycompanion/shared";
 import {
   CARD_API_DENYLIST,
   CARD_BRIDGE_REQUEST,
@@ -20,24 +20,48 @@ const message = (overrides: Partial<ChatMessage> = {}): ChatMessage => ({
   ...overrides,
 });
 
-const host = (messages: ChatMessage[] = [message()]): CardBridgeHost & { swipes: Array<[string, number]>; sent: string[] } => {
+const host = (messages: ChatMessage[] = [message()]): CardBridgeHost & {
+  swipes: Array<[string, number]>;
+  sent: string[];
+  variables: Record<string, Record<string, unknown>>;
+  writes: CardVariableMutation[];
+} => {
   const swipes: Array<[string, number]> = [];
   const sent: string[] = [];
+  // 用一个内存实现替身模拟三级存储，测试桥的语义而不重复后端的落点逻辑。
+  const variables: Record<string, Record<string, unknown>> = { global: {}, chat: {}, message: {} };
+  const writes: CardVariableMutation[] = [];
   return {
-    messages, characterName: "道渊", swipes, sent,
+    messages, characterName: "道渊", swipes, sent, variables, writes,
     onSelectSwipe: async (messageId, swipeId) => { swipes.push([messageId, swipeId]); },
     onSend: text => { sent.push(text); },
+    onReadVariables: async target => {
+      const scope = target?.type ?? "merged";
+      if (scope === "merged") return { ...variables.global, ...variables.chat, ...variables.message };
+      return variables[scope] ?? {};
+    },
+    onWriteVariables: async mutation => {
+      writes.push(mutation);
+      const scope = mutation.type === "global" ? "global" : mutation.type === "message" ? "message" : "chat";
+      const store = variables[scope]!;
+      if (mutation.action === "replace") variables[scope] = { ...mutation.values };
+      else if (mutation.action === "insert") {
+        for (const [key, value] of Object.entries(mutation.values)) if (!Object.hasOwn(store, key)) store[key] = value;
+      } else if (mutation.action === "set") {
+        if (mutation.remove) delete store[mutation.key]; else store[mutation.key] = mutation.value;
+      } else if (mutation.subject === "key") delete store[String(mutation.target)];
+    },
   };
 };
 
 describe("card capability bridge", () => {
   it("denies data, extension and network capabilities while allowing the card's own calls", () => {
-    // 黑名单里的能力必须被拒绝。
-    for (const method of ["getVariables", "setVariables", "getWorldbook", "setCharacter", "installExtension", "generate", "fetch"]) {
+    // 黑名单里的能力必须被拒绝。（变量已改为独立实现，不再属于拒绝项。）
+    for (const method of ["getWorldbook", "setCharacter", "installExtension", "generate", "fetch", "registerVariableSchema"]) {
       expect(isCardApiAllowed(method)).toBe(false);
     }
-    // 卡片实际使用的三个 API 必须放行，否则开场白按钮无效。
-    for (const method of ["getChatMessages", "setChatMessage", "triggerSlash"]) {
+    // 卡片实际使用的 API 必须放行，否则开场白按钮与变量读写无效。
+    for (const method of ["getChatMessages", "setChatMessage", "triggerSlash", "getVariables", "setVariables"]) {
       expect(isCardApiAllowed(method)).toBe(true);
     }
     // 名单本身保持可审计。
@@ -84,7 +108,7 @@ describe("card capability bridge", () => {
 
   it("reports a clear error for denylisted and unimplemented capabilities", async () => {
     const bridge = host();
-    const denied = await runCardBridgeRequest({ id: 6, method: "setVariables", args: [{}] }, bridge);
+    const denied = await runCardBridgeRequest({ id: 6, method: "registerVariableSchema", args: [{}] }, bridge);
     expect(denied).toMatchObject({ id: 6, ok: false });
     expect((denied as { error: string }).error).toContain("禁用");
 
@@ -115,10 +139,82 @@ describe("card capability bridge", () => {
     expect(parseCardBridgeRequest("text")).toBeNull();
   });
 
+  it("implements the variable API independently of the macro engine", async () => {
+    const bridge = host();
+    // 变量曾经在黑名单里；现在必须真的可读写，而不是返回"未实现"。
+    expect(isCardApiAllowed("getVariables")).toBe(true);
+    expect(isCardApiAllowed("setVariables")).toBe(true);
+    expect(isCardApiAllowed("replaceVariables")).toBe(true);
+    expect(isCardApiAllowed("insertVariables")).toBe(true);
+    expect(isCardApiAllowed("deleteVariable")).toBe(true);
+    // 未实现的两项仍应被拒绝，避免卡片以为环境完整。
+    expect(isCardApiAllowed("registerVariableSchema")).toBe(false);
+    expect(isCardApiAllowed("updateVariablesWith")).toBe(false);
+
+    const write = await runCardBridgeRequest({ id: 20, method: "setVariables", args: [{ hp: 10, mp: 5 }, { type: "chat" }] }, bridge);
+    expect(write).toEqual({ id: 20, ok: true, value: true });
+    expect(bridge.variables.chat).toEqual({ hp: 10, mp: 5 });
+
+    const read = await runCardBridgeRequest({ id: 21, method: "getVariables", args: [{ type: "chat" }] }, bridge);
+    expect(read).toEqual({ id: 21, ok: true, value: { hp: 10, mp: 5 } });
+
+    // 不给作用域时是合并视图（消息级 > 故事级 > 全局）
+    await runCardBridgeRequest({ id: 22, method: "setVariables", args: [{ hp: 99 }, { type: "global" }] }, bridge);
+    const merged = await runCardBridgeRequest({ id: 23, method: "getVariables", args: [{}] }, bridge);
+    expect(merged).toEqual({ id: 23, ok: true, value: { hp: 10, mp: 5 } });
+  });
+
+  it("keeps insertVariables from overwriting while insertOrAssign does overwrite", async () => {
+    const bridge = host();
+    await runCardBridgeRequest({ id: 30, method: "setVariables", args: [{ keep: "原值" }, { type: "chat" }] }, bridge);
+
+    await runCardBridgeRequest({ id: 31, method: "insertVariables", args: [{ keep: "新值", added: 1 }, { type: "chat" }] }, bridge);
+    expect(bridge.variables.chat).toEqual({ keep: "原值", added: 1 });
+
+    await runCardBridgeRequest({ id: 32, method: "insertOrAssignVariables", args: [{ keep: "新值" }, { type: "chat" }] }, bridge);
+    expect(bridge.variables.chat).toEqual({ keep: "新值", added: 1 });
+  });
+
+  it("maps a numeric message id to that message instead of assuming the latest", async () => {
+    const first = message();
+    const second = message({ id: "44444444-4444-4444-8444-444444444444", content: "第二条" });
+    const bridge = host([first, second]);
+
+    const written = await runCardBridgeRequest({ id: 40, method: "setVariables", args: [{ here: 1 }, { type: "message", message_id: 0 }] }, bridge);
+    expect(written).toEqual({ id: 40, ok: true, value: true });
+    // 必须落在第 0 条消息上，而不是最后一条。
+    expect(bridge.writes.at(-1)!.messageId).toBe(first.id);
+
+    // 越界序号要明确失败，而不是静默写到别的消息。
+    const outOfRange = await runCardBridgeRequest({ id: 41, method: "setVariables", args: [{ x: 1 }, { type: "message", message_id: 9 }] }, bridge);
+    expect(outOfRange).toMatchObject({ id: 41, ok: false });
+
+    // 省略 message_id → 最后一条
+    await runCardBridgeRequest({ id: 42, method: "setVariables", args: [{ y: 1 }, { type: "message" }] }, bridge);
+    expect(bridge.writes.at(-1)!.messageId).toBe(second.id);
+  });
+
+  it("deletes a variable by name and refuses a missing key", async () => {
+    const bridge = host();
+    await runCardBridgeRequest({ id: 50, method: "setVariables", args: [{ doomed: 1 }, { type: "chat" }] }, bridge);
+    const removed = await runCardBridgeRequest({ id: 51, method: "deleteVariable", args: [{ key: "doomed", type: "chat" }] }, bridge);
+    expect(removed).toEqual({ id: 51, ok: true, value: true });
+    expect(bridge.variables.chat).toEqual({});
+
+    const noKey = await runCardBridgeRequest({ id: 52, method: "deleteVariable", args: [{ type: "chat" }] }, bridge);
+    expect(noKey).toMatchObject({ id: 52, ok: false });
+  });
+
   it("ships a bridge script that installs the API before card scripts run", () => {
     // 卡片脚本用 `typeof getChatMessages !== 'undefined'` 判断能力是否存在，因此桥必须先挂好。
-    for (const name of ["getChatMessages", "setChatMessage", "triggerSlash", "TavernHelper"]) {
-      expect(CARD_BRIDGE_SCRIPT).toContain(name);
+    // 变量函数也必须在注入脚本里定义——宿主侧实现而没挂到 window 上，卡片仍会走降级分支
+    // （这正是真机验证抓到过的缺口）。
+    for (const name of [
+      "getChatMessages", "setChatMessage", "triggerSlash", "TavernHelper",
+      "getVariables", "getAllVariables", "replaceVariables", "insertVariables",
+      "insertOrAssignVariables", "setVariables", "deleteVariable",
+    ]) {
+      expect(CARD_BRIDGE_SCRIPT).toContain(`window.${name} =`);
     }
     expect(CARD_BRIDGE_SCRIPT).toContain("postMessage");
     expect(parseSlashSend("/send 开启仙途")).toBe("开启仙途");
@@ -131,7 +227,7 @@ describe("card capability bridge", () => {
     // 而且未实现的能力返回失败——卡脚本不会拿到假数据而做出错误决定。
     const bridge = host();
     const checked = await Promise.all(
-      ["getVariables", "setVariables", "getWorldbook", "installExtension", "fetch", "eval", "parent", "top", "localStorage"]
+      ["getWorldbook", "setCharacter", "installExtension", "generate", "fetch", "eval", "parent", "top", "localStorage", "registerVariableSchema"]
         .map((method, index) => runCardBridgeRequest({ id: 100 + index, method, args: [] }, bridge)),
     );
     for (const result of checked) expect(result).toMatchObject({ ok: false });

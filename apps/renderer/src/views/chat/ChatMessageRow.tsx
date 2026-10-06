@@ -4,6 +4,7 @@ import type { KeyboardEvent } from "react";
 import type { ChatMessage, ConversationDetail } from "@mycompanion/shared";
 
 import { characterInitial } from "../../components";
+import { fetchCardVariables, mutateCardVariables } from "../../api";
 import { frontendCardOf } from "../../frontend-card";
 import { renderMessageContent } from "../../message-rendering";
 import { selectMessageSwipe } from "../../swipe-runtime";
@@ -53,6 +54,16 @@ function MessageContent({ message, index, characterName, conversation, onSwiped,
             await onSwiped?.(conversation.id);
           },
           onSend: (text) => onSendMessage?.(text),
+          // 变量每次按需读取后端，不在此缓存：生成期间的宏写入也会改这些变量。
+          onReadVariables: async (target) => {
+            const state = await fetchCardVariables(conversation.id);
+            if (!target?.type) return state.variables;
+            const scope = (state.scopes as Record<string, Record<string, unknown>>)[target.type];
+            return scope ?? {};
+          },
+          onWriteVariables: async (mutation) => {
+            await mutateCardVariables(conversation.id, mutation);
+          },
         }}
       />
     );

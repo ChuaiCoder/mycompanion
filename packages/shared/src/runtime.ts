@@ -198,6 +198,48 @@ export const conversationListResponseSchema = z.object({
   total: z.number().int().nonnegative(),
 });
 
+// 卡片脚本可用的变量作用域。这是本应用自己的实现，不依赖宏引擎的内部模型。
+// `character` 与 `chat` 共用故事级存储：本应用把每个对话视为一次独立开档，
+// 角色级跨故事共享会破坏这个原则。
+export const cardVariableTypeSchema = z.enum(["chat", "character", "preset", "global", "message"]);
+export type CardVariableType = z.infer<typeof cardVariableTypeSchema>;
+
+export const cardVariableValuesSchema = z.record(z.string(), z.unknown());
+
+/** 读取一级变量；不给作用域时返回三级合并视图。 */
+export const cardVariablesResponseSchema = z.object({
+  variables: cardVariableValuesSchema,
+  /** 各级原始视图，便于调用方区分来源而不是只看合并结果。 */
+  scopes: z.object({
+    global: cardVariableValuesSchema,
+    chat: cardVariableValuesSchema,
+    character: cardVariableValuesSchema,
+    preset: cardVariableValuesSchema,
+    message: cardVariableValuesSchema,
+  }),
+});
+export type CardVariablesResponse = z.infer<typeof cardVariablesResponseSchema>;
+
+const cardVariableTargetSchema = z.object({
+  type: cardVariableTypeSchema,
+  /** 仅 `message` 作用域可用；省略表示当前最后一条消息。 */
+  messageId: z.string().uuid().optional(),
+}).strict();
+
+/**
+ * 一次变量写入。分成明确的动作而不是一个宽泛的 setter，
+ * 这样 `insertVariables`（只补缺失）与 `replaceVariables`（整体替换）不会互相混淆。
+ */
+export const cardVariableMutationSchema = z.discriminatedUnion("action", [
+  cardVariableTargetSchema.extend({ action: z.literal("set"), key: z.string().min(1), value: z.unknown(), remove: z.boolean().default(false) }),
+  cardVariableTargetSchema.extend({ action: z.literal("replace"), values: cardVariableValuesSchema }),
+  cardVariableTargetSchema.extend({ action: z.literal("insert"), values: cardVariableValuesSchema }),
+  cardVariableTargetSchema.extend({ action: z.literal("delete"), subject: z.enum(["key", "value"]), target: z.unknown() }),
+]);
+export type CardVariableMutation = z.infer<typeof cardVariableMutationSchema>;
+
+export const cardVariableMutationRequestSchema = z.object({ mutation: cardVariableMutationSchema }).strict();
+
 // 软删除（FR-DATA-004）：删除后可恢复，列表与详情默认不再返回该故事。
 export const deleteConversationResponseSchema = z.object({
   id: z.string().uuid(),

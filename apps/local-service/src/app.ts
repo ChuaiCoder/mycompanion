@@ -17,6 +17,7 @@ import { registerCharacterRoutes } from "./character/character-routes.js";
 import { registerCharacterRegexRoutes } from "./character/character-regex-routes.js";
 import { registerCharacterLorebookRoutes } from "./world-info/character-lorebook-routes.js";
 import { registerConversationRoutes } from "./chat/conversation-routes.js";
+import { registerCardVariableRoutes } from "./chat/card-variable-routes.js";
 import { registerPromptAssemblyRoutes } from "./prompt/prompt-assembly-routes.js";
 import { registerGenerationRoutes } from "./chat/generation-routes.js";
 import { registerBackupRoutes } from "./storage/backup-routes.js";
@@ -94,6 +95,7 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   registerCharacterRegexRoutes(app, characters, pipeline);
   registerCharacterLorebookRoutes(app, characters);
   registerConversationRoutes(app, runtime, characters, pipeline);
+  registerCardVariableRoutes(app, database);
   registerPromptAssemblyRoutes(app, runtime, characters, pipeline, options.secretCodec);
   registerGenerationRoutes(app, runtime, characters, pipeline);
   registerBackupRoutes(app, runtime, characters);
