@@ -70,51 +70,67 @@ export const CARD_HEIGHT_MESSAGE = "mycompanion:card-height";
  * 注入到隔离文档里的高度上报脚本。
  *
  * 为什么由子文档自己测：iframe 是不透明源，父页面读不到 `contentDocument`，必须由子文档
- * 测量后 postMessage 上报（这也是父页面唯一能拿到的高度信息）。
+ * 测量后 postMessage 上报。
  *
- * 为什么要覆盖 `100vh` 卡片：卡片普遍写 `body{min-height:100vh;overflow:hidden}`——
- * 在 iframe 里 `100vh` 等于 iframe 高度，于是**内容比盒子高时会被直接裁掉**（实测截断）。
- * 这里把 `100vh` 重写成"内容实际高度"，让卡片按内容撑开，而不是被视口锁死。
+ * 两条必须遵守的约束（都来自实测）：
+ *  1. **绝不能读 `scrollHeight`**。卡片普遍写 `body{min-height:100vh}`，而 `100vh` 在 iframe 里
+ *     等于 frame 高度；若再把它作为新的 frame 高度上报，就会形成 `frame ↑ → 100vh ↑ → 上报 ↑`
+ *     的无界自增（实测一度涨到 14502px，远超 1552px 的真实内容）。所以只量**排布子元素的
+ *     真实范围**，它只取决于内容。
+ *  2. **不要给 body 设 `min-height`**。撑高 body 会改变下一次测量，同样构成反馈。
+ *     只覆盖会让内容被裁或错位的三条属性：`overflow`、`align-items`、`height`。
  */
 export const CARD_HEIGHT_SCRIPT = `(function () {
   var TYPE = ${JSON.stringify(CARD_HEIGHT_MESSAGE)};
+  var PADDING = 2;
+
   function post(height) {
     if (!isFinite(height) || height <= 0) return;
     try { parent.postMessage({ type: TYPE, height: Math.ceil(height) }, '*'); } catch (error) {}
   }
-  // 把 100vh 展开成内容高度，避免卡片把内容裁掉。
-  function relaxViewportUnits(height) {
+
+  // 解开卡片的"整屏"约束：100vh 锁死的高度、裁切、以及会错位的垂直居中。
+  // 刻意不设 min-height —— 那会让 body 撑高，进而改变下一次测量，形成反馈。
+  function relaxViewportUnits() {
     var style = document.getElementById('mycompanion-card-height');
     if (!style) {
       style = document.createElement('style');
       style.id = 'mycompanion-card-height';
       (document.head || document.documentElement).appendChild(style);
     }
-    style.textContent = 'body{min-height:' + height + 'px !important;overflow:visible !important;align-items:flex-start !important}';
+    style.textContent = 'body{min-height:0 !important;height:auto !important;overflow:visible !important;align-items:flex-start !important}';
   }
-  function measure() {
-    var body = document.body;
-    if (!body) return;
-    var top = body.getBoundingClientRect().top + window.scrollY;
-    var bottom = top;
-    var children = body.children;
+
+  /** 排布子元素的真实范围；固定/绝对定位的装饰层不参与。 */
+  function contentExtent() {
+    var children = document.body ? document.body.children : [];
+    var top = Infinity, bottom = 0;
     for (var i = 0; i < children.length; i++) {
-      var rect = children[i].getBoundingClientRect();
-      var childTop = window.scrollY + rect.top;
-      // 装饰性固定层（如全屏 canvas）不参与撑高，否则会把页面推成整屏。
-      if (getComputedStyle(children[i]).position === 'fixed') continue;
+      var el = children[i];
+      if (getComputedStyle(el).position === 'fixed') continue;
+      var rect = el.getBoundingClientRect();
+      if (rect.height <= 0 && rect.width <= 0) continue;
+      var childTop = rect.top + window.scrollY;
+      if (childTop < top) top = childTop;
       if (childTop + rect.height > bottom) bottom = childTop + rect.height;
     }
-    var height = Math.max(bottom - top, body.scrollHeight);
-    relaxViewportUnits(height);
-    post(height);
+    if (!isFinite(top) || bottom <= 0) return 0;
+    return bottom - Math.max(top, 0);
   }
+
+  function measure() {
+    relaxViewportUnits();
+    var height = contentExtent();
+    if (height > 0) post(height + PADDING);
+  }
+
   var scheduled = false;
   function schedule() {
     if (scheduled) return;
     scheduled = true;
     (window.requestAnimationFrame || function (fn) { return setTimeout(fn, 16); })(function () { scheduled = false; measure(); });
   }
+
   function start() {
     measure();
     if (typeof ResizeObserver === 'function') new ResizeObserver(schedule).observe(document.body);
@@ -123,6 +139,7 @@ export const CARD_HEIGHT_SCRIPT = `(function () {
     // 卡片常带入场动画与异步内容，多测几次直到稳定。
     [60, 200, 600, 1500].forEach(function (delay) { setTimeout(schedule, delay); });
   }
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
   else start();
 })();`;

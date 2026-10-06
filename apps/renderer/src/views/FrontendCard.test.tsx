@@ -66,13 +66,23 @@ it("expands the frame to the card's real content height instead of clipping it",
   expect(CARD_HEIGHT_SCRIPT).toContain(CARD_HEIGHT_MESSAGE);
   expect(CARD_HEIGHT_SCRIPT).toContain("postMessage");
   // 解开 100vh 锁死的高度 / 裁切 / 垂直居中
-  expect(CARD_HEIGHT_SCRIPT).toContain("min-height:");
+  expect(CARD_HEIGHT_SCRIPT).toContain("min-height:0");
   expect(CARD_HEIGHT_SCRIPT).toContain("overflow:visible");
   expect(CARD_HEIGHT_SCRIPT).toContain("align-items:flex-start");
   // 持续跟随内容变化（卡片有入场动画与异步内容）
   expect(CARD_HEIGHT_SCRIPT).toContain("ResizeObserver");
   // 装饰性固定层不参与撑高，否则全屏 canvas 会把页面推成整屏
   expect(CARD_HEIGHT_SCRIPT).toContain("'fixed'");
+});
+
+it("never feeds the frame height back into the measurement", () => {
+  // 实测过的无界自增：旧实现读 body.scrollHeight 并把它设回 body 的 min-height，
+  // 而卡片的 min-height:100vh 让 scrollHeight 永远等于 frame 高度，
+  // 于是 frame 一路涨到 14502px（真实内容只有 1552px）。
+  expect(CARD_HEIGHT_SCRIPT).not.toContain("scrollHeight");
+  // 注入的样式也不能给 body 设 min-height（撑高 body 会改变下一次测量）。
+  expect(CARD_HEIGHT_SCRIPT).not.toMatch(/min-height:\s*'\s*\+\s*height/);
+  expect(CARD_HEIGHT_SCRIPT).not.toContain("min-height:' + height");
 });
 
 it("renders an escaped fenced greeting as an isolated card instead of visible markup", () => {
