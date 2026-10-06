@@ -14,17 +14,23 @@ export const CARD_IFRAME_SANDBOX = "allow-scripts";
 /**
  * 隔离文档的内容安全策略。
  *
- * `default-src 'none'` 是 deny-by-default：网络请求、表单、导航全部拒绝。这一点比名单
- * 更重要——一旦卡脚本能把数据发出去，能力黑名单就没有意义了。
- * `script-src 'unsafe-inline'` 是为卡片自身的 `<script>` 保留执行能力。
+ * 网络已按需放开：卡片的运行时常常是**从外部 CDN 加载**的（实测这张卡的
+ * `tavern_helper.scripts` 里有 3 条 import 指向 jsdelivr / 自有 CDN，MVU 就是其一），
+ * 只允许内联脚本会让这些卡的核心逻辑完全不执行。
+ *
+ * 仍然保留的约束：
+ *  - `base-uri 'none'` 与 `form-action 'none'`：不允许改基址或提交表单；
+ *  - 其余能力靠 iframe 的**不透明源**兜底——文档与父页面不同源，脚本无法读取
+ *    应用页面、`location` 或真实存储（storage 由内存垫片提供）。
  */
 export const CARD_IFRAME_CSP = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  "img-src data:",
-  "font-src data:",
-  "connect-src 'none'",
+  "default-src * data: blob:",
+  "script-src * 'unsafe-inline' 'unsafe-eval'",
+  "style-src * 'unsafe-inline'",
+  "img-src * data: blob:",
+  "media-src * data: blob:",
+  "font-src * data:",
+  "connect-src *",
   "form-action 'none'",
   "base-uri 'none'",
 ].join("; ");

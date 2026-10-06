@@ -42,20 +42,23 @@ it("detects a bare document without a fence, but never a mere HTML snippet", () 
   expect(frontendCardOf("")).toBeNull();
 });
 
-it("keeps the card markup but blocks the network and outside navigation in the sandboxed document", () => {
+it("allows card runtimes to load from their CDNs while still refusing navigation", () => {
   const document = buildCardDocument("<style>body{background:#000}</style><script>1</script>");
   // 卡片内容原样进入隔离文档（不消毒，否则文档级结构会被整段抹掉）。
   expect(document).toContain("<style>body{background:#000}</style>");
   expect(document).toContain("<script>1</script>");
   expect(document.startsWith("<!DOCTYPE html>")).toBe(true);
-  // 网络与导航必须拒绝：这是能力黑名单的前提，卡脚本不能把数据发出去。
-  expect(CARD_IFRAME_CSP).toContain("default-src 'none'");
-  expect(CARD_IFRAME_CSP).toContain("connect-src 'none'");
+  // 网络已放开：卡片的运行时（如 MVU）就是从外部 CDN 加载的，禁止网络会让核心逻辑不执行。
+  expect(CARD_IFRAME_CSP).toContain("script-src *");
+  expect(CARD_IFRAME_CSP).toContain("connect-src *");
+  expect(CARD_IFRAME_CSP).toContain("img-src *");
+  // 仍然拒绝改基址与提交表单。
   expect(CARD_IFRAME_CSP).toContain("form-action 'none'");
+  expect(CARD_IFRAME_CSP).toContain("base-uri 'none'");
   expect(document).toContain('http-equiv="Content-Security-Policy"');
-  // 脚本能力保留（卡片自带动画等依赖它）。
-  expect(CARD_IFRAME_CSP).toContain("script-src 'unsafe-inline'");
-  // 沙箱不能给 allow-same-origin，否则卡脚本可直接访问父页面。
+  // 脚本能力保留（卡片自带动画与运行时依赖它）。
+  expect(CARD_IFRAME_CSP).toContain("'unsafe-inline'");
+  // 真正的边界仍是沙箱：不加 allow-same-origin，卡脚本无法访问应用页面。
   expect(CARD_IFRAME_SANDBOX).toBe("allow-scripts");
   expect(CARD_IFRAME_SANDBOX).not.toContain("allow-same-origin");
 });
