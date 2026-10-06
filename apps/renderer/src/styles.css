@@ -525,14 +525,25 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .character-grid-panel { padding-top: clamp(42px,6vw,74px); }
 .character-grid-panel h2 { margin: 0 0 12px; font-size: clamp(27px,3vw,38px); font-weight: 680; letter-spacing: -.04em; }
 .character-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px,1fr)); gap: 10px; margin: 26px 0 0; padding: 0; list-style: none; }
+/* 一张角色卡由两个独立点击目标组成：主体看详情，底部小按钮直接开新故事。
+   视觉容器放在外层，避免把按钮嵌进按钮（无效 HTML，键盘与无障碍都会坏）。 */
 .character-card {
-  display: grid; justify-items: center; align-content: start; width: 100%; min-height: 148px; gap: 8px;
-  padding: 20px 12px 16px; border: 1px solid var(--line); border-radius: 12px;
-  color: var(--text); background: var(--surface); text-align: center;
+  display: grid; width: 100%; min-height: 148px; align-content: start; gap: 8px;
+  padding: 20px 12px 14px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface);
+  /* 卡片在加载角色详情时会短暂 disabled；不要因此显示"禁止"光标（button:disabled 的全局规则）。 */
+  cursor: pointer;
 }
-.character-card:hover:not(:disabled) { border-color: var(--text-faint); box-shadow: 0 6px 18px rgba(31,35,40,.08); }
-.character-card strong { max-width: 100%; overflow: hidden; font-size: 13px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
-.character-card small { color: var(--text-faint); font-size: 10px; }
+.character-card:hover { border-color: var(--text-faint); box-shadow: 0 6px 18px rgba(31,35,40,.08); }
+.character-card__detail {
+  display: grid; justify-items: center; align-content: start; width: 100%; gap: 8px;
+  padding: 0; border: 0; color: var(--text); background: transparent; text-align: center;
+  cursor: inherit;
+}
+.character-card__detail:disabled { opacity: .6; cursor: inherit; }
+.character-card__detail strong { max-width: 100%; overflow: hidden; font-size: 13px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+.character-card__detail small { color: var(--text-faint); font-size: 10px; }
+.character-card__start { justify-self: center; margin-top: 2px; }
 .breadcrumb__link { flex: 0 0 auto; padding: 0; border: 0; color: var(--accent); background: transparent; font-size: inherit; }
 .breadcrumb__link:hover { text-decoration: underline; }
 .onboarding-panel h2 { margin: 0 0 12px; font-size: clamp(27px,3vw,38px); font-weight: 680; letter-spacing: -.04em; }
@@ -627,6 +638,10 @@ blockquote { margin: 0; color: #45484d; font-family: "Songti SC","SimSun","Noto 
 .mes_text p { margin: 0 0 .8em; }
 .mes_text pre { padding: 12px; overflow: auto; border-radius: 7px; background: var(--surface-muted); white-space: pre; }
 .mes_text code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .9em; }
+/* 前端卡消息：卡片界面跑在隔离 iframe 里。 */
+.frontend-card { margin: 8px 0 0 36px; }
+.frontend-card__frame { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+.frontend-card__notice { margin: 6px 0 0; color: var(--text-faint); font-size: 10px; line-height: 1.6; }
 .mes_text :not(pre) > code { padding: 1px 4px; border-radius: 3px; background: var(--surface-muted); }
 .mes_text img, .mes_text video { max-width: 100%; height: auto; }
 .mes_text table { display: block; overflow: auto; border-collapse: collapse; }

@@ -42,6 +42,8 @@ export interface LibraryViewProps {
   previewHeadingRef: HeadingRef;
   onOpenFilePicker: () => void;
   onSelectCharacter: (id: string) => void;
+  /** 直接为该角色开一局新故事（不必先进详情——详情里没有开始对话的入口）。 */
+  onStartConversationWith?: (id: string) => void;
   onBackToLibrary?: () => void;
   onEditCharacter: () => void;
   onStartConversation: () => void;
@@ -78,6 +80,7 @@ export function LibraryView({
   previewHeadingRef,
   onOpenFilePicker,
   onSelectCharacter,
+  onStartConversationWith,
   onBackToLibrary,
   onEditCharacter,
   onStartConversation,
@@ -179,10 +182,10 @@ export function LibraryView({
           </section>
         ) : characters.length > 0 ? (
           <section className="inspector-scroll character-grid-panel" aria-labelledby="character-grid-title">
-            <p className="eyebrow">{text("MYCOMPANION · 角色库")}</p><h2 id="character-grid-title">{text("我的角色")}</h2><p className="onboarding-lead">{text("选择角色查看设定、世界书和正则，或开始新的故事。")}</p>
+            <p className="eyebrow">{text("MYCOMPANION · 角色库")}</p><h2 id="character-grid-title">{text("我的角色")}</h2><p className="onboarding-lead">{text("选择角色查看设定、世界书和正则，或直接点卡片上的「开始对话」开一局新故事。")}</p>
             {listError ? <p className="sidebar-error">{text(listError)}</p> : null}
             <ul className="character-grid" aria-label={text("已保存角色")}>
-              {characters.map((character) => <li key={character.id}><button className="character-card" data-character-id={character.id} disabled={isLoadingCharacter} onClick={() => onSelectCharacter(character.id)} type="button"><CharacterAvatar character={character} large /><strong>{character.name}</strong><small>{text(`${character.lorebookEntryCount} 世界书 · ${character.regexScriptCount} 正则`)}</small></button></li>)}
+              {characters.map((character) => <li key={character.id}><div className="character-card"><button className="character-card__detail" data-character-id={character.id} disabled={isLoadingCharacter} onClick={() => onSelectCharacter(character.id)} type="button"><CharacterAvatar character={character} large /><strong>{character.name}</strong><small>{text(`${character.lorebookEntryCount} 世界书 · ${character.regexScriptCount} 正则`)}</small></button><button className="button button--quiet button--small character-card__start" disabled={isLoadingCharacter} onClick={() => onStartConversationWith?.(character.id)} type="button">{text("开始对话")}</button></div></li>)}
             </ul>
           </section>
         ) : (

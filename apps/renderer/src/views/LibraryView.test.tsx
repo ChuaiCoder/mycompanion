@@ -149,6 +149,29 @@ it("hides the import assistant while browsing a populated library so the grid ta
   expect(screen.getByRole("button", { name: /角色库/ })).toBeInTheDocument();
 });
 
+it("starts a story for the exact character whose card was used, without opening its details", () => {
+  // 角色详情里没有开始对话的入口，所以每张卡自带一个按钮：
+  // 它必须只开这一张卡的故事，并且不应顺带把详情选中过去。
+  const other = characterSummarySchema.parse({ ...librarySummary, id: "00000000-0000-4000-8000-000000000002", name: "另一个角色" });
+  const onStartConversationWith = vi.fn();
+  const onSelectCharacter = vi.fn();
+  render(<LibraryView {...props({ characters: [librarySummary, other], onStartConversationWith, onSelectCharacter })} />);
+
+  const startButtons = screen.getAllByRole("button", { name: "开始对话" });
+  expect(startButtons).toHaveLength(2);
+  fireEvent.click(startButtons[1]!);
+  expect(onStartConversationWith).toHaveBeenCalledWith(other.id);
+  expect(onStartConversationWith).toHaveBeenCalledTimes(1);
+  // 点"开始对话"不能同时被当成"查看详情"。
+  expect(onSelectCharacter).not.toHaveBeenCalled();
+});
+
+it("still opens the detail view from the card body", () => {
+  render(<LibraryView {...props({ characters: [librarySummary], onSelectCharacter: vi.fn() })} />);
+  const detail = screen.getByRole("button", { name: new RegExp(librarySummary.name) });
+  expect(detail).toHaveAttribute("data-character-id", librarySummary.id);
+});
+
 it("keeps the import assistant for an empty library so first-run guidance is not lost", () => {
   const { container } = render(<LibraryView {...props()} />);
   expect(screen.getByLabelText("角色导入助手")).toBeInTheDocument();

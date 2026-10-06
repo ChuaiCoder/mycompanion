@@ -183,6 +183,9 @@ export function AppLayout(props: AppLayoutProps) {
   };
 
   // 对话页空态点角色直接开聊：先取详情保持角色库选中态，再为该角色建故事。
+  // 注意：这条路会先 setSelectedCharacter，检视栏会瞬时从网格切成角色详情。
+  // 角色库网格里的"开始对话"因此**不走这里**（见 onStartConversationWith），
+  // 否则会出现"先跳详情再进聊天"的闪动。
   const handleChatWithCharacter = async (id: string): Promise<void> => {
     const revision = ++navigationRevision.current;
     setRuntimeError(null);
@@ -244,6 +247,7 @@ export function AppLayout(props: AppLayoutProps) {
         onCommit={() => void handleCommit()}
         onOpenFilePicker={openFilePicker}
         onSelectCharacter={(id) => void handleSelectCharacter(id)}
+        onStartConversationWith={(id) => void handleStartConversation(id)}
         onBackToLibrary={() => characterSelection.setSelectedCharacter(null)}
         onStartConversation={() => void handleStartConversation()}
         preview={preview}
