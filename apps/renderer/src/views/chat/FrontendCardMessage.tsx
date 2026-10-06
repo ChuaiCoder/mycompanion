@@ -1,7 +1,8 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
 import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX } from "../../frontend-card-frame";
+import { CARD_BRIDGE_RESPONSE, parseCardBridgeRequest, runCardBridgeRequest, type CardBridgeHost } from "../../frontend-card-bridge";
 import { hasCardScript } from "../../frontend-card";
 
 /** 卡片自报高度前的兜底高度，避免首帧塌陷。 */
@@ -13,32 +14,51 @@ const MAX_HEIGHT = 4000;
 //
 // 这里刻意不消毒卡片 HTML —— 消毒会抹掉文档级结构（整段变空），而且无法阻止卡片 CSS
 // 污染应用界面。隔离文档 + 不透明源 iframe 才是有效边界。
-export function FrontendCardMessage({ markup, messageId }: { markup: string; messageId: string }) {
+export function FrontendCardMessage({ markup, messageId, bridge }: {
+  markup: string;
+  messageId: string;
+  /** 卡片可调用的宿主能力；缺省时卡片脚本会走自己的降级分支。 */
+  bridge: CardBridgeHost;
+}) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(FALLBACK_HEIGHT);
   const { t } = useTranslation();
   const scripted = hasCardScript(markup);
 
-  // 高度由子文档自己测量后上报 —— iframe 是不透明源，父页面读不到 contentDocument。
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      const data = event.data as { type?: unknown; height?: unknown } | null;
-      if (!data || data.type !== CARD_HEIGHT_MESSAGE) return;
-      // 只接受本 iframe 发来的消息，避免同页面其它消息影响布局。
-      if (frame.current && event.source !== frame.current.contentWindow) return;
-      const value = typeof data.height === "number" ? data.height : 0;
-      if (!Number.isFinite(value) || value <= 0) return;
-      setHeight(Math.min(Math.max(value, FALLBACK_HEIGHT), MAX_HEIGHT));
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, []);
+  // 桥的宿主信息放进 ref：消息按引用变化不应重建 iframe，否则卡片界面会被整块重载。
+  const host = useRef(bridge);
+  host.current = bridge;
 
   useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;
     element.srcdoc = buildCardDocument(markup);
   }, [markup]);
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const element = frame.current;
+      // 只接受本 iframe 发来的消息。
+      if (!element || event.source !== element.contentWindow) return;
+
+      const data = event.data as { type?: unknown; height?: unknown } | null;
+      if (data && data.type === CARD_HEIGHT_MESSAGE) {
+        const value = typeof data.height === "number" ? data.height : 0;
+        if (!Number.isFinite(value) || value <= 0) return;
+        setHeight(Math.min(Math.max(value, FALLBACK_HEIGHT), MAX_HEIGHT));
+        return;
+      }
+
+      const request = parseCardBridgeRequest(data);
+      if (!request) return;
+      void runCardBridgeRequest(request, host.current).then(result => {
+        // 回执必须回到发来请求的那个 frame。
+        element.contentWindow?.postMessage({ type: CARD_BRIDGE_RESPONSE, ...result }, "*");
+      });
+    };
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   return (
     <div className="frontend-card" data-frontend-card={messageId}>

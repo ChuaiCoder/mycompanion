@@ -6,6 +6,7 @@ import type { ChatMessage, ConversationDetail } from "@mycompanion/shared";
 import { characterInitial } from "../../components";
 import { frontendCardOf } from "../../frontend-card";
 import { renderMessageContent } from "../../message-rendering";
+import { selectMessageSwipe } from "../../swipe-runtime";
 import { MessageTokenUsage } from "../TokenAccountingDetails";
 import { ReplyCandidates } from "../ReplyCandidates";
 import { GenerationDetails } from "../GenerationDetails";
@@ -21,7 +22,11 @@ function statusLabel(message: ChatMessage): string | null {
 
 // Extensions own the rendered children. React only replaces them when the
 // underlying message changes, so typing and navigation preserve their UI.
-function MessageContent({ message, index, characterName }: { message: ChatMessage; index: number; characterName: string }) {
+function MessageContent({ message, index, characterName, conversation, onSwiped, onSendMessage }: {
+  message: ChatMessage; index: number; characterName: string; conversation: ConversationDetail;
+  onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
+  onSendMessage?: ((input: string) => void) | undefined;
+}) {
   const element = useRef<HTMLDivElement>(null);
   const extra = message.extensionData?.extra as Record<string, unknown> | undefined;
   const content = typeof extra?.display_text === "string" ? extra.display_text : message.content;
@@ -34,7 +39,24 @@ function MessageContent({ message, index, characterName }: { message: ChatMessag
     if (card || !element.current) return;
     renderMessageContent(element.current, content, name, isSystem, isUser, index);
   }, [card, content, name, isSystem, isUser, index]);
-  if (card) return <FrontendCardMessage markup={card.markup} messageId={message.id} />;
+  if (card) {
+    return (
+      <FrontendCardMessage
+        markup={card.markup}
+        messageId={message.id}
+        bridge={{
+          messages: conversation.messages,
+          characterName,
+          // 复用应用自己的候选切换链路（切完由 onSwiped 刷新故事）。
+          onSelectSwipe: async (messageId, swipeId) => {
+            await selectMessageSwipe({ conversationId: conversation.id, messageId }, swipeId);
+            await onSwiped?.(conversation.id);
+          },
+          onSend: (text) => onSendMessage?.(text),
+        }}
+      />
+    );
+  }
   return <div className="mes_text" ref={element} />;
 }
 
@@ -109,6 +131,7 @@ export function ChatMessageRow({
   onRegenerate,
   onActivateBranch,
   onSwiped,
+  onSendMessage,
 }: {
   message: ChatMessage;
   index: number;
@@ -125,6 +148,7 @@ export function ChatMessageRow({
   onRegenerate: () => void;
   onActivateBranch?: ((conversationId: string, branchId: string) => Promise<void>) | undefined;
   onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
+  onSendMessage?: ((input: string) => void) | undefined;
 }) {
   const handleEditKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -157,7 +181,7 @@ export function ChatMessageRow({
           </div>
         </div>
       ) : (
-        <MessageContent message={message} index={index} characterName={name} />
+        <MessageContent message={message} index={index} characterName={name} conversation={conversation} onSwiped={onSwiped} onSendMessage={onSendMessage} />
       )}
       <MessageTokenUsage metadata={message.generationMetadata} />
       <GenerationDetails metadata={message.generationMetadata} />

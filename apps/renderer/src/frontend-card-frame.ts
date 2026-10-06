@@ -7,9 +7,10 @@
 //   - CSS 天然只作用于该文档；
 //   - 脚本照常运行（动画等能力保留）。
 
+import { CARD_BRIDGE_SCRIPT } from "./frontend-card-bridge";
+
 /** iframe 的 sandbox：允许脚本，但**不给** allow-same-origin（父页面因此不可达）。 */
 export const CARD_IFRAME_SANDBOX = "allow-scripts";
-
 /**
  * 隔离文档的内容安全策略。
  *
@@ -51,8 +52,11 @@ export function buildCardDocument(markup: string): string {
     "</head>",
     "<body>",
     markup,
-    // 测量脚本必须**内联进文档**：iframe 是不透明源，父页面拿不到 contentDocument，
+    // 桥与测量脚本都必须**内联进文档**：iframe 是不透明源，父页面拿不到 contentDocument，
     // 无法从外面注入。文档自身的 CSP 允许内联脚本（这是卡片脚本能跑的前提）。
+    // 桥要在卡片脚本之前挂好，否则卡片的 `typeof getChatMessages !== 'undefined'` 判断
+    // 会走降级分支。
+    `<script>${CARD_BRIDGE_SCRIPT}</script>`,
     `<script>${CARD_HEIGHT_SCRIPT}</script>`,
     "</body>",
     "</html>",

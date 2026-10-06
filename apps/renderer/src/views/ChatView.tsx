@@ -139,6 +139,7 @@ export function ChatView({
               onEditingDraft={onEditingDraft}
               onRegenerate={onRegenerate}
               onSaveEdit={onSaveEdit}
+              onSendMessage={onSendMessage}
               onSwiped={onSwiped}
             />, element, key) : null)}
         {createPortal(
