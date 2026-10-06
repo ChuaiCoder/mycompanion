@@ -1,0 +1,28 @@
+{
+  "spec": "chara_card_v2",
+  "spec_version": "2.0",
+  "data": {
+    "name": "围栏卡复现",
+    "description": "用于复现「前端卡式开场白被当成代码块显示」的最小角色卡：开场白整段是一个 ```html 围栏块，内部是完整 HTML 文档（含 <style> 与外部字体 @import），与《道渊》v5.3 的实际形态一致。",
+    "personality": "无。这张卡只为复现渲染问题而存在。",
+    "scenario": "导入后直接开始对话，观察第一条消息的显示方式。",
+    "first_mes": "```html\n<html>\n<head>\n    <meta charset=\"UTF-8\">\n    <title>2026</title>\n    <style>\n        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;700&display=swap');\n\n        :root { --bg-color: #030a16; }\n\n        .card {\n            background: var(--bg-color);\n            border: 1px solid #00ffff;\n            border-radius: 12px;\n            color: #f0f8ff;\n            font-family: 'Noto Sans SC', sans-serif;\n            padding: 18px 20px;\n        }\n    </style>\n</head>\n<body>\n    <div class=\"card\">\n        <h3>仙途将启</h3>\n        <p>你好，旅人。这段文字本应显示在一张带边框和深色背景的卡片里。</p>\n    </div>\n</body>\n</html>\n```",
+    "mes_example": "<START>\n{{char}}：如果你看到的是一堆尖括号，就说明渲染没有生效。",
+    "creator_notes": "MyCompanion 自建复现夹具，不含任何第三方素材或代码。开场白的 HTML/CSS 为本项目原创，仅用于验证渲染行为。",
+    "system_prompt": "",
+    "post_history_instructions": "",
+    "alternate_greetings": [],
+    "tags": [
+      "复现",
+      "渲染"
+    ],
+    "creator": "MyCompanion",
+    "character_version": "1.0",
+    "extensions": {},
+    "x_mycompanion_fixture": {
+      "purpose": "fenced-html-greeting-reproduction",
+      "expectedBeforeFix": "整条开场白显示为 <pre><code> 里的裸 <html>/<style> 文本",
+      "expectedAfterFix": "渲染成一张带边框的深色卡片，正文为「仙途将启」"
+    }
+  }
+}
