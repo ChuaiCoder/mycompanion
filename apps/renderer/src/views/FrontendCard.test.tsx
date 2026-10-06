@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ConversationDetail } from "@mycompanion/shared";
-import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX } from "../frontend-card-frame";
+import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX, CARD_STORAGE_SCRIPT } from "../frontend-card-frame";
 import { frontendCardOf, hasCardScript } from "../frontend-card";
 import { ChatView, type ChatViewProps } from "./ChatView";
 
@@ -73,6 +73,23 @@ it("expands the frame to the card's real content height instead of clipping it",
   expect(CARD_HEIGHT_SCRIPT).toContain("ResizeObserver");
   // 装饰性固定层不参与撑高，否则全屏 canvas 会把页面推成整屏
   expect(CARD_HEIGHT_SCRIPT).toContain("'fixed'");
+});
+
+it("gives card scripts a working storage shim instead of a hard SecurityError", () => {
+  // 不透明源文档里 localStorage 会抛 SecurityError，而卡脚本常在初始化就读它，
+  // 抛错会让整段脚本中断。实测确认 defineProperty 在该 sandbox 下可用，故用内存垫片。
+  expect(CARD_STORAGE_SCRIPT).toContain("localStorage");
+  expect(CARD_STORAGE_SCRIPT).toContain("sessionStorage");
+  expect(CARD_STORAGE_SCRIPT).toContain("Object.defineProperty");
+  expect(CARD_STORAGE_SCRIPT).toContain("configurable: true");
+  // 垫片必须真的可用，而不只是把属性换成一个空对象。
+  for (const method of ["getItem", "setItem", "removeItem", "clear"]) expect(CARD_STORAGE_SCRIPT).toContain(method);
+  // 必须注入在卡片内容**之前**：卡脚本初始化阶段就要用。
+  const document = buildCardDocument("<p>card</p>");
+  expect(document.indexOf(CARD_STORAGE_SCRIPT)).toBeGreaterThan(-1);
+  expect(document.indexOf(CARD_STORAGE_SCRIPT)).toBeLessThan(document.indexOf("<p>card</p>"));
+  // 不能为了存储而放宽沙箱。
+  expect(CARD_IFRAME_SANDBOX).not.toContain("allow-same-origin");
 });
 
 it("never feeds the frame height back into the measurement", () => {

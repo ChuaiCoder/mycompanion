@@ -51,6 +51,8 @@ export function buildCardDocument(markup: string): string {
     "</style>",
     "</head>",
     "<body>",
+    // 存储垫片必须在卡片脚本之前：卡脚本常在初始化阶段就读 localStorage。
+    `<script>${CARD_STORAGE_SCRIPT}</script>`,
     markup,
     // 桥与测量脚本都必须**内联进文档**：iframe 是不透明源，父页面拿不到 contentDocument，
     // 无法从外面注入。文档自身的 CSP 允许内联脚本（这是卡片脚本能跑的前提）。
@@ -65,6 +67,40 @@ export function buildCardDocument(markup: string): string {
 
 /** 子文档发给父页面的高度消息类型。 */
 export const CARD_HEIGHT_MESSAGE = "mycompanion:card-height";
+
+/**
+ * 注入隔离文档的存储垫片。
+ *
+ * 不透明源文档里访问 `localStorage` / `sessionStorage` 会直接抛 SecurityError，
+ * 而卡脚本常在初始化阶段就读它（实测：一张卡在 `updateArchiveSelect` 里读取，
+ * 抛错后整段脚本中断，后续界面逻辑全不执行）。
+ *
+ * 实测确认（在同款 sandbox iframe 里）：`Object.defineProperty(window,'localStorage',{configurable:true,get})`
+ * 是允许的，因此可以给它一个内存实现，让卡脚本正常读写，而**不需要**加上
+ * allow-same-origin（那会让卡脚本能访问应用页面）。
+ * 数据只存在该文档的内存里：刷新即空，也不会写入用户真实存储。
+ */
+export const CARD_STORAGE_SCRIPT = `(function () {
+  function createStorage() {
+    var map = Object.create(null);
+    return {
+      getItem: function (key) { key = String(key); return key in map ? map[key] : null; },
+      setItem: function (key, value) { map[String(key)] = String(value); },
+      removeItem: function (key) { delete map[String(key)]; },
+      clear: function () { map = Object.create(null); },
+      key: function (index) { var keys = Object.keys(map); return index >= 0 && index < keys.length ? keys[index] : null; },
+      get length() { return Object.keys(map).length; }
+    };
+  }
+  ['localStorage', 'sessionStorage'].forEach(function (name) {
+    var shim = createStorage();
+    try {
+      Object.defineProperty(window, name, { configurable: true, enumerable: true, get: function () { return shim; } });
+    } catch (error) {
+      // 定义失败时保持浏览器原行为（抛出同样的 SecurityError），不静默改变语义。
+    }
+  });
+})();`;
 
 /**
  * 注入到隔离文档里的高度上报脚本。
