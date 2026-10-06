@@ -4,10 +4,12 @@ import type { KeyboardEvent } from "react";
 import type { ChatMessage, ConversationDetail } from "@mycompanion/shared";
 
 import { characterInitial } from "../../components";
+import { frontendCardOf } from "../../frontend-card";
 import { renderMessageContent } from "../../message-rendering";
 import { MessageTokenUsage } from "../TokenAccountingDetails";
 import { ReplyCandidates } from "../ReplyCandidates";
 import { GenerationDetails } from "../GenerationDetails";
+import { FrontendCardMessage } from "./FrontendCardMessage";
 
 function statusLabel(message: ChatMessage): string | null {
   if (message.status === "failed") return "生成失败";
@@ -26,9 +28,13 @@ function MessageContent({ message, index, characterName }: { message: ChatMessag
   const name = typeof message.extensionData?.name === "string" ? message.extensionData.name : message.role === "user" ? "User" : characterName;
   const isSystem = message.extensionData?.is_system === true;
   const isUser = message.role === "user";
+  // 前端卡内容交给隔离 iframe 渲染：它自带整份 HTML 文档与样式，放进主文档会污染界面。
+  const card = frontendCardOf(content);
   useLayoutEffect(() => {
-    if (element.current) renderMessageContent(element.current, content, name, isSystem, isUser, index);
-  }, [content, name, isSystem, isUser, index]);
+    if (card || !element.current) return;
+    renderMessageContent(element.current, content, name, isSystem, isUser, index);
+  }, [card, content, name, isSystem, isUser, index]);
+  if (card) return <FrontendCardMessage markup={card.markup} messageId={message.id} />;
   return <div className="mes_text" ref={element} />;
 }
 
