@@ -427,8 +427,16 @@ export const CARD_HEIGHT_SCRIPT = `(function () {
     }
     style.textContent = [
       'body{min-height:0 !important;height:auto !important;overflow:visible !important;align-items:flex-start !important}',
-      // 绝对定位的"整屏"容器：取消视口高度锁与裁切，并让它们参与布局高度计算。
-      'body > .screen{position:relative !important;height:auto !important;max-height:none !important;min-height:0 !important;overflow:visible !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;transform:none !important}',
+      // 绝对定位的"整屏"容器：取消视口高度锁与裁切，并让**当前显示的**那一屏参与布局高度。
+      //
+      // 两个要点（都是实测得出的）：
+      //  1. 必须给 width:100%，否则它们会成为 body（flex 容器）里的普通 flex 项而按内容收缩，
+      //     实测两块各占 345px / 150px。
+      //  2. 卡用 .active 类互斥切换这些屏，但原来的 position:absolute 让**所有**屏都横向占满、
+      //     彼此叠放。改成 relative 后它们会同时参与排布（两个屏会并排或上下堆叠，加长页面）。
+      //     所以把未激活的屏直接移出排布；卡切换 .active 时状态随之变化。
+      'body > .screen{position:relative !important;width:100% !important;height:auto !important;max-height:none !important;min-height:0 !important;overflow:visible !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;transform:none !important}',
+      'body > .screen:not(.active){display:none !important}',
     ].join(String.fromCharCode(10));
   }
 

@@ -155,6 +155,19 @@ it("remembers the card assistant's panel position, which the card itself never s
   window.localStorage.removeItem(cardStorageKey(story, "local"));
 });
 
+it("lays the card's screens out at full width, one at a time", () => {
+  // 实测：卡给这些"整屏"容器写的是 width:50%，原本靠 position:absolute 不参与流式排布
+  // 才各自横向占满。为了修高度裁切把它们改成 relative 后，它们就成了 body（flex 容器）
+  // 里的普通项——先各占一半并排（248+248），改成 auto 后又按内容收缩（345/150）。
+  // 因此必须显式 width:100%，并把未激活的屏移出排布，否则两个屏会同时占位、把卡片拉长。
+  const script = CARD_HEIGHT_SCRIPT;
+  const screenRule = script.slice(script.indexOf('body > .screen{'), script.indexOf('body > .screen:not(.active)'));
+  expect(screenRule).toContain('width:100% !important');
+  expect(screenRule).not.toContain('width:auto !important');
+  expect(screenRule).toContain('position:relative !important');
+  expect(script).toContain('body > .screen:not(.active){display:none !important}');
+});
+
 it("allows card runtimes to load from their CDNs while still refusing navigation", () => {
   const document = buildCardDocument("<style>body{background:#000}</style><script>1</script>");
   // 卡片内容原样进入隔离文档（不消毒，否则文档级结构会被整段抹掉）。
