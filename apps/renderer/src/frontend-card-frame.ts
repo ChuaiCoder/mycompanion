@@ -88,6 +88,8 @@ export function buildCardDocument(
   hostGlobals?: Record<string, unknown>,
   /** 该故事已保存的卡存储（local/session），在卡片初始化前同步注入。 */
   cardStorage?: Record<string, Record<string, string>>,
+  /** 已保存的浮动面板位置（宿主代卡的助手记住的），缺省表示首次运行。 */
+  panelPosition?: { left: number; top: number } | null,
 ): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${CARD_IFRAME_CSP}">`;
   return [
@@ -116,6 +118,9 @@ export function buildCardDocument(
     // module 是延迟执行的，所以卡脚本里对运行时的使用必须是运行时判断（卡的脚本普遍如此）。
     ...(runtimeSource ? [`<script type="module">${inlineScript(runtimeSource)}</script>`] : []),
     markup,
+    // 浮动面板位置由宿主代记：卡自己没存（见 buildCardPanelScript 的说明）。
+    // 放在卡的内容之后，让它能在卡挂载出面板时立刻观察与恢复。
+    `<script>${inlineScript(buildCardPanelScript(CARD_PANEL_STORAGE_KEY, panelPosition ?? null))}</script>`,
     `<script>${inlineScript(CARD_HEIGHT_SCRIPT)}</script>`,
     "</body>",
     "</html>",
@@ -127,6 +132,99 @@ export const CARD_HEIGHT_MESSAGE = "mycompanion:card-height";
 
 /** 子文档把 `localStorage` 的改动同步回宿主时使用的消息类型。 */
 export const CARD_STORAGE_MESSAGE = "mycompanion:card-storage";
+
+/**
+ * 子文档请求宿主持久化一个**浮动面板的位置**时使用的消息类型。
+ *
+ * 与存储垫片分开：这不是卡自己写的 localStorage，而是宿主代它记住的界面状态，
+ * 因此用独立通道，便于将来卡自己实现持久化时直接停用这一项。
+ */
+export const CARD_PANEL_MESSAGE = "mycompanion:card-panel";
+
+/** 卡存储里保存浮动面板位置的键。 */
+export const CARD_PANEL_STORAGE_KEY = "mycompanion:panel-position";
+
+/**
+ * 代理第三方助手记住浮动面板位置。
+ *
+ * 为什么需要：实测这张卡的配置助手把面板位置放在**内联样式**里（`bubble.style.left/top`），
+ * 全文件只有两处 `setItem`（出生地、模式），位置从未落盘，所以每次文档重建都回到默认值。
+ * 而酒馆助手自己的浮窗是**会存**的（`Dialog.vue`：`TH-Dialog-<id>:pos` 存 `{left, top}`，
+ * 挂载时读取、拖动时保存、恢复后夹进视口）。这里按同一思路补上它缺的那一步。
+ *
+ * 三条约束：
+ *  1. **只在本页首次出现时恢复一次**：之后完全由卡自己掌控。若卡将来自己实现了恢复，
+ *     它会在我们之后再设一次样式，从而覆盖我们的值——以卡为准，不打架。
+ *  2. **只接受像素值**：卡默认写的是 `40vh` 这类视口单位，忽略它，避免把视口单位当像素读。
+ *  3. **恢复前夹进当前视口**：窗口变小后旧坐标可能落在屏幕外，与助手自己的
+ *     `checkAndAdjustBounds` 同理。
+ */
+export function buildCardPanelScript(storageKey: string, stored: { left: number; top: number } | null): string {
+  return `(function () {
+  var MESSAGE = ${JSON.stringify(CARD_PANEL_MESSAGE)};
+  var STORAGE_KEY = ${JSON.stringify(storageKey)};
+  var SAVED = ${toInlineLiteral(stored)};
+  var BUBBLE_ID = 'bp-switch-bubble';
+  var host = null;
+  try { host = window.parent && window.parent !== window ? window.parent : null; } catch (error) { host = null; }
+  if (!host || !host.document) return;
+  var restored = false;
+  var observed = null;
+
+  function pixels(value) {
+    var text = String(value == null ? '' : value).trim();
+    if (!/^-?[0-9.]+px$/.test(text)) return null;
+    var number = parseFloat(text);
+    return isFinite(number) ? number : null;
+  }
+
+  /** 把位置夹进当前视口；卡自己的越界回退逻辑同样会这么做。 */
+  function clamp(left, top, element) {
+    var width = element.offsetWidth || 66;
+    var height = element.offsetHeight || 88;
+    var viewportWidth = host.innerWidth || host.document.documentElement.clientWidth || 0;
+    var viewportHeight = host.innerHeight || host.document.documentElement.clientHeight || 0;
+    if (viewportWidth > 0) left = Math.max(0, Math.min(left, Math.max(0, viewportWidth - width)));
+    if (viewportHeight > 0) top = Math.max(0, Math.min(top, Math.max(0, viewportHeight - height)));
+    return { left: left, top: top };
+  }
+
+  function restore(element) {
+    if (restored || !SAVED) return;
+    restored = true;
+    if (typeof SAVED.left !== 'number' || typeof SAVED.top !== 'number') return;
+    var position = clamp(SAVED.left, SAVED.top, element);
+    element.style.left = position.left + 'px';
+    element.style.top = position.top + 'px';
+  }
+
+  function report(element) {
+    var left = pixels(element.style.left);
+    var top = pixels(element.style.top);
+    // 卡默认写的是视口单位（如 40vh）：不把它当成像素存下来。
+    if (left === null || top === null) return;
+    var position = clamp(left, top, element);
+    try { host.postMessage({ type: MESSAGE, key: STORAGE_KEY, left: position.left, top: position.top }, '*'); } catch (error) {}
+  }
+
+  function watch(element) {
+    if (!element || observed === element) return;
+    observed = element;
+    restore(element);
+    // 拖动与吸附都会改写内联样式，因此观察属性即可，无需介入它的事件处理。
+    if (typeof host.MutationObserver === 'function') {
+      new host.MutationObserver(function () { report(element); }).observe(element, { attributes: true, attributeFilter: ['style'] });
+    }
+  }
+
+  watch(host.document.getElementById(BUBBLE_ID));
+  // 助手是异步挂载气泡的（模块要等 CDN 加载），因此还要等它出现。
+  if (typeof host.MutationObserver === 'function') {
+    new host.MutationObserver(function () { watch(host.document.getElementById(BUBBLE_ID)); })
+      .observe(host.document.body || host.document.documentElement, { childList: true, subtree: true });
+  }
+})();`;
+}
 
 /**
  * 宿主侧保存卡 `localStorage` 的键前缀。
@@ -160,6 +258,36 @@ export function readCardStorage(conversationId: string): { local: Record<string,
     }
   };
   return { local: read("local"), session: read("session") };
+}
+
+/** 读取宿主代记的浮动面板位置；没有或数据不可用时返回 null（由卡用它自己的默认值）。 */
+export function readCardPanelPosition(conversationId: string): { left: number; top: number } | null {
+  try {
+    const raw = readCardStorage(conversationId).local[CARD_PANEL_STORAGE_KEY];
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    const { left, top } = parsed as { left?: unknown; top?: unknown };
+    if (typeof left !== "number" || typeof top !== "number") return null;
+    if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+    // 负值说明存下来的数据已不可信（窗口尺寸变化等），交给卡自己决定。
+    if (left < 0 || top < 0) return null;
+    return { left, top };
+  } catch {
+    return null;
+  }
+}
+
+/** 保存宿主代记的浮动面板位置；数值不合法时忽略，避免把坏坐标写进去。 */
+export function persistCardPanelPosition(conversationId: string, left: unknown, top: unknown): void {
+  if (typeof left !== "number" || typeof top !== "number") return;
+  if (!Number.isFinite(left) || !Number.isFinite(top) || left < 0 || top < 0) return;
+  // 与卡自己的存储走同一条落盘路径，因此切故事/重载后一并恢复。
+  persistCardStorage(conversationId, {
+    kind: "local",
+    key: CARD_PANEL_STORAGE_KEY,
+    value: JSON.stringify({ left: Math.round(left), top: Math.round(top) }),
+  });
 }
 
 /**

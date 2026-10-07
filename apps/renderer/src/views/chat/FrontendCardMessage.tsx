@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX, CARD_STORAGE_MESSAGE, persistCardStorage, readCardStorage } from "../../frontend-card-frame";
+import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX, CARD_PANEL_MESSAGE, CARD_PANEL_STORAGE_KEY, CARD_STORAGE_MESSAGE, persistCardPanelPosition, persistCardStorage, readCardPanelPosition, readCardStorage } from "../../frontend-card-frame";
 import { CARD_BRIDGE_RESPONSE, parseCardBridgeRequest, runCardBridgeRequest, type CardBridgeHost } from "../../frontend-card-bridge";
 import { hasCardScript } from "../../frontend-card";
 
@@ -42,7 +42,7 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
     const element = frame.current;
     if (!element) return;
     // 已保存的卡存储同步注入：卡在初始化阶段就同步读取它（面板位置、存档选择等）。
-    element.srcdoc = buildCardDocument(markup, runtimeSource, hostGlobals, readCardStorage(conversationId));
+    element.srcdoc = buildCardDocument(markup, runtimeSource, hostGlobals, readCardStorage(conversationId), readCardPanelPosition(conversationId));
     // hostGlobals 每次渲染都是新对象，但它只是同一份数据的投影；用序列化值做依赖，
     // 避免每次父组件重渲染都重载整个卡片文档。
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -54,11 +54,18 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
       // 只接受本 iframe 发来的消息。
       if (!element || event.source !== element.contentWindow) return;
 
-      const data = event.data as { type?: unknown; height?: unknown; kind?: unknown; key?: unknown; value?: unknown } | null;
+      const data = event.data as { type?: unknown; height?: unknown; kind?: unknown; key?: unknown; value?: unknown; left?: unknown; top?: unknown } | null;
       if (data && data.type === CARD_HEIGHT_MESSAGE) {
         const value = typeof data.height === "number" ? data.height : 0;
         if (!Number.isFinite(value) || value <= 0) return;
         setHeight(Math.min(Math.max(value, FALLBACK_HEIGHT), MAX_HEIGHT));
+        return;
+      }
+
+      // 卡的助手报了浮动面板位置：由宿主代记，下一次文档重建时写回。
+      if (data && data.type === CARD_PANEL_MESSAGE) {
+        if (data.key !== CARD_PANEL_STORAGE_KEY) return;
+        persistCardPanelPosition(storyRef.current, data.left, data.top);
         return;
       }
 

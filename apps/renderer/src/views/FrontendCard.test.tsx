@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ConversationDetail } from "@mycompanion/shared";
-import { buildCardDocument, buildCardStorageScript, cardStorageKey, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX, CARD_STORAGE_MESSAGE, CARD_STORAGE_PREFIX, persistCardStorage, readCardStorage } from "../frontend-card-frame";
+import { buildCardDocument, buildCardPanelScript, buildCardStorageScript, cardStorageKey, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX, CARD_PANEL_MESSAGE, CARD_PANEL_STORAGE_KEY, CARD_STORAGE_MESSAGE, CARD_STORAGE_PREFIX, persistCardPanelPosition, persistCardStorage, readCardPanelPosition, readCardStorage } from "../frontend-card-frame";
 import { frontendCardOf, hasCardScript } from "../frontend-card";
 import { ChatView, type ChatViewProps } from "./ChatView";
 
@@ -109,6 +109,46 @@ it("persists and clears card storage per story on the host side", () => {
 
   window.localStorage.removeItem(cardStorageKey(story, "local"));
   window.localStorage.removeItem(cardStorageKey(other, "local"));
+});
+
+it("remembers the card assistant's panel position, which the card itself never saves", () => {
+  // 实测这张卡的配置助手把面板位置放在内联样式里，全文件只有出生地与模式两处写入，
+  // 所以每次文档重建都回到默认值。酒馆助手自己的浮窗是会存的（TH-Dialog-<id>:pos），
+  // 这里按同一思路代它记住。
+  const script = buildCardPanelScript(CARD_PANEL_STORAGE_KEY, { left: 321, top: 654 });
+  // 位置同步内联进去（助手可能在窗口 resize 前就要恢复）。
+  expect(script).toContain(CARD_PANEL_STORAGE_KEY);
+  expect(script).toContain("321");
+  expect(script).toContain("654");
+  // 只在首次出现时恢复一次，之后完全由卡掌控——卡若自己会恢复，它的值必须胜出。
+  expect(script).toContain("if (restored || !SAVED) return");
+  expect(script).toContain("restored = true");
+  // 只接受像素值：卡默认写的是 40vh 这类视口单位，不能当像素读。
+  expect(script).toContain("px$");
+  // 恢复前夹进当前视口，与助手自己的边界处理同理。
+  expect(script).toContain("clamp");
+  expect(script).toContain("innerWidth");
+  // 拖动与吸附都改内联样式，因此观察属性而不是介入它的事件。
+  expect(script).toContain("MutationObserver");
+  expect(script).toContain(CARD_PANEL_MESSAGE);
+
+  // 首次运行没有存过位置时，注入 null，由卡用默认值。
+  expect(buildCardPanelScript(CARD_PANEL_STORAGE_KEY, null)).toContain("var SAVED = null");
+
+  // 宿主侧读写：按故事隔离、坏值不写入、坏数据不返回。
+  const story = "33333333-3333-4333-8333-333333333333";
+  expect(readCardPanelPosition(story)).toBeNull();
+  persistCardPanelPosition(story, 120, 240);
+  expect(readCardPanelPosition(story)).toEqual({ left: 120, top: 240 });
+  // 非有限值、负值、非数值一律忽略，避免把坏坐标覆盖上去。
+  persistCardPanelPosition(story, Number.NaN, 10);
+  persistCardPanelPosition(story, -5, 10);
+  persistCardPanelPosition(story, "120", 10);
+  expect(readCardPanelPosition(story)).toEqual({ left: 120, top: 240 });
+
+  window.localStorage.setItem(cardStorageKey(story, "local"), JSON.stringify({ [CARD_PANEL_STORAGE_KEY]: "{ broken" }));
+  expect(readCardPanelPosition(story)).toBeNull();
+  window.localStorage.removeItem(cardStorageKey(story, "local"));
 });
 
 it("allows card runtimes to load from their CDNs while still refusing navigation", () => {
