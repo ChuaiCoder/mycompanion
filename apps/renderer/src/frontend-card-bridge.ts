@@ -438,7 +438,22 @@ export const CARD_BRIDGE_SCRIPT = `(function () {
   window.TavernHelper.createLorebookEntry = window.createLorebookEntry;
   window.TavernHelper.executeSlashCommands = window.executeSlashCommands;
   window.eventOn = function (name, handler) { (listeners[name] = listeners[name] || []).push(handler); return { stop: function () {} }; };
-  window.waitGlobalInitialized = function () { return Promise.resolve(); };
+  window.waitGlobalInitialized = function (name) {
+    // 真实机制（读酒馆助手源码 src/function/global.ts 得到）：宿主在某个全局就绪时
+    // 发出 global_<name>_initialized 事件，waitGlobalInitialized 就是等这个事件。
+    // MVU 自己会发 global_Mvu_initialized（它把实例挂到 window.parent.Mvu 之后）。
+    var target = String(name);
+    if (typeof window[target] !== 'undefined' || _.has(window, target)) return Promise.resolve();
+    return new Promise(function (resolve) {
+      var done = false;
+      var finish = function () { if (!done) { done = true; resolve(); } };
+      window.eventOn('global_' + target + '_initialized', finish);
+      // 兜底：父窗口（同源）上已经就绪时立即返回。
+      try { if (window.parent && _.has(window.parent, target)) { finish(); return; } } catch (error) {}
+      // 若始终没有事件（例如运行时未启用该功能），不要永久挂起调用方。
+      setTimeout(finish, 4000);
+    });
+  };
 
   // ── 宿主桩件：对齐酒馆前端的对象形状 ──────────────────────────────────────
   //
