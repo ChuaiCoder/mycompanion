@@ -157,10 +157,25 @@ export async function executeSlashCommand(
     const name = match[1]!.toLowerCase();
     const rest = match[2]!.trim();
     if (!SUPPORTED_SLASH.has(name)) { rejected.push(name); continue; }
-    if (name === "trigger") { await host.onTrigger?.(); continue; }
+    if (name === "trigger") {
+      // 卡的收尾管道是 `/sys … | /cut <序号> | /trigger`，即"发出开局内容→删掉占位→让 AI 开场"。
+      // 这里必须真正触发一次生成；实测只 await onTrigger 时需要确保它被调用到。
+      if (host.onTrigger) await host.onTrigger();
+      continue;
+    }
     if (name === "cut") {
-      // 允许 `/cut` 不带参数（默认删当前最后一条），也允许显式 id 或 "last"。
-      const messageId = rest && rest !== "last" ? rest : host.messages.at(-1)?.id;
+      // 卡片传的是**会话内序号**（与 getChatMessages(0) / getCurrentMessageId() 同一套编号），
+      // 而宿主删除消息需要真实 id。实测：卡的 `/cut 0` 原样当 id 处理时匹配不到任何消息，
+      // 于是开场白占位消息永远不会被删除，且没有任何报错。
+      // 允许 `/cut` 不带参数（默认删最后一条），也允许显式序号或 "last"。
+      let messageId: string | undefined;
+      if (!rest || rest === "last") {
+        messageId = host.messages.at(-1)?.id;
+      } else if (/^\d+$/.test(rest)) {
+        messageId = host.messages[Number(rest)]?.id;
+      } else {
+        messageId = rest;
+      }
       if (messageId) await host.onDeleteMessage?.(messageId);
       continue;
     }
