@@ -85,6 +85,7 @@ function MessageContent({ message, index, characterName, conversation, onSwiped,
       <FrontendCardMessage
         markup={card.markup}
         messageId={message.id}
+        conversationId={conversation.id}
         runtimeSource={runtimeSource}
         hostGlobals={{
           // 卡自带运行时（MVU 等）直接引用这些对象；缺了它们模块会在顶层抛错。

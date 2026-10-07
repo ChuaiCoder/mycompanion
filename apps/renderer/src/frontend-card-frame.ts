@@ -82,7 +82,13 @@ function toInlineLiteral(value: unknown): string {
     .replace(/\u2029/g, "\\u2029");
 }
 
-export function buildCardDocument(markup: string, runtimeSource?: string, hostGlobals?: Record<string, unknown>): string {
+export function buildCardDocument(
+  markup: string,
+  runtimeSource?: string,
+  hostGlobals?: Record<string, unknown>,
+  /** 该故事已保存的卡存储（local/session），在卡片初始化前同步注入。 */
+  cardStorage?: Record<string, Record<string, string>>,
+): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${CARD_IFRAME_CSP}">`;
   return [
     "<!DOCTYPE html>",
@@ -99,7 +105,8 @@ export function buildCardDocument(markup: string, runtimeSource?: string, hostGl
     "</head>",
     "<body>",
     // 存储垫片必须在卡片脚本之前：卡脚本常在初始化阶段就读 localStorage。
-    `<script>${inlineScript(CARD_STORAGE_SCRIPT)}</script>`,
+    // 已保存的值同步内联进去——卡是同步读取的，不能等异步通道。
+    `<script>${inlineScript(buildCardStorageScript(cardStorage))}</script>`,
     // 宿主数据（当前故事、角色、聊天记录）先落到全局，桥脚本的桩件会读它们。
     ...(hostGlobals ? [`<script>${inlineScript(`Object.assign(window, ${toInlineLiteral(hostGlobals)});`)}</script>`] : []),
     // 桥要在卡片脚本之前挂好，否则卡片的 `typeof getChatMessages !== 'undefined'` 判断
@@ -118,32 +125,111 @@ export function buildCardDocument(markup: string, runtimeSource?: string, hostGl
 /** 子文档发给父页面的高度消息类型。 */
 export const CARD_HEIGHT_MESSAGE = "mycompanion:card-height";
 
+/** 子文档把 `localStorage` 的改动同步回宿主时使用的消息类型。 */
+export const CARD_STORAGE_MESSAGE = "mycompanion:card-storage";
+
 /**
- * 注入隔离文档的存储垫片。
+ * 宿主侧保存卡 `localStorage` 的键前缀。
+ *
+ * 卡的界面状态（面板位置、存档选择、出生地、MVU 模式等）本来就靠 `localStorage` 跨会话保留；
+ * 若垫片只存在内存里，文档一重建就全部清零——实测可拖动的小助手每次切故事都会弹回默认位置。
+ * `sessionStorage` 与 `localStorage` 分开命名空间，与浏览器语义保持一致。
+ */
+export const CARD_STORAGE_PREFIX = "mycompanion:card-storage";
+
+/** 取某个故事的内嵌存储键；作用域按故事隔离，符合"每段对话是一次新游戏"。 */
+export function cardStorageKey(conversationId: string, kind: "local" | "session"): string {
+  return `${CARD_STORAGE_PREFIX}:${kind}:${conversationId}`;
+}
+
+/** 读取该故事已保存的卡存储；缺失或损坏时返回空表，绝不让卡因为坏数据起不来。 */
+export function readCardStorage(conversationId: string): { local: Record<string, string>; session: Record<string, string> } {
+  const read = (kind: "local" | "session"): Record<string, string> => {
+    try {
+      const raw = window.localStorage.getItem(cardStorageKey(conversationId, kind));
+      if (!raw) return {};
+      const parsed: unknown = JSON.parse(raw);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+      const out: Record<string, string> = {};
+      for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof value === "string") out[key] = value;
+      }
+      return out;
+    } catch {
+      return {};
+    }
+  };
+  return { local: read("local"), session: read("session") };
+}
+
+/**
+ * 落盘一次卡存储改动。
+ *
+ * `value === null` 表示删除该键；`key === null` 表示整表清空。写盘失败不抛出：
+ * 卡的界面状态不值得让一次聊天渲染崩掉，保留内存中的值继续用即可。
+ */
+export function persistCardStorage(
+  conversationId: string,
+  change: { kind: "local" | "session"; key: string | null; value: string | null },
+): void {
+  try {
+    const key = cardStorageKey(conversationId, change.kind);
+    const current: unknown = JSON.parse(window.localStorage.getItem(key) ?? "{}");
+    const table: Record<string, string> = current && typeof current === "object" && !Array.isArray(current)
+      ? { ...(current as Record<string, string>) }
+      : {};
+    if (change.key === null) {
+      for (const existing of Object.keys(table)) delete table[existing];
+    } else if (change.value === null) {
+      delete table[change.key];
+    } else {
+      table[change.key] = change.value;
+    }
+    if (Object.keys(table).length === 0) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, JSON.stringify(table));
+  } catch {
+    // 忽略：存储不可用（配额、隐私模式）时卡仍应正常工作，只是状态不跨文档保留。
+  }
+}
+
+/**
+ * 构造注入隔离文档的存储垫片。
  *
  * 不透明源文档里访问 `localStorage` / `sessionStorage` 会直接抛 SecurityError，
  * 而卡脚本常在初始化阶段就读它（实测：一张卡在 `updateArchiveSelect` 里读取，
- * 抛错后整段脚本中断，后续界面逻辑全不执行）。
+ * 抛错后整段脚本中断，后续界面逻辑全不执行），因此必须由宿主提供实现。
  *
- * 实测确认（在同款 sandbox iframe 里）：`Object.defineProperty(window,'localStorage',{configurable:true,get})`
- * 是允许的，因此可以给它一个内存实现，让卡脚本正常读写，而**不需要**加上
- * allow-same-origin（那会让卡脚本能访问应用页面）。
- * 数据只存在该文档的内存里：刷新即空，也不会写入用户真实存储。
+ * 持久化方式：宿主在构建文档时把已保存的键值**内联注入**（卡在初始化阶段是同步读取的，
+ * 不能等异步通道），此后每次写入再通过 postMessage 同步回宿主落盘。这样既保证同步语义，
+ * 又让状态跨文档重建保留。
  */
-export const CARD_STORAGE_SCRIPT = `(function () {
-  function createStorage() {
+export function buildCardStorageScript(seed: Record<string, Record<string, string>> = {}): string {
+  return `(function () {
+  var MESSAGE = ${JSON.stringify(CARD_STORAGE_MESSAGE)};
+  var SEED = ${toInlineLiteral(seed)};
+  var DEBUG = typeof location !== 'undefined' && location.hash.indexOf('card-storage-debug') >= 0;
+  function createStorage(kind) {
     var map = Object.create(null);
+    var initial = (SEED && SEED[kind]) || {};
+    for (var key in initial) { if (Object.prototype.hasOwnProperty.call(initial, key)) map[key] = String(initial[key]); }
+    function persist(key, value) {
+      try { parent.postMessage({ type: MESSAGE, kind: kind, key: key, value: value }, '*'); } catch (error) {}
+      // 只记录"实际发生了持久化"的键名，不含值：卡常把整份存档写进来，值可能很大。
+      if (DEBUG) console.info('[card-storage] ' + kind + ' 已保存 ' + key);
+    }
     return {
       getItem: function (key) { key = String(key); return key in map ? map[key] : null; },
-      setItem: function (key, value) { map[String(key)] = String(value); },
-      removeItem: function (key) { delete map[String(key)]; },
-      clear: function () { map = Object.create(null); },
+      setItem: function (key, value) { key = String(key); value = String(value); map[key] = value; persist(key, value); },
+      removeItem: function (key) { key = String(key); delete map[key]; persist(key, null); },
+      clear: function () { map = Object.create(null); persist(null, null); },
       key: function (index) { var keys = Object.keys(map); return index >= 0 && index < keys.length ? keys[index] : null; },
       get length() { return Object.keys(map).length; }
     };
   }
+  var local = createStorage('local');
+  var session = createStorage('session');
   ['localStorage', 'sessionStorage'].forEach(function (name) {
-    var shim = createStorage();
+    var shim = name === 'localStorage' ? local : session;
     try {
       Object.defineProperty(window, name, { configurable: true, enumerable: true, get: function () { return shim; } });
     } catch (error) {
@@ -151,6 +237,7 @@ export const CARD_STORAGE_SCRIPT = `(function () {
     }
   });
 })();`;
+}
 
 /**
  * 注入到隔离文档里的高度上报脚本。

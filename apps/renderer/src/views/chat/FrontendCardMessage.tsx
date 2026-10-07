@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 
-import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX } from "../../frontend-card-frame";
+import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX, CARD_STORAGE_MESSAGE, persistCardStorage, readCardStorage } from "../../frontend-card-frame";
 import { CARD_BRIDGE_RESPONSE, parseCardBridgeRequest, runCardBridgeRequest, type CardBridgeHost } from "../../frontend-card-bridge";
 import { hasCardScript } from "../../frontend-card";
 
@@ -14,7 +14,7 @@ const MAX_HEIGHT = 4000;
 //
 // 这里刻意不消毒卡片 HTML —— 消毒会抹掉文档级结构（整段变空），而且无法阻止卡片 CSS
 // 污染应用界面。隔离文档 + 不透明源 iframe 才是有效边界。
-export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, hostGlobals }: {
+export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, hostGlobals, conversationId }: {
   markup: string;
   messageId: string;
   /** 卡片可调用的宿主能力；缺省时卡片脚本会走自己的降级分支。 */
@@ -23,11 +23,16 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
   runtimeSource?: string | undefined;
   /** 暴露给卡自带运行时的宿主数据（聊天记录、角色、当前故事）。 */
   hostGlobals?: Record<string, unknown> | undefined;
+  /** 当前故事 id：卡存储按故事隔离，切故事不会串。 */
+  conversationId: string;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(FALLBACK_HEIGHT);
   const { t } = useTranslation();
   const scripted = hasCardScript(markup);
+  // 消息监听器只装一次，因此用 ref 取当前故事 id 来落盘。
+  const storyRef = useRef(conversationId);
+  storyRef.current = conversationId;
 
   // 桥的宿主信息放进 ref：消息按引用变化不应重建 iframe，否则卡片界面会被整块重载。
   const host = useRef(bridge);
@@ -36,11 +41,12 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
   useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;
-    element.srcdoc = buildCardDocument(markup, runtimeSource, hostGlobals);
+    // 已保存的卡存储同步注入：卡在初始化阶段就同步读取它（面板位置、存档选择等）。
+    element.srcdoc = buildCardDocument(markup, runtimeSource, hostGlobals, readCardStorage(conversationId));
     // hostGlobals 每次渲染都是新对象，但它只是同一份数据的投影；用序列化值做依赖，
     // 避免每次父组件重渲染都重载整个卡片文档。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markup, runtimeSource, JSON.stringify(hostGlobals ?? null)]);
+  }, [markup, runtimeSource, conversationId, JSON.stringify(hostGlobals ?? null)]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -48,11 +54,22 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
       // 只接受本 iframe 发来的消息。
       if (!element || event.source !== element.contentWindow) return;
 
-      const data = event.data as { type?: unknown; height?: unknown } | null;
+      const data = event.data as { type?: unknown; height?: unknown; kind?: unknown; key?: unknown; value?: unknown } | null;
       if (data && data.type === CARD_HEIGHT_MESSAGE) {
         const value = typeof data.height === "number" ? data.height : 0;
         if (!Number.isFinite(value) || value <= 0) return;
         setHeight(Math.min(Math.max(value, FALLBACK_HEIGHT), MAX_HEIGHT));
+        return;
+      }
+
+      // 卡改了 localStorage / sessionStorage：落盘到宿主，使状态跨文档重建保留。
+      if (data && data.type === CARD_STORAGE_MESSAGE) {
+        const kind = data.kind === "session" ? "session" : "local";
+        const key = data.key === null ? null : typeof data.key === "string" ? data.key : null;
+        const value = data.value === null ? null : typeof data.value === "string" ? data.value : null;
+        // key 为 null 表示整表清空；value 为 null 表示删单个键。
+        if (data.key !== null && typeof data.key !== "string") return;
+        persistCardStorage(storyRef.current, { kind, key, value });
         return;
       }
 

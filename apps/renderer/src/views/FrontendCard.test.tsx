@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ConversationDetail } from "@mycompanion/shared";
-import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX, CARD_STORAGE_SCRIPT } from "../frontend-card-frame";
+import { buildCardDocument, buildCardStorageScript, cardStorageKey, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX, CARD_STORAGE_MESSAGE, CARD_STORAGE_PREFIX, persistCardStorage, readCardStorage } from "../frontend-card-frame";
 import { frontendCardOf, hasCardScript } from "../frontend-card";
 import { ChatView, type ChatViewProps } from "./ChatView";
 
@@ -60,6 +60,55 @@ it("detects a bare document without a fence, but never a mere HTML snippet", () 
   expect(frontendCardOf("**粗体** 普通消息")).toBeNull();
   expect(frontendCardOf("```js\nconst a = 1;\n```")).toBeNull();
   expect(frontendCardOf("")).toBeNull();
+});
+
+it("seeds the card's storage from the host and reports changes back", () => {
+  // 卡的界面状态（面板位置、存档选择等）靠 localStorage 跨文档保留。垫片若只存在内存里，
+  // 每次文档重建都会回到初始值——实测小助手每次都会被弹回默认位置。
+  const seeded = buildCardStorageScript({ local: { panelLeft: "240px" }, session: { picked: "3" } });
+  // 已保存的值必须**同步内联**：卡在初始化阶段就读取，不能等异步通道。
+  expect(seeded).toContain("panelLeft");
+  expect(seeded).toContain("240px");
+  expect(seeded).toContain("picked");
+  // 每次写入都要回报宿主，否则退出后改动就丢了。
+  expect(seeded).toContain(CARD_STORAGE_MESSAGE);
+  expect(seeded).toContain("parent.postMessage");
+  // 读回来的初始值要真的进入 map，而不只是躺在 SEED 里。
+  const seedSection = seeded.slice(seeded.indexOf("var initial"), seeded.indexOf("function persist"));
+  expect(seedSection).toContain("map[key] = String(initial[key])");
+
+  // 文档里带上该故事的已存状态。
+  const document = buildCardDocument("<p>card</p>", undefined, undefined, { local: { panelLeft: "240px" } });
+  expect(document).toContain("panelLeft");
+  // 按故事隔离的键，且 local / session 分开命名空间。
+  expect(cardStorageKey("story-1", "local")).toBe(`${CARD_STORAGE_PREFIX}:local:story-1`);
+  expect(cardStorageKey("story-1", "session")).not.toBe(cardStorageKey("story-1", "local"));
+  expect(cardStorageKey("story-2", "local")).not.toBe(cardStorageKey("story-1", "local"));
+});
+
+it("persists and clears card storage per story on the host side", () => {
+  // 宿主侧落盘：写入、删除单键、整表清空，且不同故事互不影响。
+  const story = "11111111-1111-4111-8111-111111111111";
+  const other = "22222222-2222-4222-8222-222222222222";
+
+  persistCardStorage(story, { kind: "local", key: "panelLeft", value: "240px" });
+  persistCardStorage(story, { kind: "local", key: "mode", value: "mvu" });
+  expect(readCardStorage(story).local).toEqual({ panelLeft: "240px", mode: "mvu" });
+  // 另一个故事保持干净。
+  expect(readCardStorage(other).local).toEqual({});
+
+  persistCardStorage(story, { kind: "local", key: "panelLeft", value: null });
+  expect(readCardStorage(story).local).toEqual({ mode: "mvu" });
+
+  persistCardStorage(story, { kind: "local", key: null, value: null });
+  expect(readCardStorage(story).local).toEqual({});
+
+  // 坏数据不能让卡起不来。
+  window.localStorage.setItem(cardStorageKey(other, "local"), "{ not json");
+  expect(readCardStorage(other).local).toEqual({});
+
+  window.localStorage.removeItem(cardStorageKey(story, "local"));
+  window.localStorage.removeItem(cardStorageKey(other, "local"));
 });
 
 it("allows card runtimes to load from their CDNs while still refusing navigation", () => {
@@ -128,17 +177,18 @@ it("inlines host data so that markup and line separators cannot break the script
 
 it("gives card scripts a working storage shim instead of a hard SecurityError", () => {
   // 不透明源文档里 localStorage 会抛 SecurityError，而卡脚本常在初始化就读它，
-  // 抛错会让整段脚本中断。实测确认 defineProperty 在该 sandbox 下可用，故用内存垫片。
-  expect(CARD_STORAGE_SCRIPT).toContain("localStorage");
-  expect(CARD_STORAGE_SCRIPT).toContain("sessionStorage");
-  expect(CARD_STORAGE_SCRIPT).toContain("Object.defineProperty");
-  expect(CARD_STORAGE_SCRIPT).toContain("configurable: true");
+  // 抛错会让整段脚本中断。实测确认 defineProperty 在该 sandbox 下可用，故由宿主提供实现。
+  const shim = buildCardStorageScript();
+  expect(shim).toContain("localStorage");
+  expect(shim).toContain("sessionStorage");
+  expect(shim).toContain("Object.defineProperty");
+  expect(shim).toContain("configurable: true");
   // 垫片必须真的可用，而不只是把属性换成一个空对象。
-  for (const method of ["getItem", "setItem", "removeItem", "clear"]) expect(CARD_STORAGE_SCRIPT).toContain(method);
+  for (const method of ["getItem", "setItem", "removeItem", "clear"]) expect(shim).toContain(method);
   // 必须注入在卡片内容**之前**：卡脚本初始化阶段就要用。
   const document = buildCardDocument("<p>card</p>");
-  expect(document.indexOf(CARD_STORAGE_SCRIPT)).toBeGreaterThan(-1);
-  expect(document.indexOf(CARD_STORAGE_SCRIPT)).toBeLessThan(document.indexOf("<p>card</p>"));
+  expect(document.indexOf("createStorage")).toBeGreaterThan(-1);
+  expect(document.indexOf("createStorage")).toBeLessThan(document.indexOf("<p>card</p>"));
   // 沙箱已按需求放开同源（见上一处说明）；存储垫片仍然保留，作为
   // 将来收紧沙箱时的兜底。
   expect(CARD_IFRAME_SANDBOX).toContain("allow-scripts");
