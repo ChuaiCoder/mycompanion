@@ -273,17 +273,40 @@ describe("card capability bridge", () => {
     // 卡片脚本用 `typeof getChatMessages !== 'undefined'` 判断能力是否存在，因此桥必须先挂好。
     // 变量函数也必须在注入脚本里定义——宿主侧实现而没挂到 window 上，卡片仍会走降级分支
     // （这正是真机验证抓到过的缺口）。
-    for (const name of [
+    const names = [
       "getChatMessages", "setChatMessage", "triggerSlash", "TavernHelper",
       "getVariables", "getAllVariables", "replaceVariables", "insertVariables",
       "insertOrAssignVariables", "setVariables", "deleteVariable",
-    ]) {
+      "triggerSlash", "executeSlashCommands", "createLorebook", "createLorebookEntry",
+    ];
+    for (const name of names) {
       expect(CARD_BRIDGE_SCRIPT).toContain(`window.${name} =`);
     }
     expect(CARD_BRIDGE_SCRIPT).toContain("postMessage");
     expect(parseSlashSend("/send 开启仙途")).toBe("开启仙途");
     expect(parseSlashSend("/send-as-user hi")).toBe("hi");
     expect(parseSlashSend("/help")).toBeNull();
+
+    // 仅仅断言"出现过 window.X ="是不够的：别名行 `window.TavernHelper.triggerSlash = window.triggerSlash`
+    // 同样包含这个子串，而真正的定义可以完全不存在（实测就漏过了这个缺口，
+    // 导致卡片 `typeof triggerSlash === 'function'` 判假、静默不发送开局指令）。
+    // 因此这里**真正求值**桥脚本，逐一确认每个名字都可用。
+    const sandbox: Record<string, unknown> = { addEventListener: () => {} };
+    const bridgeWindow = new Proxy(sandbox, {
+      get: (target, key) => (typeof key === "string" && key in target ? target[key] : undefined),
+      set: (target, key, value) => { if (typeof key === "string") target[key] = value; return true; },
+    });
+    const run = new Function("window", "document", "CARD_BRIDGE_REQUEST", CARD_BRIDGE_SCRIPT);
+    run(bridgeWindow, { addEventListener: () => {} }, CARD_BRIDGE_REQUEST);
+    for (const name of names) {
+      if (name === "TavernHelper") continue;
+      expect(typeof sandbox[name], `window.${name} 必须是可调用的函数`).toBe("function");
+    }
+    expect(typeof sandbox.TavernHelper).toBe("object");
+    // TavernHelper 上的别名同样必须真的指向函数。
+    const helper = sandbox.TavernHelper as Record<string, unknown>;
+    expect(typeof helper.triggerSlash).toBe("function");
+    expect(typeof helper.getChatMessages).toBe("function");
   });
 
   it("keeps the frame's own escape hatches closed even though the policy is a deny list", async () => {

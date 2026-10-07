@@ -438,18 +438,27 @@ export const CARD_BRIDGE_SCRIPT = `(function () {
   window.TavernHelper.createLorebookEntry = window.createLorebookEntry;
   window.TavernHelper.executeSlashCommands = window.executeSlashCommands;
   window.eventOn = function (name, handler) { (listeners[name] = listeners[name] || []).push(handler); return { stop: function () {} }; };
+  // 本脚本在**任何卡运行时之前**执行（lodash / jQuery / zod 都是之后才加载的模块），
+  // 因此这里**绝不能引用下划线、美元符号或 z**。实测教训：原先用 _.has(window, target)
+  // 判断全局是否就绪，导致 waitGlobalInitialized 抛
+  // "ReferenceError: _ is not defined"，而卡正是在它自己的 DOMContentLoaded 回调里
+  // 调用该函数——异常中断了整个回调，于是后面所有按钮的事件绑定都没执行，
+  // 界面看起来完全正常但点任何按钮都没有反应。
+  var hasGlobal = function (object, key) {
+    return object != null && typeof object[key] !== 'undefined';
+  };
   window.waitGlobalInitialized = function (name) {
     // 真实机制（读酒馆助手源码 src/function/global.ts 得到）：宿主在某个全局就绪时
     // 发出 global_<name>_initialized 事件，waitGlobalInitialized 就是等这个事件。
     // MVU 自己会发 global_Mvu_initialized（它把实例挂到 window.parent.Mvu 之后）。
     var target = String(name);
-    if (typeof window[target] !== 'undefined' || _.has(window, target)) return Promise.resolve();
+    if (hasGlobal(window, target)) return Promise.resolve();
     return new Promise(function (resolve) {
       var done = false;
       var finish = function () { if (!done) { done = true; resolve(); } };
       window.eventOn('global_' + target + '_initialized', finish);
       // 兜底：父窗口（同源）上已经就绪时立即返回。
-      try { if (window.parent && _.has(window.parent, target)) { finish(); return; } } catch (error) {}
+      try { if (hasGlobal(window.parent, target)) { finish(); return; } } catch (error) {}
       // 若始终没有事件（例如运行时未启用该功能），不要永久挂起调用方。
       setTimeout(finish, 4000);
     });
@@ -563,14 +572,31 @@ export const CARD_BRIDGE_SCRIPT = `(function () {
   window.replaceCurrentMvuData = window.replaceCurrentMvuData || function (data, option) {
     return window.Mvu ? window.Mvu.replaceMvuData(data, option) : undefined;
   };
+  // 点路径读写：自己实现，不依赖 lodash（见上文时序说明）。
+  var pathParts = function (path) { return Array.isArray(path) ? path : String(path).replace(/\[(\d+)\]/g, '.$1').split('.').filter(Boolean); };
+  var getPath = function (object, path) {
+    var current = object;
+    for (var part of pathParts(path)) { if (current == null) return undefined; current = current[part]; }
+    return current;
+  };
+  var setPath = function (object, path, value) {
+    var parts = pathParts(path);
+    var current = object;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (current[parts[i]] == null || typeof current[parts[i]] !== 'object') current[parts[i]] = {};
+      current = current[parts[i]];
+    }
+    if (parts.length) current[parts[parts.length - 1]] = value;
+    return object;
+  };
   window.setMvuVariable = window.setMvuVariable || function (path, value, option) {
     if (!window.Mvu) return undefined;
     var data = window.Mvu.getMvuData(option) || {};
-    _.set(data, path, value);
+    setPath(data, path, value);
     return window.Mvu.replaceMvuData(data, option);
   };
   window.getMvuVariable = window.getMvuVariable || function (path, option) {
-    return window.Mvu ? _.get(window.Mvu.getMvuData(option), path) : undefined;
+    return window.Mvu ? getPath(window.Mvu.getMvuData(option), path) : undefined;
   };
   // 世界书相关别名（桥里已有实现）。
   window.getCharLorebooks = window.getCharLorebooks || function () { return call('getLorebooks', []); };
