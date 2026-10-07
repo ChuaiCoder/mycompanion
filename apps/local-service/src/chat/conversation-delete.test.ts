@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { buildApp } from "../app.js";
 import { apps, commitCard, fullV2Card, waitFor } from "../testing/helpers.js";
@@ -92,6 +93,97 @@ describe("POST /api/conversations/delete-batch (批量软删除)", () => {
     expect(body.deleted).toEqual([]);
     // 没被牵连的故事必须还在。
     expect((await list(app)).items.map((item: { id: string }) => item.id)).toContain(first);
+  });
+});
+
+describe("DELETE /api/conversations/deleted (彻底删除已软删除的故事)", () => {
+  // 这一组要直接查库验证级联，因此用真实文件库而不是内存库。
+  // 清理必须在**关闭应用之后**：Windows 上仍被占用的 sqlite 文件删不掉（实测 EPERM）。
+  // 文件级 afterEach 负责关闭应用，这里排在它之后执行删除。
+  const directories: string[] = [];
+  afterEach(async () => {
+    // 先关掉本组打开的应用，否则 Windows 上 sqlite 文件仍被占用、目录删不掉（实测 EPERM）。
+    for (const app of apps.splice(0)) await app.close();
+    for (const directory of directories.splice(0)) rmSync(directory, { recursive: true, force: true });
+  });
+
+  async function fileStory() {
+    const directory = mkdtempSync(join(tmpdir(), "mycompanion-purge-"));
+    directories.push(directory);
+    const databasePath = join(directory, "runtime.sqlite");
+    const app = buildApp({ databasePath });
+    apps.push(app);
+    const character = await commitCard(app, fullV2Card);
+    return { app, character, databasePath };
+  }
+
+  /** 建一个故事并软删除它；返回它的 id 与消息数，供级联断言使用。 */
+  async function softDeletedStory(app: ReturnType<typeof buildApp>, characterId: string) {
+    const created = await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId } });
+    const id = created.json().id as string;
+    const messageCount = (created.json().messages as unknown[]).length;
+    await app.inject({ method: "DELETE", url: `/api/conversations/${id}` });
+    return { id, messageCount };
+  }
+
+  it("removes every soft-deleted story and leaves visible ones alone", async () => {
+    const { app, character, databasePath } = await fileStory();
+    const kept = (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json().id as string;
+    const first = await softDeletedStory(app, character.id);
+    const second = await softDeletedStory(app, character.id);
+
+    const purged = await app.inject({ method: "DELETE", url: "/api/conversations/deleted" });
+    expect(purged.statusCode, purged.body).toBe(200);
+    expect(purged.json()).toEqual({ removed: 2 });
+
+    // 未删除的故事必须还在：这个入口只清已删除的。
+    expect((await list(app)).items.map((item: { id: string }) => item.id)).toEqual([kept]);
+
+    // 直接查库：故事与它名下的消息都要消失，而不是又被标记一次。
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    for (const { id } of [first, second]) {
+      expect(database.prepare("SELECT count(*) AS n FROM conversations WHERE id = ?").get(id)).toEqual({ n: 0 });
+      expect(database.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id = ?").get(id)).toEqual({ n: 0 });
+    }
+    // 保留的那个连同消息都还在，说明删除是有范围的。
+    expect(database.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id = ?").get(kept)).not.toEqual({ n: 0 });
+    database.close();
+
+    // 恢复入口不再找得到它们（真的没了）。
+    for (const { id } of [first, second]) {
+      expect((await app.inject({ method: "POST", url: `/api/conversations/${id}/restore` })).statusCode).toBe(404);
+    }
+  });
+
+  it("cascades away the messages rather than leaving orphans", async () => {
+    const { app, character, databasePath } = await fileStory();
+    const { id, messageCount } = await softDeletedStory(app, character.id);
+    expect(messageCount).toBeGreaterThan(0);
+    const database = new DatabaseSync(databasePath, { readOnly: true });
+    // 软删除阶段消息仍在（这正是"只打标记"的含义）。
+    expect(database.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id = ?").get(id)).toEqual({ n: messageCount });
+    database.close();
+
+    await app.inject({ method: "DELETE", url: "/api/conversations/deleted" });
+    const after = new DatabaseSync(databasePath, { readOnly: true });
+    expect(after.prepare("SELECT count(*) AS n FROM messages WHERE conversation_id = ?").get(id)).toEqual({ n: 0 });
+    after.close();
+  });
+
+  it("is safe to call again once there is nothing left", async () => {
+    const { app, character } = await fileStory();
+    await softDeletedStory(app, character.id);
+    expect((await app.inject({ method: "DELETE", url: "/api/conversations/deleted" })).json()).toEqual({ removed: 1 });
+    // 第二次没有可删的对象，返回 0 而不是报错。
+    expect((await app.inject({ method: "DELETE", url: "/api/conversations/deleted" })).json()).toEqual({ removed: 0 });
+  });
+
+  it("does not treat the route as a story id", async () => {
+    // `deleted` 不是 uuid，若被 :id 路由抢先匹配就会变成一次"删除名为 deleted 的故事"。
+    const { app, character } = await fileStory();
+    const kept = (await app.inject({ method: "POST", url: "/api/conversations", payload: { characterId: character.id } })).json().id as string;
+    await app.inject({ method: "DELETE", url: "/api/conversations/deleted" });
+    expect((await list(app)).items.map((item: { id: string }) => item.id)).toContain(kept);
   });
 });
 

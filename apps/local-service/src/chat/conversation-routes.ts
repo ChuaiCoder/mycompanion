@@ -8,6 +8,7 @@ import {
   deleteConversationResponseSchema,
   deleteConversationsRequestSchema,
   deleteConversationsResponseSchema,
+  purgeDeletedConversationsResponseSchema,
   displayRegexRequestSchema,
   displayRegexResponseSchema,
   memoryListQuerySchema,
@@ -82,6 +83,17 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
     // 先取消这些故事的在途生成，否则模型请求会继续跑完，把新消息写进已删除的故事里。
     for (const id of ids) pipeline.inFlightGenerations.get(id)?.abort();
     return deleteConversationsResponseSchema.parse(runtime.softDeleteConversations(ids));
+  });
+
+  // 彻底删除所有已软删除的故事（不可恢复）。
+  // 软删除只打标记，内容会一直占着库；这个入口让用户决定何时真正释放空间，
+  // 并且顺带回收磁盘（VACUUM）——实测一份库里有 141 个软删除故事、2250 个空闲页。
+  // 路径写死在 :id 之前，避免被当成某个故事的 id。
+  app.delete("/api/conversations/deleted", async (_request, reply) => {
+    const removed = runtime.purgeDeletedConversations();
+    // VACUUM 不能在事务里执行，因此放在删除之后；失败不影响删除结果，只是空间没回收。
+    try { runtime.vacuum(); } catch { /* 空间回收失败不影响已完成的删除 */ }
+    return purgeDeletedConversationsResponseSchema.parse({ removed });
   });
 
   // 删除故事（FR-DATA-004）：默认软删除，可恢复；已有删除标记时幂等返回同一时间。

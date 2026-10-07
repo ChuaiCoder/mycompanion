@@ -276,6 +276,12 @@ export const deleteConversationsResponseSchema = z.object({
 });
 export type DeleteConversationsResponse = z.infer<typeof deleteConversationsResponseSchema>;
 
+/** 彻底删除所有已软删除的故事：不可恢复，返回真正移除的条数。 */
+export const purgeDeletedConversationsResponseSchema = z.object({
+  removed: z.number().int().min(0),
+});
+export type PurgeDeletedConversationsResponse = z.infer<typeof purgeDeletedConversationsResponseSchema>;
+
 export const createConversationRequestSchema = z.object({
   characterId: z.string().uuid(),
   greetingIndex: z.number().int().min(0).optional(),

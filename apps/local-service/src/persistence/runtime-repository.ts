@@ -1156,6 +1156,32 @@ export class RuntimeRepository {
   }
 
   /**
+   * 彻底删除所有已软删除的故事，不可恢复。
+   *
+   * 软删除只打标记，内容会一直留在库里：实测一份库里有 141 个软删除故事、172 条消息，
+   * 而界面上只剩 1 个可见。要让这些空间真正释放，就需要一次真正的删除。
+   *
+   * 只删 conversations 行——messages / memories / conversation_settings / stage_summaries
+   * 都以 `ON DELETE CASCADE` 引用它，实测这些外键都带级联，因此不会有孤儿数据；
+   * 手写一串子表删除反而容易漏表。整个过程在一个事务里，不允许"删了一半"。
+   *
+   * 返回真正删除的故事数；`VACUUM` 不在这里做（它不能在事务内执行），由调用方决定。
+   */
+  purgeDeletedConversations(): number {
+    let removed = 0;
+    this.withTransaction(() => {
+      const result = this.#database.prepare("DELETE FROM conversations WHERE deleted_at IS NOT NULL").run();
+      removed = Number(result.changes ?? 0);
+    });
+    return removed;
+  }
+
+  /** 回收已释放页占用的磁盘空间；必须不在事务内执行。 */
+  vacuum(): void {
+    this.#database.exec("VACUUM");
+  }
+
+  /**
    * 备份聚合（FR-DATA-003）：全量读取角色关联的数据，供备份包组装。
    * 这里返回原始行，序列化（含 base64 / 校验）由调用方负责。
    */
