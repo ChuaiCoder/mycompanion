@@ -1,5 +1,5 @@
 import { createRef } from "react";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within, act } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ConversationSummary } from "@mycompanion/shared";
 import i18n from "../i18n";
@@ -203,5 +203,25 @@ describe("侧边栏批量删除故事", () => {
     expect(screen.getByRole("button", { name: deleteLabel, hidden: true })).toBeInTheDocument();
     enterSelectMode();
     expect(screen.getByText("已选 0 个")).toBeInTheDocument();
+  });
+
+  it("does not leave the result notice on screen", async () => {
+    // 提示只说明刚发生的一件事，不能常驻（否则侧栏看起来一直停在某种状态里）。
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const onDeleteConversations = vi.fn(async (ids: readonly string[]) => ids.length);
+      render(<AppSidebar {...props({ conversations: [conversation], onDeleteConversations })} />);
+      enterSelectMode();
+      fireEvent.click(checkbox(conversation.title));
+      fireEvent.click(screen.getByRole("button", { name: "删除所选" }));
+      fireEvent.click(screen.getByRole("button", { name: "删除" }));
+
+      await waitFor(() => expect(screen.getByText("已删除 1 个故事。")).toBeInTheDocument());
+      // 计时到点后自行消失，不需要用户做任何操作。
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(screen.queryByText("已删除 1 个故事。")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

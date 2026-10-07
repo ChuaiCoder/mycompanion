@@ -102,7 +102,7 @@ h1, h2, h3, p { margin-top: 0; }
 .nav-row--new:not(:disabled):hover { background: var(--surface-hover); }
 
 .sidebar-library { min-height: 0; padding: 4px 7px 18px; overflow-x: hidden; overflow-y: auto; scrollbar-gutter: stable; }
-.tree-heading { display: flex; align-items: center; justify-content: space-between; min-height: 35px; padding: 0 3px 0 9px; }
+.tree-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 35px; padding: 0 3px 0 9px; }
 .tree-heading > div { display: flex; align-items: center; min-width: 0; gap: 7px; }
 .tree-heading h2 { margin: 0; font-size: 12px; font-weight: 650; }
 .tree-heading svg { color: var(--text-soft); }
@@ -157,30 +157,36 @@ h1, h2, h3, p { margin-top: 0; }
 .conversation-confirm__danger { color: #fff; background: var(--danger); }
 .conversation-confirm__cancel { border: 1px solid var(--line); color: var(--text-soft); background: var(--surface); }
 .conversation-confirm__danger:disabled, .conversation-confirm__cancel:disabled { opacity: .55; }
-/* 批量管理：标题右侧的入口是文字按钮，不能沿用 .tree-heading 里那个 27px 方形图标按钮。 */
+/* 批量管理：标题右侧的入口是文字按钮，不能沿用 .tree-heading 里那个 27px 方形图标按钮。
+   nowrap 是关键——否则窄侧栏或长标签（"批量管理"/"完成"）会把每个汉字折成一行，
+   显示成一条竖排文字。 */
 .tree-heading__action {
-  flex: 0 0 auto; width: auto; height: 22px; padding: 0 8px; border-radius: 6px;
+  display: inline-flex; flex: 0 0 auto; align-items: center; width: auto; height: 22px;
+  padding: 0 8px; border-radius: 6px; white-space: nowrap;
   color: var(--text-soft); background: transparent; font-size: 11px;
 }
 .tree-heading__action:hover { color: var(--text); background: var(--surface-hover); }
-/* 工具条与行内确认同宽同位，不弹窗；换行以便窄侧栏下仍可读。 */
+/* 工具条：与列表同宽，内容单行；极窄时才允许换行。 */
 .conversation-bulk {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px 13px;
-  padding: 6px 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: 11px;
+  display: flex; align-items: center; gap: 6px; margin: 0 0 6px 4px; padding: 6px 8px;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--surface); font-size: 11px;
 }
-.conversation-bulk__count { flex: 1 1 auto; color: var(--text-soft); font-weight: 600; }
-.conversation-bulk__prompt { display: grid; flex: 1 1 auto; color: var(--danger); font-weight: 600; }
+.conversation-bulk__count { flex: 1 1 auto; white-space: nowrap; color: var(--text-soft); font-weight: 600; }
+.conversation-bulk__prompt { display: grid; flex: 1 1 auto; gap: 2px; color: var(--danger); font-weight: 600; }
 .conversation-bulk__prompt small { color: var(--text-faint); font-weight: 400; }
 .conversation-bulk__toggle, .conversation-bulk__danger, .conversation-bulk__cancel {
-  flex: 0 0 auto; min-height: 22px; padding: 0 8px; border-radius: 5px; font-size: 10px; font-weight: 600;
+  flex: 0 0 auto; min-height: 22px; padding: 0 8px; border-radius: 5px;
+  white-space: nowrap; font-size: 10px; font-weight: 600;
 }
 .conversation-bulk__toggle { border: 1px solid var(--line); color: var(--text-soft); background: var(--surface); }
 .conversation-bulk__danger { color: #fff; background: var(--danger); }
 .conversation-bulk__cancel { border: 1px solid var(--line); color: var(--text-soft); background: var(--surface); }
 .conversation-bulk__danger:disabled, .conversation-bulk__cancel:disabled, .conversation-bulk__toggle:disabled { opacity: .55; }
-.conversation-bulk__notice { flex: 1 1 100%; color: var(--text-faint); }
-/* 结果提示独立于工具条，退出管理模式后仍要可见。 */
-p.conversation-bulk__notice { margin: 0 0 6px 13px; font-size: 11px; }
+/* 操作结果提示：独立一行、淡底，不挤占标题行；退出管理模式后依然可见。 */
+.conversation-notice {
+  display: block; margin: 0 0 6px 4px; padding: 4px 8px; border-radius: 6px;
+  color: var(--text-soft); background: var(--surface-selected); font-size: 11px;
+}
 /* 选择模式下的行：整行是 <label>，点文字即切换勾选，与普通行视觉对齐。 */
 .conversation-select {
   display: flex; align-items: center; width: 100%; min-height: 30px; gap: 8px;

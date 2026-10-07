@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type RefObject } from "react";
+import { useEffect, useState, type ChangeEvent, type RefObject } from "react";
 import { useTranslation } from "react-i18next";
 
 import type { ConversationSummary } from "@mycompanion/shared";
@@ -14,6 +14,9 @@ interface ConversationGroup {
   characterName: string;
   items: ConversationSummary[];
 }
+
+/** 批量操作结果提示的停留时长：够看清，又不至于在侧栏常驻。 */
+const NOTICE_TIMEOUT_MS = 4_000;
 
 function groupConversationsByCharacter(conversations: ConversationSummary[]): ConversationGroup[] {
   const groups: ConversationGroup[] = [];
@@ -99,6 +102,8 @@ export function AppSidebar({
     setSelectMode(false);
     setSelectedIds(new Set());
     setConfirmBulk(false);
+    // 离开管理模式时收掉上一次的结果提示，避免它跟着用户留在界面上。
+    setNotice(null);
   };
   const toggleSelected = (id: string) => setSelectedIds(current => {
     const next = new Set(current);
@@ -109,6 +114,16 @@ export function AppSidebar({
   const selectableIds = conversations.map(item => item.id);
   const effectiveSelected = selectableIds.filter(id => selectedIds.has(id));
   const allSelected = selectableIds.length > 0 && effectiveSelected.length === selectableIds.length;
+  /**
+   * 结果提示只说明"刚发生的一件事"，不是常驻状态，因此几秒后自动收掉。
+   * 常驻会让侧栏看起来一直处于某种异常/管理模式中（实测用户明确要求别每次都显示）。
+   * 依赖 notice：新的提示会重置计时，旧计时器被清理。
+   */
+  useEffect(() => {
+    if (!notice) return undefined;
+    const timer = setTimeout(() => setNotice(null), NOTICE_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const runBulkDelete = async (): Promise<void> => {
     if (!effectiveSelected.length) { setNotice(t("conversation.deleteNoneSelected")); return; }
     setBulkBusy(true);
@@ -150,6 +165,7 @@ export function AppSidebar({
             <button className="tree-heading__action" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)} type="button">{selectMode ? t("conversation.selectExit") : t("conversation.select")}</button>
           ) : null}
         </div>
+        {notice ? <p className="conversation-notice" role="status">{notice}</p> : null}
         {selectMode ? (
           <div className="conversation-bulk" role="group" aria-label={t("conversation.select")}>
             {confirmBulk ? (
@@ -160,26 +176,28 @@ export function AppSidebar({
               </>
             ) : (
               <>
-                <span className="conversation-bulk__count">{t("conversation.selectedCount", { count: effectiveSelected.length })}</span>
                 <button className="conversation-bulk__toggle" onClick={() => setSelectedIds(allSelected ? new Set() : new Set(selectableIds))} type="button">{allSelected ? t("conversation.selectNone") : t("conversation.selectAll")}</button>
+                <span className="conversation-bulk__count">{t("conversation.selectedCount", { count: effectiveSelected.length })}</span>
                 <button className="conversation-bulk__danger" disabled={!effectiveSelected.length} onClick={() => setConfirmBulk(true)} type="button">{t("conversation.deleteSelected")}</button>
               </>
             )}
           </div>
         ) : null}
-        {/* 结果提示放在工具条之外：删完最后一批会退出管理模式，工具条随之消失，
-            提示若挂在里面就永远看不到，用户会以为没有生效。 */}
-        {notice ? <p className="conversation-bulk__notice" role="status">{notice}</p> : null}
         {groups.length === 0 ? (
           <div className="tree-empty"><span>还没有对话</span><small>在角色库选择角色，开始第一段故事</small></div>
         ) : (
           <ul className="conversation-groups" aria-label="按角色分组的对话">
             {groups.map((group) => {
               const isCollapsed = collapsedGroups.has(group.characterId);
+              // 只有一段角色时分组头只是重复标题（角色名往往和每条故事的标题前缀一样），
+              // 徒增噪音；多角色时才需要它来分隔与折叠。
+              const showsHeader = groups.length > 1;
               return (
                 <li key={group.characterId}>
-                  <button aria-expanded={!isCollapsed} className="conversation-group__header" onClick={() => toggleGroup(group.characterId)} type="button"><Icon name="chevron" size={14} /><strong>{group.characterName}</strong></button>
-                  {isCollapsed ? null : (
+                  {showsHeader ? (
+                    <button aria-expanded={!isCollapsed} className="conversation-group__header" onClick={() => toggleGroup(group.characterId)} type="button"><Icon name="chevron" size={14} /><strong>{group.characterName}</strong></button>
+                  ) : null}
+                  {showsHeader && isCollapsed ? null : (
                     <ul className="conversation-group__items">
                       {group.items.map((conversation) => {
                         const isPending = pendingDeleteId === conversation.id;
