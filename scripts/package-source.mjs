@@ -35,7 +35,18 @@ const upstreamReferences = [
   'prompt-population', 'prompt-persona-examples', 'prompt-lifecycle', 'character-import',
 ].map(name => `apps/local-service/src/fixtures/${name}-upstream-reference.json`);
 const allowedFixtures = new Set([...ownFixtures, ...upstreamReferences]);
-if (files.some(file => !allowedFixtures.has(file) && (/\.(sqlite\w*|db|exe|zip|png)$/i.test(file) || /(?:^|\/)(node_modules|fixtures|data|js-slash-runner)(?:\/|$)/i.test(file)))) throw new Error('Unexpected data or third-party extension in source inputs');
+// A card's interface and its runtime modules are third-party content fetched from the
+// CDN a card declares, and they must never enter the installer or this source archive.
+// (They differ per card, carry their own licences, and one observed runtime ships with
+// no licence at all.) `src`/`scripts`/`public` are copied wholesale, so the guard has to
+// name the shapes such a file would take, not just the directories.
+const forbiddenFileType = /\.(sqlite\w*|db|exe|zip|png|webp|jpe?g|gif|mp4|min\.js)$/i;
+const forbiddenDirectory = /(?:^|\/)(node_modules|fixtures|data|js-slash-runner)(?:\/|$)/i;
+const cardRuntimeName = /(?:^|\/)(?:mvu|sillytavern|tavern[-_]?helper|daoyuan|js[-_]?slash)[^/]*$/i;
+if (files.some(file => !allowedFixtures.has(file)
+  && (forbiddenFileType.test(file) || forbiddenDirectory.test(file) || cardRuntimeName.test(file)))) {
+    throw new Error('Unexpected data or third-party extension in source inputs');
+}
 await mkdir(destination, { recursive: true });
 await mkdir(join(project, '.cache/packaging'), { recursive: true });
 const staging = await mkdtemp(join(project, '.cache/packaging/source-snapshot-'));

@@ -1,5 +1,11 @@
 // 卡自带运行时脚本的装载器。
 //
+// **绝不打包**：这些运行时是第三方内容，因卡而异、各自持证（实测其中至少一个没有
+// 任何许可证声明），因此只能在运行时从卡声明的 CDN 拉取，**不得**写入
+// `apps/*/public`、仓库或安装包资源。`scripts/package-source.mjs` 的守卫会拒绝
+// min.js / 图片 / 视频 / mvu、sillytavern、tavern-helper、daoyuan、js-slash 这类
+// 文件名进入源码归档——若将来在此增加本地缓存，请同时确认它不会进入包内。
+//
 // 卡常把运行时放在 `extensions.tavern_helper.scripts` 里——它们不是消息内的 <script> 标签，
 // 而是**数据**，由酒馆助手的"脚本库"读取后作为 ES module 执行。实测这张卡：
 //   MVU            → import 'https://…/mvu_bundle_full.js'           （提供 window._ 与 Mvu）
