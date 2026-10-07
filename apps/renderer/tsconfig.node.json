@@ -7,5 +7,7 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["vite.config.ts"]
+  // chunking.ts 是构建配置的一部分（分块策略），它的测试也在这一侧：
+  // 应用代码与测试用 tsconfig.app.json，那里只有浏览器类型。
+  "include": ["vite.config.ts", "chunking.ts", "chunking.test.ts"]
 }
