@@ -6,7 +6,10 @@ import { sameProviderCredentialScope } from "./provider-credential-scope.js";
 interface ProfileRow { id: string; name: string; kind: ProviderSettings["kind"]; base_url: string; model: string;
   api_key_ciphertext: string | null; temperature: number; max_tokens: number; context_limit_tokens: number | null }
 const defaults: ProviderSettings = { kind: "openai-compatible", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini", hasApiKey: false,
-  temperature: 0.8, maxTokens: 1024, contextLimitTokens: 32768 };
+  // 1024 对叙述型用法偏小：实测一张角色卡的开场在 1024 处被句中截断（finishReason: length）。
+  // 叙述要输出成段正文，而带推理的模型还会从同一预算里先扣掉思考 token
+  // （同一次实测里 reasoningTokens 421 / outputTokens 1024），可用于正文的更少。
+  temperature: 0.8, maxTokens: 4096, contextLimitTokens: 32768 };
 
 /** Named connections own ciphertext; task selection never moves a credential. */
 export class ProviderRepository {

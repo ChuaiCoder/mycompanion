@@ -11,6 +11,9 @@ it("focuses and highlights the actual source message, exposes both story exports
   render(<ChatView {...props} />);
   const row = document.querySelector('[data-message-id="source"]');
   expect(row).toHaveClass("chat-message--source"); expect(row).toHaveFocus(); expect(screen.getByText("达到回复长度")).toBeInTheDocument();
+  // 截断还要显眼地说出来并给出可操作方向：正文可能停在句中，只靠作者行里那行小字很容易被忽略。
+  expect(screen.getByText(/被截断/)).toBeInTheDocument();
+  expect(screen.getByText(/最大输出 Token/)).toBeInTheDocument();
   expect(document.querySelector('a[href="/api/conversations/story/export?format=markdown"]')).not.toBeNull();
   expect(document.querySelector('a[href="/api/conversations/story/export?format=json"]')).not.toBeNull();
 });

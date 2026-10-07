@@ -43,6 +43,7 @@ const messages = {
   "conversation.deleteSelectedBody": ["将删除 {{count}} 个故事，之后可从“已删除”中恢复。", "{{count}} stories will be deleted; they can be restored from deleted."],
   "conversation.deleteSelectedDone": ["已删除 {{count}} 个故事。", "Deleted {{count}} stories."],
   "conversation.deleteNoneSelected": ["请先选择要删除的故事。", "Select at least one story first."],
+  "message.truncated": ["回复在 {{tokens}} token 处被截断，正文可能停在句中。可在设置 → 高级生成参数里调高「最大输出 Token」，再重新生成。", "The reply hit the {{tokens}}-token limit and may stop mid-sentence. Raise “Maximum output tokens” in Settings → advanced generation settings, then regenerate."],
 } as const;
 const resources = Object.fromEntries(["zh", "en"].map((language, index) => [language, { translation: Object.fromEntries(Object.entries(messages).map(([key, value]) => [key, value[index]])) }]));
 void i18next.use(initReactI18next).init({ lng: "zh", fallbackLng: "zh", resources, initAsync: false, keySeparator: false, interpolation: { escapeValue: false } });

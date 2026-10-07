@@ -8,6 +8,20 @@ const settings: ProviderSettings = { kind: "openai-compatible", baseUrl: "https:
   hasApiKey: false, temperature: 0.8, maxTokens: 1024, contextLimitTokens: 32768 };
 afterEach(() => vi.unstubAllGlobals());
 
+describe("未配置时的默认生成参数", () => {
+  it("defaults the reply budget high enough for narrative replies", async () => {
+    // 1024 曾经是默认值，实测一张角色卡的开场在那里被句中截断（finishReason: length，
+    // completionOutcome: truncated）。叙述型回复要成段输出，而带推理的模型还会先从同一预算里
+    // 扣掉思考 token（同一次实测：reasoningTokens 421 / outputTokens 1024），留给正文的更少。
+    const app = buildApp({ databasePath: ":memory:" }); apps.push(app);
+    const provider = (await app.inject({ method: "GET", url: "/api/settings/provider" })).json() as ProviderSettings;
+    expect(provider.maxTokens).toBe(4096);
+    expect(provider.maxTokens).toBeGreaterThan(1024);
+    // 回复预算必须留在上下文预算之内，否则会被截断而不是报错。
+    expect(provider.maxTokens).toBeLessThan(provider.contextLimitTokens);
+  });
+});
+
 describe("draft model checks", () => {
   it("tests the selected model using a real completion request without saving configuration or replies", async () => {
     const fetchMock = vi.fn(async () => completionResponse("OK")); vi.stubGlobal("fetch", fetchMock);

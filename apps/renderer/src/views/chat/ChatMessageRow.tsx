@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { ChatMessage, ConversationDetail, WorldInfoDocument } from "@mycompanion/shared";
 
@@ -252,6 +253,7 @@ export function ChatMessageRow({
   onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
   onSendMessage?: ((input: string) => void) | undefined;
 }) {
+  const { t } = useTranslation();
   const handleEditKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -285,6 +287,13 @@ export function ChatMessageRow({
       ) : (
         <MessageContent message={message} index={index} characterName={name} conversation={conversation} onSwiped={onSwiped} onSendMessage={onSendMessage} onDeleteMessage={onDeleteMessage} onRegenerate={onRegenerate} onGenerate={onGenerate} onStopGeneration={onStopGeneration} />
       )}
+      {/* 截断要显眼地说出来：它会让正文在句中结束（实测卡的仪式化 markdown 正好被切断），
+          而只靠作者行里那行小字很容易被忽略。顺手给出可操作的方向。 */}
+      {message.generationMetadata?.completionOutcome === "truncated" ? (
+        <p className="chat-message__truncated" role="status">
+          {t("message.truncated", { tokens: message.generationMetadata.maxTokens ?? 0 })}
+        </p>
+      ) : null}
       <MessageTokenUsage metadata={message.generationMetadata} />
       <GenerationDetails metadata={message.generationMetadata} />
       <ReplyCandidates message={message} conversation={conversation} disabled={generationControlsBusy} onActivateBranch={onActivateBranch} onSwiped={onSwiped} />
