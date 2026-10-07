@@ -158,14 +158,15 @@ h1, h2, h3, p { margin-top: 0; }
 .conversation-confirm__cancel { border: 1px solid var(--line); color: var(--text-soft); background: var(--surface); }
 .conversation-confirm__danger:disabled, .conversation-confirm__cancel:disabled { opacity: .55; }
 /* 批量管理：标题右侧的入口是文字按钮，不能沿用 .tree-heading 里那个 27px 方形图标按钮。
-   nowrap 是关键——否则窄侧栏或长标签（"批量管理"/"完成"）会把每个汉字折成一行，
-   显示成一条竖排文字。 */
-.tree-heading__action {
-  display: inline-flex; flex: 0 0 auto; align-items: center; width: auto; height: 22px;
+   选择器写成 .tree-heading .tree-heading__action 是为了压过 .tree-heading button
+   （后者特异度 (0,2,1) 高于单纯的 (0,1,0)，否则固定宽度会赢、文字被裁成"批量管王!"）。
+   nowrap + min-width 一起用：既不让汉字逐字换行，也不让长标签被压窄裁切。 */
+.tree-heading .tree-heading__action {
+  display: inline-flex; flex: 0 0 auto; align-items: center; width: auto; height: 22px; min-width: 0;
   padding: 0 8px; border-radius: 6px; white-space: nowrap;
-  color: var(--text-soft); background: transparent; font-size: 11px;
+  color: var(--text-soft); background: transparent; font-size: 11px; line-height: 1;
 }
-.tree-heading__action:hover { color: var(--text); background: var(--surface-hover); }
+.tree-heading .tree-heading__action:hover { color: var(--text); background: var(--surface-hover); }
 /* 工具条：与列表同宽，内容单行；极窄时才允许换行。 */
 .conversation-bulk {
   display: flex; align-items: center; gap: 6px; margin: 0 0 6px 4px; padding: 6px 8px;
