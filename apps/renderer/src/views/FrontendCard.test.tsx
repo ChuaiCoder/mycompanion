@@ -120,9 +120,13 @@ it("remembers the card assistant's panel position, which the card itself never s
   expect(script).toContain(CARD_PANEL_STORAGE_KEY);
   expect(script).toContain("321");
   expect(script).toContain("654");
-  // 只在首次出现时恢复一次，之后完全由卡掌控——卡若自己会恢复，它的值必须胜出。
+  // 只恢复一次，之后完全由卡掌控——卡若自己会恢复，它的值必须胜出。
   expect(script).toContain("if (restored || !SAVED) return");
   expect(script).toContain("restored = true");
+  // 恢复时必须临时屏蔽过渡：否则气泡先按默认位置绘制、再动画过去，
+  // 用户看到的就是"先出现在最开始的位置"（实测确认）。
+  expect(script).toContain("transition:none !important");
+  expect(script).toContain("offsetWidth");
   // 只接受像素值：卡默认写的是 40vh 这类视口单位，不能当像素读。
   expect(script).toContain("px$");
   // 恢复前夹进当前视口，与助手自己的边界处理同理。

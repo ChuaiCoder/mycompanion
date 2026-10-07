@@ -194,8 +194,28 @@ export function buildCardPanelScript(storageKey: string, stored: { left: number;
     restored = true;
     if (typeof SAVED.left !== 'number' || typeof SAVED.top !== 'number') return;
     var position = clamp(SAVED.left, SAVED.top, element);
-    element.style.left = position.left + 'px';
-    element.style.top = position.top + 'px';
+    // 卡给气泡设了 transition: left/top。若直接改样式，会先按默认位置绘制、再动画到保存位置，
+    // 看起来就是"先出现在最开始的位置"（实测确认）。恢复期间临时屏蔽过渡，让它直接落到目标位置。
+    var suppress = null;
+    try {
+      suppress = host.document.createElement('style');
+      suppress.textContent = '#' + BUBBLE_ID + '{transition:none !important}';
+      (host.document.head || host.document.documentElement).appendChild(suppress);
+      element.style.left = position.left + 'px';
+      element.style.top = position.top + 'px';
+      // 强制重排：让上面的值成为过渡的**起点**，否则解除屏蔽后仍会补一段动画。
+      void element.offsetWidth;
+    } catch (error) {
+      // 插入样式失败时退回到直接赋值：位置仍然正确，可能多一段过渡动画。
+      element.style.left = position.left + 'px';
+      element.style.top = position.top + 'px';
+    }
+    if (suppress) {
+      // 下一帧再移除，确保浏览器已经以最终位置绘制过一帧。
+      (host.requestAnimationFrame || function (fn) { return host.setTimeout(fn, 16); })(function () {
+        try { suppress.remove(); } catch (error) {}
+      });
+    }
   }
 
   function report(element) {
