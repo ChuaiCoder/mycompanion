@@ -7,6 +7,26 @@ import { ChatView, type ChatViewProps } from "./ChatView";
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
+it("emits only inline scripts that actually parse", () => {
+  // 这个坑踩过两次，原因都是 <script> 是 raw text 元素：内容里只要出现结束标签序列
+  // （哪怕是在 JS 字符串或 CSS 选择器里），解析器就立刻结束该脚本、把剩下的代码当标记丢掉，
+  // 于是脚本被截断成语法错误，而且没有任何报错指向真正的原因。
+  // 实测：我自己的高度脚本里写了 `body > *[style*="100vh"]`，其中的 `</` 就触发了这个问题。
+  // 这里逐个解析来锁住它。
+  const document = buildCardDocument("<p>card</p>", "window.__runtime = 1;", { html: "</div><script>x</script>" });
+  const blocks = [...document.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)].map(match => ({ attrs: match[1]!, body: match[2]! }));
+  // 存储垫片 + 宿主数据 + 桥 + 运行时 + 高度脚本
+  expect(blocks.length).toBeGreaterThanOrEqual(5);
+  for (const [index, block] of blocks.entries()) {
+    // 模块脚本允许顶层 await，不能用 Function 构造器解析——它由真实文档解析器负责。
+    if (/type\s*=\s*"module"/.test(block.attrs)) continue;
+    expect(() => new Function(block.body), `第 ${index} 个内联脚本必须是合法 JS`).not.toThrow();
+  }
+  for (const block of blocks) {
+    expect(block.body).not.toMatch(/<\/script/i);
+  }
+});
+
 const CARD = [
   "```html",
   "<html>",

@@ -52,6 +52,20 @@ export const CARD_IFRAME_CSP = [
  * 内容一起抹掉（实测整段变空），而且治不了 CSS 污染。隔离文档 + 不透明源才是正确的边界。
  */
 /**
+ * 内联脚本的安全化。
+ *
+ * `<script>` 标签里的内容是 raw text：只要出现 `</script`（不分大小写），HTML 解析器就会
+ * 立刻结束这个脚本元素，后面的代码被当作标记文本丢掉——脚本因此被截断成语法错误，
+ * 且不会有任何报错指向真正的原因。
+ *
+ * 这个坑本项目踩过两次（一次在宿主数据里的卡开场白，一次在我自己的高度脚本里），
+ * 所以这里对**每一个**内联脚本统一处理：把 `</` 写成 `<\/`，JS 语义完全不变。
+ */
+function inlineScript(source: string): string {
+  return source.replace(/<\/(script)/gi, "<\\/$1");
+}
+
+/**
  * 把宿主数据序列化成可安全内联进 `<script>` 的 JS 字面量。
  *
  * 两个都必须处理的陷阱（都实测踩到过）：
@@ -85,17 +99,17 @@ export function buildCardDocument(markup: string, runtimeSource?: string, hostGl
     "</head>",
     "<body>",
     // 存储垫片必须在卡片脚本之前：卡脚本常在初始化阶段就读 localStorage。
-    `<script>${CARD_STORAGE_SCRIPT}</script>`,
+    `<script>${inlineScript(CARD_STORAGE_SCRIPT)}</script>`,
     // 宿主数据（当前故事、角色、聊天记录）先落到全局，桥脚本的桩件会读它们。
-    ...(hostGlobals ? [`<script>${`Object.assign(window, ${toInlineLiteral(hostGlobals)});`}</script>`] : []),
+    ...(hostGlobals ? [`<script>${inlineScript(`Object.assign(window, ${toInlineLiteral(hostGlobals)});`)}</script>`] : []),
     // 桥要在卡片脚本之前挂好，否则卡片的 `typeof getChatMessages !== 'undefined'` 判断
     // 会走降级分支；桩件（SillyTavern / TavernHelper）也必须先于卡自带运行时存在。
-    `<script>${CARD_BRIDGE_SCRIPT}</script>`,
+    `<script>${inlineScript(CARD_BRIDGE_SCRIPT)}</script>`,
     // 卡自带运行时（MVU 等）作为**模块**加载：它们是 ES module，且需要读取上面挂好的全局。
     // module 是延迟执行的，所以卡脚本里对运行时的使用必须是运行时判断（卡的脚本普遍如此）。
-    ...(runtimeSource ? [`<script type="module">${runtimeSource}</script>`] : []),
+    ...(runtimeSource ? [`<script type="module">${inlineScript(runtimeSource)}</script>`] : []),
     markup,
-    `<script>${CARD_HEIGHT_SCRIPT}</script>`,
+    `<script>${inlineScript(CARD_HEIGHT_SCRIPT)}</script>`,
     "</body>",
     "</html>",
   ].join("\n");
@@ -145,12 +159,12 @@ export const CARD_STORAGE_SCRIPT = `(function () {
  * 测量后 postMessage 上报。
  *
  * 两条必须遵守的约束（都来自实测）：
- *  1. **绝不能读 `scrollHeight`**。卡片普遍写 `body{min-height:100vh}`，而 `100vh` 在 iframe 里
- *     等于 frame 高度；若再把它作为新的 frame 高度上报，就会形成 `frame ↑ → 100vh ↑ → 上报 ↑`
+ *  1. **绝不能读滚动高度**。卡片普遍把最小高度写成视口单位，而视口单位在 iframe 里等于
+ *     frame 高度；若再把它作为新的 frame 高度上报，就会形成"帧变高 → 视口变大 → 上报更大"
  *     的无界自增（实测一度涨到 14502px，远超 1552px 的真实内容）。所以只量**排布子元素的
  *     真实范围**，它只取决于内容。
- *  2. **不要给 body 设 `min-height`**。撑高 body 会改变下一次测量，同样构成反馈。
- *     只覆盖会让内容被裁或错位的三条属性：`overflow`、`align-items`、`height`。
+ *  2. **不要给 body 强制最小高度**。撑高 body 会改变下一次测量，同样构成反馈。
+ *     只覆盖会让内容被裁或错位的几条属性：溢出、对齐、高度。
  */
 export const CARD_HEIGHT_SCRIPT = `(function () {
   var TYPE = ${JSON.stringify(CARD_HEIGHT_MESSAGE)};
@@ -161,8 +175,14 @@ export const CARD_HEIGHT_SCRIPT = `(function () {
     try { parent.postMessage({ type: TYPE, height: Math.ceil(height) }, '*'); } catch (error) {}
   }
 
-  // 解开卡片的"整屏"约束：100vh 锁死的高度、裁切、以及会错位的垂直居中。
-  // 刻意不设 min-height —— 那会让 body 撑高，进而改变下一次测量，形成反馈。
+  // 解开卡片的"整屏"约束。
+  //
+  // 实测这张卡的布局：start-screen 与 character-creation-screen 是 position:absolute，
+  // 所以它们**不参与 body 文档流**；100vh 在 iframe 里等于 frame 高度（实测 420px），
+  // 于是创建屏被锁成 378px 高、且带 overflow:auto——它的滚动内容高 2399px，
+  // 确认按钮位于滚动区第 2030px 处。用户根本看不到按钮，卡脚本对自身尺寸的判断也会失真。
+  // 对策：让这些"整屏"元素改为按内容撑高，帧高再跟着内容增长。
+  // 刻意不设 body 的 min-height —— 那会让 body 撑高并改变下一次测量，形成反馈。
   function relaxViewportUnits() {
     var style = document.getElementById('mycompanion-card-height');
     if (!style) {
@@ -170,7 +190,11 @@ export const CARD_HEIGHT_SCRIPT = `(function () {
       style.id = 'mycompanion-card-height';
       (document.head || document.documentElement).appendChild(style);
     }
-    style.textContent = 'body{min-height:0 !important;height:auto !important;overflow:visible !important;align-items:flex-start !important}';
+    style.textContent = [
+      'body{min-height:0 !important;height:auto !important;overflow:visible !important;align-items:flex-start !important}',
+      // 绝对定位的"整屏"容器：取消视口高度锁与裁切，并让它们参与布局高度计算。
+      'body > .screen{position:relative !important;height:auto !important;max-height:none !important;min-height:0 !important;overflow:visible !important;top:auto !important;left:auto !important;right:auto !important;bottom:auto !important;transform:none !important}',
+    ].join(String.fromCharCode(10));
   }
 
   /** 排布子元素的真实范围；固定/绝对定位的装饰层不参与。 */
