@@ -68,12 +68,21 @@ export function planCardRuntime(rawExtensions: Record<string, unknown> | undefin
     // 都挂到全局，因为卡脚本按酒馆运行时的约定直接引用它们。
     prelude: [
       "const load = async (url) => { try { return await import(url); } catch (error) { console.warn('[MyCompanion] 宿主依赖加载失败', url, error); return null; } };",
+      // zod 必须用 v4：实测 MVU 用 `.loose()`、卡内 ZOD 脚本用 `.prefault()`，都是 v4 才有的方法。
+      // 同时 mvu_zod.js 又要**独立的类全局**（`ZodObject` 等，做 instanceof 判定），
+      // 而 v4 的 +esm 构建确实导出了这些名字（实测 260 个命名导出，含 ZodObject/ZodType）。
       "const zod = await load('https://testingcf.jsdelivr.net/npm/zod@4/+esm');",
-      "if (zod) window.z = zod.z ?? zod;",
+      "if (zod) {",
+      "  window.z = zod.z ?? zod;",
+      "  for (const key of Object.keys(zod)) { if (typeof zod[key] === 'function' && /^Zod/.test(key)) window[key] = zod[key]; }",
+      "  window.ZodFirstPartyTypeKind = zod.ZodFirstPartyTypeKind ?? window.ZodFirstPartyTypeKind;",
+      "}",
       "const lodash = await load('https://testingcf.jsdelivr.net/npm/lodash@4/+esm');",
       "if (lodash && !window._) window._ = lodash.default ?? lodash;",
       "const jquery = await load('https://testingcf.jsdelivr.net/npm/jquery@3/dist/jquery.min.js');",
       "if (jquery && !window.$) { window.$ = jquery.default ?? jquery; window.jQuery = window.$; }",
+      "const klona = await load('https://testingcf.jsdelivr.net/npm/klona@2.0.6/+esm');",
+      "if (klona && !window.klona) window.klona = klona.klona ?? klona.default ?? klona;",
     ].join("\n"),
     modules: scripts.map(script => ({ name: script.name, source: script.content })),
   };

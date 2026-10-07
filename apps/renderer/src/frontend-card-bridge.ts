@@ -523,4 +523,80 @@ export const CARD_BRIDGE_SCRIPT = `(function () {
   window.toastr = window.toastr || {
     info: noop, success: noop, warning: noop, error: noop, clear: noop,
   };
+
+  // 事件系统：酒馆助手用一套命名事件（VARIABLE_UPDATE_STARTED/ENDED 等）驱动脚本。
+  // 这里复用桥脚本已有的监听表，保证 eventOn 注册的回调能被 eventEmit 触发。
+  var emitTo = function (name, payload) {
+    (listeners[name] || []).forEach(function (handler) { try { handler(payload); } catch (error) {} });
+  };
+  window.eventEmit = window.eventEmit || function (name, payload) { emitTo(name, payload); };
+  window.eventOnce = window.eventOnce || window.eventOn;
+  window.eventMakeFirst = window.eventMakeFirst || window.eventOn;
+  window.eventRemoveListener = window.eventRemoveListener || noop;
+  window.eventClearAll = window.eventClearAll || noop;
+  // 脚本标识与版本：MVU 用它给 localStorage 键做命名空间（实测 getScriptId 在 window.parent 访问旁）。
+  window.getScriptId = window.getScriptId || function () { return 'mycompanion-card'; };
+  window.getPreferredScriptId = window.getPreferredScriptId || function () { return 'mycompanion-card'; };
+  window.getTavernHelperVersion = window.getTavernHelperVersion || function () { return '4.11.3'; };
+  window.getCurrentMessageId = window.getCurrentMessageId || function () { return (window.__hostChat || []).length - 1; };
+  window.getCurrentMvuData = window.getCurrentMvuData || function (option) { return window.Mvu ? window.Mvu.getMvuData(option) : {}; };
+  window.replaceCurrentMvuData = window.replaceCurrentMvuData || function (data, option) {
+    return window.Mvu ? window.Mvu.replaceMvuData(data, option) : undefined;
+  };
+  window.setMvuVariable = window.setMvuVariable || function (path, value, option) {
+    if (!window.Mvu) return undefined;
+    var data = window.Mvu.getMvuData(option) || {};
+    _.set(data, path, value);
+    return window.Mvu.replaceMvuData(data, option);
+  };
+  window.getMvuVariable = window.getMvuVariable || function (path, option) {
+    return window.Mvu ? _.get(window.Mvu.getMvuData(option), path) : undefined;
+  };
+  // 世界书相关别名（桥里已有实现）。
+  window.getCharLorebooks = window.getCharLorebooks || function () { return call('getLorebooks', []); };
+  window.getCharWorldbookNames = window.getCharWorldbookNames || function () { return call('getLorebooks', []); };
+  window.getCurrentCharPrimaryLorebook = window.getCurrentCharPrimaryLorebook || function () { return Promise.resolve(null); };
+  window.getLorebookEntries = window.getLorebookEntries || function (name) { return call('getLorebook', [name]); };
+  // 预设：本应用没有与酒馆同构的预设对象，给空结果而不是假装成功。
+  window.getPreset = window.getPreset || function () { return Promise.resolve({}); };
+  window.getPresetNames = window.getPresetNames || function () { return Promise.resolve([]); };
+  // 未实现但被引用的名字：给可调用的占位，避免顶层 ReferenceError 中断整个模块。
+  ['registerMacro', 'unregisterMacro', 'registerFunctionTool', 'unregisterFunctionTool',
+    'getLorebookSettings', 'setLorebookSettings', 'getSettings', 'getPluginSettings',
+    'setPluginSettings', 'getUnitSystem', 'waitForRuntimeApi', 'findParentWindow'].forEach(function (name) {
+      if (typeof window[name] === 'undefined') window[name] = noop;
+    });
+  // 酒馆助手的界面辅助函数：MVU 在挂载自己的面板时会调用它们。
+  // 本应用没有对应的酒馆 DOM，所以给不会崩的实现（返回空/无操作），
+  // 这样面板逻辑继续走，而不是整个模块中断。
+  var helperUi = {
+    appendInexistentScriptButtons: noop,
+    replaceScriptButtons: noop,
+    getScriptButtons: function () { return []; },
+    setScriptButtons: noop,
+    appendInexistentScriptItems: noop,
+    replaceScriptItems: noop,
+    getScriptItems: function () { return []; },
+    setScriptItems: noop,
+    updateScriptButtons: noop,
+    // 按钮事件：实测 MVU 的用法是 eventOn(getButtonEvent(name), handler)，
+    // 即 getButtonEvent 只需返回一个稳定的事件标识字符串（同名多次调用必须一致）。
+    getButtonEvent: function (name) { return 'mycompanion:button:' + String(name); },
+    eventButtonOn: function (name, handler) { return window.eventOn('mycompanion:button:' + String(name), handler); },
+    eventButtonEmit: function (name, payload) { emitTo('mycompanion:button:' + String(name), payload); },
+    errorCatched: function (fn) { return fn; },
+    getIframeName: function () { return window.__hostConversationId || 'mycompanion'; },
+    getCurrentMessageId: function () { return (window.__hostChat || []).length - 1; },
+  };
+  Object.keys(helperUi).forEach(function (name) {
+    if (typeof window[name] === 'undefined') window[name] = helperUi[name];
+  });
+  // YAML / EjsTemplate / CryptoJS：卡脚本引用它们；缺了会在使用时抛错，
+  // 因此给不会崩的实现（YAML 解析失败时返回原文，加密相关明确报错）。
+  window.YAML = window.YAML || {
+    parse: function (text) { try { return JSON.parse(text); } catch (error) { return {}; } },
+    stringify: function (value) { try { return JSON.stringify(value); } catch (error) { return ''; } },
+  };
+  window.EjsTemplate = window.EjsTemplate || { evalTemplate: function (text) { return Promise.resolve(String(text == null ? '' : text)); } };
+  window.CryptoJS = window.CryptoJS || {};
 })();`;
