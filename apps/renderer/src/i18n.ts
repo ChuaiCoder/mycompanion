@@ -32,6 +32,17 @@ const messages = {
   "conversation.deleteConfirmAction": ["删除", "Delete"],
   "conversation.deleteCancel": ["取消", "Cancel"],
   "conversation.deleting": ["删除中…", "Deleting…"],
+  "conversation.select": ["批量管理", "Select"],
+  "conversation.selectExit": ["完成", "Done"],
+  "conversation.selectAll": ["全选", "Select all"],
+  "conversation.selectNone": ["取消全选", "Clear"],
+  "conversation.selectToggle": ["选择故事“{{title}}”", "Select story “{{title}}”"],
+  "conversation.selectedCount": ["已选 {{count}} 个", "{{count}} selected"],
+  "conversation.deleteSelected": ["删除所选", "Delete selected"],
+  "conversation.deleteSelectedConfirm": ["删除这些故事？", "Delete these stories?"],
+  "conversation.deleteSelectedBody": ["将删除 {{count}} 个故事，之后可从“已删除”中恢复。", "{{count}} stories will be deleted; they can be restored from deleted."],
+  "conversation.deleteSelectedDone": ["已删除 {{count}} 个故事。", "Deleted {{count}} stories."],
+  "conversation.deleteNoneSelected": ["请先选择要删除的故事。", "Select at least one story first."],
 } as const;
 const resources = Object.fromEntries(["zh", "en"].map((language, index) => [language, { translation: Object.fromEntries(Object.entries(messages).map(([key, value]) => [key, value[index]])) }]));
 void i18next.use(initReactI18next).init({ lng: "zh", fallbackLng: "zh", resources, initAsync: false, keySeparator: false, interpolation: { escapeValue: false } });

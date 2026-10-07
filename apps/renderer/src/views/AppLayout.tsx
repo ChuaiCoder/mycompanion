@@ -221,6 +221,7 @@ export function AppLayout(props: AppLayoutProps) {
         onNavigate={setWorkspaceView}
         onOpenConversation={(id) => void handleOpenConversation(id)}
         onDeleteConversation={conversationsState.handleDeleteConversation}
+        onDeleteConversations={conversationsState.handleDeleteConversations}
         onOpenFilePicker={openFilePicker}
         pluginCount={plugins.length}
         modelConnection={modelConnection}

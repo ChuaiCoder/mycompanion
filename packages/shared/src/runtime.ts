@@ -259,6 +259,23 @@ export const deleteConversationResponseSchema = z.object({
   deletedAt: z.string().datetime(),
 });
 
+/**
+ * 批量删除故事（同为软删除）。
+ *
+ * 上限 200 与其它批量接口一致，避免一次请求把整个库拖进长事务；重复 id 由服务端去重，
+ * 因此客户端重试是安全的。
+ */
+export const deleteConversationsRequestSchema = z.object({
+  ids: z.array(z.string().uuid()).min(1).max(200),
+}).strict();
+
+export const deleteConversationsResponseSchema = z.object({
+  deleted: z.array(z.object({ id: z.string().uuid(), deletedAt: z.string().datetime() })),
+  /** 已删除或不存在而未能删除的 id，单独回报，避免客户端把"没删掉"当成成功。 */
+  skipped: z.array(z.string().uuid()),
+});
+export type DeleteConversationsResponse = z.infer<typeof deleteConversationsResponseSchema>;
+
 export const createConversationRequestSchema = z.object({
   characterId: z.string().uuid(),
   greetingIndex: z.number().int().min(0).optional(),

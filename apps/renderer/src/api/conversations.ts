@@ -2,9 +2,11 @@ import {
   conversationDetailSchema,
   conversationListResponseSchema,
   deleteConversationResponseSchema,
+  deleteConversationsResponseSchema,
   type ConversationDetail,
   type ConversationListResponse,
   type DeleteConversationResponse,
+  type DeleteConversationsResponse,
 } from "@mycompanion/shared";
 
 import { readApiPayload } from "./core";
@@ -41,4 +43,14 @@ export async function deleteConversation(id: string): Promise<DeleteConversation
     headers: { Accept: "application/json" },
   });
   return deleteConversationResponseSchema.parse(await readApiPayload(response));
+}
+
+/** 批量软删除：一次请求、一次事务；返回值区分真正删掉的与跳过的。 */
+export async function deleteConversations(ids: readonly string[]): Promise<DeleteConversationsResponse> {
+  const response = await fetch("/api/conversations/delete-batch", {
+    method: "POST",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ ids }),
+  });
+  return deleteConversationsResponseSchema.parse(await readApiPayload(response));
 }

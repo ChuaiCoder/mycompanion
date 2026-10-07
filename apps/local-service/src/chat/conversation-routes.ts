@@ -6,6 +6,8 @@ import {
   conversationListResponseSchema,
   createConversationRequestSchema,
   deleteConversationResponseSchema,
+  deleteConversationsRequestSchema,
+  deleteConversationsResponseSchema,
   displayRegexRequestSchema,
   displayRegexResponseSchema,
   memoryListQuerySchema,
@@ -68,6 +70,18 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
       return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
     }
     return conversationDetailSchema.parse(conversation);
+  });
+
+  // 批量删除故事：与单条删除同为软删除，一次事务落库。
+  // 单独列为一个路由而不是让客户端循环调用，是为了让"一批"只发生一次写入，
+  // 并且能一次性回报哪些没删掉（已删/不存在），而不是把幂等伪装成全部成功。
+  app.post<{ Body: unknown }>("/api/conversations/delete-batch", async (request, reply) => {
+    const parsed = deleteConversationsRequestSchema.safeParse(request.body);
+    if (!parsed.success) return sendError(reply, 400, "INVALID_REQUEST", "请选择要删除的故事（1 到 200 个）。");
+    const { ids } = parsed.data;
+    // 先取消这些故事的在途生成，否则模型请求会继续跑完，把新消息写进已删除的故事里。
+    for (const id of ids) pipeline.inFlightGenerations.get(id)?.abort();
+    return deleteConversationsResponseSchema.parse(runtime.softDeleteConversations(ids));
   });
 
   // 删除故事（FR-DATA-004）：默认软删除，可恢复；已有删除标记时幂等返回同一时间。

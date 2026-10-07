@@ -25,6 +25,7 @@ const props = (overrides: Partial<Parameters<typeof AppSidebar>[0]> = {}) => ({
   activeConversationId: undefined,
   onOpenConversation: vi.fn(),
   onDeleteConversation: vi.fn(async () => true),
+  onDeleteConversations: vi.fn(async (ids: readonly string[]) => ids.length),
   modelConnection: { state: "online" as const, modelCount: 3, reason: null, issueField: undefined },
   fileInputRef: createRef<HTMLInputElement>(),
   onCardFile: vi.fn(),

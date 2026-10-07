@@ -157,6 +157,39 @@ h1, h2, h3, p { margin-top: 0; }
 .conversation-confirm__danger { color: #fff; background: var(--danger); }
 .conversation-confirm__cancel { border: 1px solid var(--line); color: var(--text-soft); background: var(--surface); }
 .conversation-confirm__danger:disabled, .conversation-confirm__cancel:disabled { opacity: .55; }
+/* 批量管理：标题右侧的入口是文字按钮，不能沿用 .tree-heading 里那个 27px 方形图标按钮。 */
+.tree-heading__action {
+  flex: 0 0 auto; width: auto; height: 22px; padding: 0 8px; border-radius: 6px;
+  color: var(--text-soft); background: transparent; font-size: 11px;
+}
+.tree-heading__action:hover { color: var(--text); background: var(--surface-hover); }
+/* 工具条与行内确认同宽同位，不弹窗；换行以便窄侧栏下仍可读。 */
+.conversation-bulk {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 2px 0 6px 13px;
+  padding: 6px 7px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); font-size: 11px;
+}
+.conversation-bulk__count { flex: 1 1 auto; color: var(--text-soft); font-weight: 600; }
+.conversation-bulk__prompt { display: grid; flex: 1 1 auto; color: var(--danger); font-weight: 600; }
+.conversation-bulk__prompt small { color: var(--text-faint); font-weight: 400; }
+.conversation-bulk__toggle, .conversation-bulk__danger, .conversation-bulk__cancel {
+  flex: 0 0 auto; min-height: 22px; padding: 0 8px; border-radius: 5px; font-size: 10px; font-weight: 600;
+}
+.conversation-bulk__toggle { border: 1px solid var(--line); color: var(--text-soft); background: var(--surface); }
+.conversation-bulk__danger { color: #fff; background: var(--danger); }
+.conversation-bulk__cancel { border: 1px solid var(--line); color: var(--text-soft); background: var(--surface); }
+.conversation-bulk__danger:disabled, .conversation-bulk__cancel:disabled, .conversation-bulk__toggle:disabled { opacity: .55; }
+.conversation-bulk__notice { flex: 1 1 100%; color: var(--text-faint); }
+/* 结果提示独立于工具条，退出管理模式后仍要可见。 */
+p.conversation-bulk__notice { margin: 0 0 6px 13px; font-size: 11px; }
+/* 选择模式下的行：整行是 <label>，点文字即切换勾选，与普通行视觉对齐。 */
+.conversation-select {
+  display: flex; align-items: center; width: 100%; min-height: 30px; gap: 8px;
+  padding: 5px 7px 5px 9px; border-radius: 7px; cursor: pointer;
+}
+.conversation-select:hover { background: var(--surface-hover); }
+.conversation-select input { flex: 0 0 auto; margin: 0; accent-color: var(--accent); }
+.conversation-select span { overflow: hidden; flex: 1 1 auto; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.conversation-select small { flex: 0 0 auto; color: var(--text-faint); font-size: 10px; }
 .character-avatar {
   display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--line);
   border-radius: 7px; color: #245d9a; background: var(--accent-soft); font-size: 11px; font-weight: 720;

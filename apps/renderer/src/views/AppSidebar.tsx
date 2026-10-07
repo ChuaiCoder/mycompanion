@@ -49,6 +49,7 @@ export function AppSidebar({
   activeConversationId,
   onOpenConversation,
   onDeleteConversation,
+  onDeleteConversations,
   modelConnection,
   fileInputRef,
   onCardFile,
@@ -70,6 +71,8 @@ export function AppSidebar({
   activeConversationId: string | undefined;
   onOpenConversation: (id: string) => void;
   onDeleteConversation: (id: string) => Promise<boolean>;
+  /** 批量删除：返回真正删除的条数，供界面汇报实际结果。 */
+  onDeleteConversations: (ids: readonly string[]) => Promise<number>;
   /** 模型连通性（启动检查一次），决定侧栏状态点显示什么。 */
   modelConnection: ModelConnection;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -80,12 +83,46 @@ export function AppSidebar({
   // 行内二次确认：先记下待删的故事，再由用户在行内确认或取消，不用弹窗。
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  // 批量管理：进入后行变为复选框；删除同样走行内/工具条二次确认，与单条删除一致。
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(new Set());
+  const [confirmBulk, setConfirmBulk] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const groups = groupConversationsByCharacter(conversations);
   const toggleGroup = (characterId: string) => setCollapsedGroups(current => {
     const next = new Set(current);
     if (next.has(characterId)) next.delete(characterId); else next.add(characterId);
     return next;
   });
+  const exitSelectMode = () => {
+    setSelectMode(false);
+    setSelectedIds(new Set());
+    setConfirmBulk(false);
+  };
+  const toggleSelected = (id: string) => setSelectedIds(current => {
+    const next = new Set(current);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  // 只对当前仍然存在的故事生效；列表变化后旧的选中项不应继续计数。
+  const selectableIds = conversations.map(item => item.id);
+  const effectiveSelected = selectableIds.filter(id => selectedIds.has(id));
+  const allSelected = selectableIds.length > 0 && effectiveSelected.length === selectableIds.length;
+  const runBulkDelete = async (): Promise<void> => {
+    if (!effectiveSelected.length) { setNotice(t("conversation.deleteNoneSelected")); return; }
+    setBulkBusy(true);
+    setNotice(null);
+    const deleted = await onDeleteConversations(effectiveSelected);
+    setBulkBusy(false);
+    if (deleted > 0) {
+      setNotice(t("conversation.deleteSelectedDone", { count: deleted }));
+      setSelectedIds(new Set());
+      setConfirmBulk(false);
+      // 全部删完就退出管理模式，避免停在一个空列表上。
+      if (deleted >= selectableIds.length) setSelectMode(false);
+    }
+  };
   const confirmDelete = async (id: string): Promise<void> => {
     setDeletingId(id);
     const deleted = await onDeleteConversation(id);
@@ -107,7 +144,32 @@ export function AppSidebar({
         <button aria-current={view === "memory" ? "page" : undefined} className={`nav-row ${view === "memory" ? "nav-row--active" : ""}`} onClick={onMemoryNav} type="button"><Icon name="brain" /><span>{t("nav.memory")}</span><small>{view === "chat" ? memoryInjectedCount : ""}</small></button>
       </nav>
       <section aria-labelledby="sidebar-conversations-title" className="sidebar-library">
-        <div className="tree-heading"><div><Icon name="book" size={16} /><h2 id="sidebar-conversations-title">{t("nav.chat")}</h2></div></div>
+        <div className="tree-heading">
+          <div><Icon name="book" size={16} /><h2 id="sidebar-conversations-title">{t("nav.chat")}</h2></div>
+          {conversations.length > 0 ? (
+            <button className="tree-heading__action" onClick={() => selectMode ? exitSelectMode() : setSelectMode(true)} type="button">{selectMode ? t("conversation.selectExit") : t("conversation.select")}</button>
+          ) : null}
+        </div>
+        {selectMode ? (
+          <div className="conversation-bulk" role="group" aria-label={t("conversation.select")}>
+            {confirmBulk ? (
+              <>
+                <span className="conversation-bulk__prompt">{t("conversation.deleteSelectedConfirm")}<small>{t("conversation.deleteSelectedBody", { count: effectiveSelected.length })}</small></span>
+                <button className="conversation-bulk__danger" disabled={bulkBusy} onClick={() => void runBulkDelete()} type="button">{bulkBusy ? t("conversation.deleting") : t("conversation.deleteConfirmAction")}</button>
+                <button className="conversation-bulk__cancel" disabled={bulkBusy} onClick={() => setConfirmBulk(false)} type="button">{t("conversation.deleteCancel")}</button>
+              </>
+            ) : (
+              <>
+                <span className="conversation-bulk__count">{t("conversation.selectedCount", { count: effectiveSelected.length })}</span>
+                <button className="conversation-bulk__toggle" onClick={() => setSelectedIds(allSelected ? new Set() : new Set(selectableIds))} type="button">{allSelected ? t("conversation.selectNone") : t("conversation.selectAll")}</button>
+                <button className="conversation-bulk__danger" disabled={!effectiveSelected.length} onClick={() => setConfirmBulk(true)} type="button">{t("conversation.deleteSelected")}</button>
+              </>
+            )}
+          </div>
+        ) : null}
+        {/* 结果提示放在工具条之外：删完最后一批会退出管理模式，工具条随之消失，
+            提示若挂在里面就永远看不到，用户会以为没有生效。 */}
+        {notice ? <p className="conversation-bulk__notice" role="status">{notice}</p> : null}
         {groups.length === 0 ? (
           <div className="tree-empty"><span>还没有对话</span><small>在角色库选择角色，开始第一段故事</small></div>
         ) : (
@@ -135,8 +197,18 @@ export function AppSidebar({
                         }
                         return (
                           <li key={conversation.id} className="conversation-item">
-                            <button data-conversation-id={conversation.id} aria-pressed={activeConversationId === conversation.id} className="conversation-row" onClick={() => onOpenConversation(conversation.id)} type="button"><span>{conversation.title}</span><small>{conversation.messageCount} 条</small></button>
-                            <button aria-label={t("conversation.delete", { title: conversation.title })} className="conversation-delete" onClick={() => setPendingDeleteId(conversation.id)} type="button"><span aria-hidden="true">×</span></button>
+                            {selectMode ? (
+                              <label className="conversation-select">
+                                <input type="checkbox" checked={selectedIds.has(conversation.id)} onChange={() => toggleSelected(conversation.id)} aria-label={t("conversation.selectToggle", { title: conversation.title })} />
+                                <span>{conversation.title}</span>
+                                <small>{conversation.messageCount} 条</small>
+                              </label>
+                            ) : (
+                              <>
+                                <button data-conversation-id={conversation.id} aria-pressed={activeConversationId === conversation.id} className="conversation-row" onClick={() => onOpenConversation(conversation.id)} type="button"><span>{conversation.title}</span><small>{conversation.messageCount} 条</small></button>
+                                <button aria-label={t("conversation.delete", { title: conversation.title })} className="conversation-delete" onClick={() => setPendingDeleteId(conversation.id)} type="button"><span aria-hidden="true">×</span></button>
+                              </>
+                            )}
                           </li>
                         );
                       })}

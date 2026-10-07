@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { ConversationDetail, ConversationSummary } from "@mycompanion/shared";
 
-import { ApiRequestError, activateBranch, createConversation, deleteConversation, fetchConversation } from "../api";
+import { ApiRequestError, activateBranch, createConversation, deleteConversation, deleteConversations, fetchConversation } from "../api";
 import { flushSharedExtensionSettings } from "../extension-settings";
 import type { WorkspaceView } from "./useExtensionResume";
 
@@ -111,6 +111,28 @@ export function useConversations(deps: {
     }
   };
 
+  /**
+   * 批量删除故事：一次请求、一次事务，与单条删除同为软删除。
+   *
+   * 只把服务端确认删掉的 id 从列表移除——`skipped` 里的（已删或不存在）不当作成功，
+   * 否则界面会显示"删掉了"而实际没删。返回真正删除的条数供界面汇报。
+   */
+  const handleDeleteConversations = async (ids: readonly string[]): Promise<number> => {
+    if (!ids.length) return 0;
+    ++navigationRevision.current;
+    setRuntimeError(null);
+    try {
+      const result = await deleteConversations(ids);
+      const removed = new Set(result.deleted.map(item => item.id));
+      setConversations(current => current.filter(item => !removed.has(item.id)));
+      setActiveConversation(current => current && removed.has(current.id) ? null : current);
+      return removed.size;
+    } catch (error) {
+      setRuntimeError(error instanceof Error ? error.message : "无法删除这些故事。");
+      return 0;
+    }
+  };
+
   return {
     conversations,
     setConversations,
@@ -120,6 +142,7 @@ export function useConversations(deps: {
     handleOpenConversation,
     handleActivateBranch,
     handleDeleteConversation,
+    handleDeleteConversations,
     branchBusy,
   };
 }

@@ -25,6 +25,7 @@ const props = (modelConnection: Parameters<typeof AppSidebar>[0]["modelConnectio
   activeConversationId: undefined,
   onOpenConversation: vi.fn(),
   onDeleteConversation: vi.fn(async () => true),
+  onDeleteConversations: vi.fn(async (ids: readonly string[]) => ids.length),
   modelConnection,
   fileInputRef: createRef<HTMLInputElement>(),
   onCardFile: vi.fn(),

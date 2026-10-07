@@ -1122,6 +1122,31 @@ export class RuntimeRepository {
     return result.changes > 0;
   }
 
+  /**
+   * 批量软删除：一个事务内完成，避免部分成功留下"删了一半"的状态。
+   *
+   * 与单条删除同语义（只打 deleted_at，内容全部保留、可恢复）。已删除或不存在的 id 不报错，
+   * 而是回收到 `skipped`，让调用方知道哪些没生效，而不是把幂等写成"全部成功"。
+   * 同一事务内取同一个时间戳，便于在界面上把它们视作同一次操作。
+   */
+  softDeleteConversations(ids: readonly string[]): { deleted: Array<{ id: string; deletedAt: string }>; skipped: string[] } {
+    const unique = [...new Set(ids)];
+    const timestamp = new Date().toISOString();
+    const deleted: Array<{ id: string; deletedAt: string }> = [];
+    const skipped: string[] = [];
+    this.withTransaction(() => {
+      const statement = this.#database.prepare(
+        "UPDATE conversations SET deleted_at = ?, updated_at = ? WHERE id = ? AND deleted_at IS NULL",
+      );
+      for (const id of unique) {
+        const result = statement.run(timestamp, timestamp, id);
+        if (result.changes) deleted.push({ id, deletedAt: timestamp });
+        else skipped.push(id);
+      }
+    });
+    return { deleted, skipped };
+  }
+
   /** 查询软删除状态，供路由区分「不存在」与「已删除」。 */
   conversationDeletedAt(id: string): string | null | undefined {
     const row = this.#database
