@@ -82,6 +82,30 @@ it("expands the frame to the card's real content height instead of clipping it",
   expect(CARD_HEIGHT_SCRIPT).toContain("'fixed'");
 });
 
+it("inlines host data so that markup and line separators cannot break the script", () => {
+  // 实测缺陷一：宿主数据里若含 `<script`（卡的开场白就是 HTML），HTML 解析器会在
+  // 解析外层脚本时进入 escaped 状态并吞掉后续内容，实测脚本被截断在 19963 字符。
+  // 实测缺陷二：U+2028/U+2029 不被 JSON.stringify 转义，在字符串字面量里非法。
+  const hostGlobals = {
+    html: "</div><script>const a = 1;</script>",
+    text: "a\u2028b\u2029c",
+  };
+  const document = buildCardDocument("<p>card</p>", undefined, hostGlobals);
+  const start = document.indexOf("Object.assign(window,");
+  const script = document.slice(start, document.indexOf("</script>", start));
+
+  // 内联的这块里不能再出现任何会终止或逃逸脚本的标记。
+  expect(script).not.toContain("<script");
+  expect(script).not.toContain("<!--");
+  expect(document).not.toContain("\u2028");
+  expect(document).not.toContain("\u2029");
+  // 转义后仍是合法脚本，且数据能完整还原（含 `<script>` 与行分隔符）。
+  expect(() => new Function(script)).not.toThrow();
+  const literal = script.slice("Object.assign(window, ".length, script.lastIndexOf(")"));
+  const parsed = JSON.parse(literal.replace(/\\u003c/g, "<").replace(/\\u2028/g, "\u2028").replace(/\\u2029/g, "\u2029"));
+  expect(parsed).toEqual(hostGlobals);
+});
+
 it("gives card scripts a working storage shim instead of a hard SecurityError", () => {
   // 不透明源文档里 localStorage 会抛 SecurityError，而卡脚本常在初始化就读它，
   // 抛错会让整段脚本中断。实测确认 defineProperty 在该 sandbox 下可用，故用内存垫片。

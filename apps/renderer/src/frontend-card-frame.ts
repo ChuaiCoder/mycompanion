@@ -51,6 +51,23 @@ export const CARD_IFRAME_CSP = [
  * 直接把卡片 HTML 放进 `srcdoc`（不做消毒）：消毒会把 `body`/`head` 这类文档级结构连同
  * 内容一起抹掉（实测整段变空），而且治不了 CSS 污染。隔离文档 + 不透明源才是正确的边界。
  */
+/**
+ * 把宿主数据序列化成可安全内联进 `<script>` 的 JS 字面量。
+ *
+ * 两个都必须处理的陷阱（都实测踩到过）：
+ *  1. **`<` 必须转义**。注入的 JSON 里若出现 `<script`，HTML 解析器会在解析外层脚本时
+ *     进入 "script data escaped" 状态，把之后的内容一直吞到 EOF——实测宿主数据脚本
+ *     因此在 19963 字符处被截断，`Object.assign` 从未执行，其后的桥脚本与全部卡脚本
+ *     也一并失效。卡的开场白本身就是 HTML，内含 `<script>` 的概率很高。
+ *  2. **U+2028 / U+2029**：`JSON.stringify` 不转义它们，而它们在 JS 字符串字面量里非法。
+ */
+function toInlineLiteral(value: unknown): string {
+  return JSON.stringify(value)
+    .replace(/</g, "\\u003c")
+    .replace(/\u2028/g, "\\u2028")
+    .replace(/\u2029/g, "\\u2029");
+}
+
 export function buildCardDocument(markup: string, runtimeSource?: string, hostGlobals?: Record<string, unknown>): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${CARD_IFRAME_CSP}">`;
   return [
@@ -70,7 +87,7 @@ export function buildCardDocument(markup: string, runtimeSource?: string, hostGl
     // 存储垫片必须在卡片脚本之前：卡脚本常在初始化阶段就读 localStorage。
     `<script>${CARD_STORAGE_SCRIPT}</script>`,
     // 宿主数据（当前故事、角色、聊天记录）先落到全局，桥脚本的桩件会读它们。
-    ...(hostGlobals ? [`<script>${`Object.assign(window, ${JSON.stringify(hostGlobals)});`}</script>`] : []),
+    ...(hostGlobals ? [`<script>${`Object.assign(window, ${toInlineLiteral(hostGlobals)});`}</script>`] : []),
     // 桥要在卡片脚本之前挂好，否则卡片的 `typeof getChatMessages !== 'undefined'` 判断
     // 会走降级分支；桩件（SillyTavern / TavernHelper）也必须先于卡自带运行时存在。
     `<script>${CARD_BRIDGE_SCRIPT}</script>`,

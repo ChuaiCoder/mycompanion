@@ -79,7 +79,11 @@ export function planCardRuntime(rawExtensions: Record<string, unknown> | undefin
       // 而 v4 的 +esm 构建确实导出了这些名字（实测 260 个命名导出，含 ZodObject/ZodType）。
       "const zod = await load('https://testingcf.jsdelivr.net/npm/zod@4/+esm');",
       "if (zod) {",
-      "  window.z = zod.z ?? zod;",
+      "  window.z = zod;",
+      // 实测：mvu_zod.js 读的是 `z.z.ZodObject`（源码 `const r = z; … r.z.ZodObject`），
+      // 即它期望全局 z 自身带一个 `z` 命名空间。v4 的 +esm 命名空间没有这个自引用，
+      // 所以这里补上；`z.object(...)` 之类的顶层调用不受影响。
+      "  if (!window.z.z) { try { Object.defineProperty(window.z, 'z', { value: window.z, enumerable: false, configurable: true }); } catch (error) {} }",
       "  for (const key of Object.keys(zod)) { if (typeof zod[key] === 'function' && /^Zod/.test(key)) window[key] = zod[key]; }",
       "  window.ZodFirstPartyTypeKind = zod.ZodFirstPartyTypeKind ?? window.ZodFirstPartyTypeKind;",
       "}",
