@@ -314,6 +314,25 @@ export function useChatGeneration(deps: {
   };
 
   const handleForegroundGeneration = async (mode: "continue" | "impersonate" | undefined, options: NativeGenerationOptions = {}): Promise<NativeGenerationResult> => {
+    return runForegroundGeneration(mode, undefined, options);
+  };
+
+  /**
+   * 按当前上下文生成一条回复，不新增用户消息、也不替换已有消息。
+   *
+   * 这是酒馆 `/trigger` 的语义，也是卡片开局管道的最后一步（`/sys … | /cut 序号 | /trigger`）。
+   * 不能复用"重新生成"：`/cut` 删掉开场占位后末条是用户消息，此时并没有可供再生的 assistant
+   * 消息，重新生成会静默地什么也不做（实测确认）。服务端在 `content` 为空时正是这个行为：
+   * 不添加用户消息，直接据历史生成。
+   */
+  const handleGenerate = (options: NativeGenerationOptions = {}) => {
+    // allowEmpty：本次请求**不新增用户消息**，只据现有上下文生成一条回复。
+    // 服务端对空内容正是这个语义（不添加消息、直接生成），但 schema 默认拒绝空内容，
+    // 必须显式允许（实测：不传时报"消息不能为空或过长。"）。
+    return runForegroundGeneration(undefined, "", { ...options, allowEmpty: true });
+  };
+
+  const runForegroundGeneration = async (mode: "continue" | "impersonate" | undefined, content: string | undefined, options: NativeGenerationOptions = {}): Promise<NativeGenerationResult> => {
     if (!activeConversation || isGenerating || streamControllerRef.current || editingMessageId) return { status: "skipped" };
     if (mode === "continue" && activeConversation.messages.at(-1)?.role !== "assistant") return { status: "skipped" };
     const story = activeConversation.id;
@@ -339,6 +358,9 @@ export function useChatGeneration(deps: {
     });
     try {
       if (mode) await streamForegroundMode(story, mode, controller.signal, observed.onEvent, options);
+      else if (content !== undefined) {
+        await streamChatMessage(story, content, controller.signal, observed.onEvent, options);
+      }
       else await streamRegenerate(story, controller.signal, observed.onEvent, options);
       await reloadStory(story);
       const listError = await refreshConversationList();
@@ -416,6 +438,7 @@ export function useChatGeneration(deps: {
     handleSendMessage,
     handleStopGeneration,
     handleRegenerate,
+    handleGenerate,
     handleContinue,
     handleImpersonate,
     beginEditMessage,

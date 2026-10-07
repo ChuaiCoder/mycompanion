@@ -43,6 +43,8 @@ export interface ChatViewProps {
   onSendMessage: (input: string) => void;
   onStopGeneration: () => void;
   onRegenerate: () => void;
+  /** 按当前上下文生成一条回复（对应卡片的 /trigger），不新增用户消息。 */
+  onGenerate: () => void;
   onContinue?: () => void;
   onImpersonate?: () => void;
   onActivateBranch?: (conversationId: string, branchId: string) => Promise<void>;
@@ -82,6 +84,7 @@ export function ChatView({
   onSendMessage,
   onStopGeneration,
   onRegenerate,
+  onGenerate,
   onContinue,
   onImpersonate,
   onEditMessage,
@@ -140,9 +143,11 @@ export function ChatView({
               onDeleteMessage={onDeleteMessage}
               onEditMessage={onEditMessage}
               onEditingDraft={onEditingDraft}
+              onGenerate={onGenerate}
               onRegenerate={onRegenerate}
               onSaveEdit={onSaveEdit}
               onSendMessage={onSendMessage}
+              onStopGeneration={onStopGeneration}
               onSwiped={onSwiped}
             />, element, key) : null)}
         </DisplayTextProvider>

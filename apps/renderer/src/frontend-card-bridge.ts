@@ -106,6 +106,22 @@ export interface CardBridgeHost {
   onDeleteMessage?: ((messageId: string) => Promise<void> | void) | undefined;
   /** 触发一次生成（对应 `/trigger`）。 */
   onTrigger?: (() => Promise<void> | void) | undefined;
+  /**
+   * 等待当前生成结束（若空闲则立即返回）。
+   *
+   * 卡片的开局管道是 `/sys … | /cut <序号> | /trigger`：`/sys` 自己会启动一次生成，
+   * 于是紧随其后的 `/trigger` 会在"正在生成"时被宿主静默跳过（实测：管道三段都执行了，
+   * 但游戏没有开场内容）。有了这个钩子，`/trigger` 可以等前一次生成结束后再触发。
+   */
+  onWaitForIdle?: (() => Promise<void>) | undefined;
+  /**
+   * 中止当前生成（若空闲则无操作）。
+   *
+   * `/cut` 要删掉的那条消息可能正在生成中：卡片的管道顺序是"先发内容、再删占位、最后触发"，
+   * 而 `/sys` 会立刻启动一次生成。若删掉正在生成的消息，那次生成的输出就随消息一起消失，
+   * 后面的 `/trigger` 也会因为状态不一致而无效。所以删除前先中止。
+   */
+  onCancelGeneration?: (() => Promise<void>) | undefined;
 }
 
 export interface CardBridgeRequest {
@@ -150,6 +166,11 @@ export async function executeSlashCommand(
 ): Promise<CardBridgeResult> {
   // 按 ` | ` 切分，但不破坏文本里普通的分隔符：只在命令边界处切。
   const parts = command.split(/\s*\|\s*(?=\/)/).map(part => part.trim()).filter(Boolean);
+  // 诊断开关（默认关闭）：地址栏加 #card-bridge-debug 时打印管道分段与结果。
+  // 卡片把多个命令用竖线串起来，出问题时很难判断到底哪一段到达了宿主，
+  // 这个开关让"管道里某一段是否执行"变成可观测事实。
+  const debugging = typeof location !== "undefined" && location.hash.includes("card-bridge-debug");
+  if (debugging) console.info("[card-bridge] 管道分段", parts);
   const rejected: string[] = [];
   for (const part of parts) {
     const match = /^\/([\w-]+)\s*([\s\S]*)$/.exec(part);
@@ -159,8 +180,11 @@ export async function executeSlashCommand(
     if (!SUPPORTED_SLASH.has(name)) { rejected.push(name); continue; }
     if (name === "trigger") {
       // 卡的收尾管道是 `/sys … | /cut <序号> | /trigger`，即"发出开局内容→删掉占位→让 AI 开场"。
-      // 这里必须真正触发一次生成；实测只 await onTrigger 时需要确保它被调用到。
+      // `/sys` 自身会启动一次生成；若此时直接触发，宿主会因为"正在生成"而**静默跳过**这一次
+      // （实测：管道三段都到达了宿主，游戏却没有开场内容）。所以先等生成空闲。
+      if (host.onWaitForIdle) await host.onWaitForIdle();
       if (host.onTrigger) await host.onTrigger();
+      if (debugging) console.info("[card-bridge] /trigger 已执行");
       continue;
     }
     if (name === "cut") {
@@ -176,11 +200,16 @@ export async function executeSlashCommand(
       } else {
         messageId = rest;
       }
+      // 删掉正在生成的消息会连带丢弃那次生成的输出；先中止生成。
+      if (host.onCancelGeneration) await host.onCancelGeneration();
       if (messageId) await host.onDeleteMessage?.(messageId);
       continue;
     }
     // send / send-as-user / sys → 以用户身份发送
-    if (rest) host.onSend(rest);
+    if (rest) {
+      if (debugging) console.info("[card-bridge] /" + name + " 发送", rest.slice(0, 40));
+      host.onSend(rest);
+    }
   }
   if (rejected.length) return { id, ok: false, error: `本应用未支持这些指令：/${rejected.join(" /")}` };
   return { id, ok: true, value: "" };

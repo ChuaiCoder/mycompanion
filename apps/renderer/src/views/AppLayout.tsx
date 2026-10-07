@@ -159,6 +159,7 @@ export function AppLayout(props: AppLayoutProps) {
     setEditingDraft,
     handleSendMessage,
     handleRegenerate,
+    handleGenerate,
     handleContinue,
     handleImpersonate,
     beginEditMessage,
@@ -302,6 +303,7 @@ export function AppLayout(props: AppLayoutProps) {
         onGoToLibrary={() => setWorkspaceView("library")}
         onOpenSettings={() => setWorkspaceView("settings")}
         onRegenerate={() => void handleRegenerate()}
+        onGenerate={() => void handleGenerate()}
         onContinue={() => void handleContinue()}
         onImpersonate={() => void handleImpersonate()}
         onActivateBranch={conversationsState.handleActivateBranch}

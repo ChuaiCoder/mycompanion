@@ -4,7 +4,7 @@ import type { KeyboardEvent } from "react";
 import type { ChatMessage, ConversationDetail, WorldInfoDocument } from "@mycompanion/shared";
 
 import { characterInitial } from "../../components";
-import { fetchCardVariables, fetchCharacter, mutateCardVariables } from "../../api";
+import { fetchCardVariables, fetchCharacter, fetchConversation, mutateCardVariables } from "../../api";
 import { buildRuntimeModuleScript, planCardRuntime } from "../../frontend-card-runtime";
 import { listWorldInfoNames, loadWorldInfo, saveWorldInfo } from "../../world-info-api";
 import { frontendCardOf } from "../../frontend-card";
@@ -30,12 +30,15 @@ function statusLabel(message: ChatMessage): string | null {
 
 // Extensions own the rendered children. React only replaces them when the
 // underlying message changes, so typing and navigation preserve their UI.
-function MessageContent({ message, index, characterName, conversation, onSwiped, onSendMessage, onDeleteMessage, onRegenerate }: {
+function MessageContent({ message, index, characterName, conversation, onSwiped, onSendMessage, onDeleteMessage, onRegenerate, onGenerate, onStopGeneration }: {
   message: ChatMessage; index: number; characterName: string; conversation: ConversationDetail;
   onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
+  onStopGeneration?: (() => Promise<void> | void) | undefined;
   onSendMessage?: ((input: string) => void) | undefined;
   onDeleteMessage: (messageId: string) => void;
   onRegenerate: () => void;
+  /** 按当前上下文生成（卡片的 /trigger）。 */
+  onGenerate?: (() => void) | undefined;
 }) {
   const element = useRef<HTMLDivElement>(null);
   const extra = message.extensionData?.extra as Record<string, unknown> | undefined;
@@ -125,7 +128,25 @@ function MessageContent({ message, index, characterName, conversation, onSwiped,
             await saveWorldInfo(name, document as unknown as WorldInfoDocument);
           },
           onDeleteMessage: async (messageId) => { await onDeleteMessage(messageId); },
-          onTrigger: () => onRegenerate(),
+          onTrigger: () => {
+            // 酒馆 /trigger 的语义是按当前上下文生成，而不是重新生成最后一条。
+            // 卡的管道删掉占位后末条是 user 消息，此时重新生成无事可做（实测确认）。
+            if (onGenerate) onGenerate(); else onRegenerate();
+          },
+          // `/trigger` 前先等生成空闲：卡的管道是 `/sys | /cut | /trigger`，而 `/sys` 自己
+          // 会启动一次生成，宿主在"正在生成"时会静默跳过后续触发（实测过）。
+          // 直接读取后端状态，避免依赖此处拿不到的 React 生成标志。
+          onWaitForIdle: async () => {
+            const deadline = Date.now() + 180_000;
+            for (;;) {
+              const detail = await fetchConversation(conversation.id).catch(() => null);
+              const generating = (detail?.messages ?? []).some(item => item.status === "streaming");
+              if (!generating || Date.now() > deadline) return;
+              await new Promise(resolve => setTimeout(resolve, 500));
+            }
+          },
+          // `/cut` 删除的消息可能正在生成，先中止以免生成输出随消息消失。
+          onCancelGeneration: async () => { await onStopGeneration?.(); },
         }}
       />
     );
@@ -147,6 +168,8 @@ function MessageActions({
   onEdit: (message: ChatMessage) => void;
   onDelete: (messageId: string) => void;
   onRegenerate: () => void;
+  /** 按当前上下文生成（卡片的 /trigger）。 */
+  onGenerate?: (() => void) | undefined;
 }) {
   // 只有当前分支可达的消息可操作；重新生成仅对最后一条助手回复开放。
   const isActiveBranch = message.branchId === conversation.activeBranchId;
@@ -202,6 +225,8 @@ export function ChatMessageRow({
   onCancelEdit,
   onDeleteMessage,
   onRegenerate,
+  onGenerate,
+  onStopGeneration,
   onActivateBranch,
   onSwiped,
   onSendMessage,
@@ -219,6 +244,9 @@ export function ChatMessageRow({
   onCancelEdit: () => void;
   onDeleteMessage: (messageId: string) => void;
   onRegenerate: () => void;
+  /** 按当前上下文生成（卡片的 /trigger）。 */
+  onGenerate?: (() => void) | undefined;
+  onStopGeneration?: (() => Promise<void> | void) | undefined;
   onActivateBranch?: ((conversationId: string, branchId: string) => Promise<void>) | undefined;
   onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
   onSendMessage?: ((input: string) => void) | undefined;
@@ -254,7 +282,7 @@ export function ChatMessageRow({
           </div>
         </div>
       ) : (
-        <MessageContent message={message} index={index} characterName={name} conversation={conversation} onSwiped={onSwiped} onSendMessage={onSendMessage} onDeleteMessage={onDeleteMessage} onRegenerate={onRegenerate} />
+        <MessageContent message={message} index={index} characterName={name} conversation={conversation} onSwiped={onSwiped} onSendMessage={onSendMessage} onDeleteMessage={onDeleteMessage} onRegenerate={onRegenerate} onGenerate={onGenerate} onStopGeneration={onStopGeneration} />
       )}
       <MessageTokenUsage metadata={message.generationMetadata} />
       <GenerationDetails metadata={message.generationMetadata} />

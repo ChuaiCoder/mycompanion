@@ -165,7 +165,7 @@ it("renders an escaped fenced greeting as an isolated card instead of visible ma
     activeConversation: conversation, chatInput: "", isGenerating: false, generationControlsBusy: false, runtimeError: null,
     editingMessageId: null, editingDraft: "", activeCommands: [], lastLorebookReport: null, lastMemoryReport: null,
     lastPromptBudget: null, memoryPanelOpen: false, messageListRef: { current: null },
-    onChatInput: noop, onSendMessage: noop, onStopGeneration: noop, onRegenerate: noop, onEditMessage: noop,
+    onChatInput: noop, onSendMessage: noop, onStopGeneration: noop, onRegenerate: noop, onGenerate: noop, onEditMessage: noop,
     onEditingDraft: noop, onSaveEdit: noop, onCancelEdit: noop, onDeleteMessage: noop, onOpenSettings: noop,
     onGoToLibrary: noop, onMemoryPanelToggle: noop,
   };
