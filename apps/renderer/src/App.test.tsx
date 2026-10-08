@@ -86,6 +86,16 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("模型已连接")).toBeInTheDocument();
     });
+
+    // 输入框旁必须给出**同一个结论**。实测缺陷：它读的是另一个只在保存/测试时才置真的
+    // 标志，启动时从不检查已保存的连接，于是侧栏说"已连接"、输入框旁说"未连接模型"。
+    const composer = document.querySelector(".composer-connection");
+    expect(composer).not.toBeNull();
+    // 探测成功就不能说"未连接"。具体模型名由 provider 设置决定，这里不断言它，
+    // 否则这条测试会因为夹具没有 provider 而失败，掩盖真正要守的"两处一致"。
+    expect(composer!.textContent).not.toContain("未连接");
+    // 圆点也要跟着真实状态走，而不是永远灰着。
+    expect(composer!.querySelector(".status-dot--online")).not.toBeNull();
   });
 
   it("reports an unavailable API without hiding the onboarding content", async () => {
@@ -97,8 +107,8 @@ describe("App", () => {
 
     await waitFor(() => {
       // 模型探测也失败 → 状态点必须是"未连接"，不能像以前那样因为本地健康接口
-      // 成功而显示绿灯。
-      expect(screen.getByText("模型未连接")).toBeInTheDocument();
+      // 成功而显示绿灯。侧栏与输入框旁现在读同一个状态，因此两处都会出现这句。
+      expect(screen.getAllByText("模型未连接").length).toBeGreaterThan(0);
     });
     expect(screen.getByText("只需要三步")).toBeInTheDocument();
   });

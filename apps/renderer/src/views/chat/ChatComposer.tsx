@@ -16,6 +16,7 @@ export function ChatComposer({
   editingMessageId,
   activeCommands,
   connectionLabel,
+  connectionState,
   onChatInput,
   onSendMessage,
   onStopGeneration,
@@ -31,6 +32,8 @@ export function ChatComposer({
   editingMessageId: string | null;
   activeCommands: Array<{ name: string }>;
   connectionLabel: string;
+  /** 连接探测的真实状态；决定圆点颜色，与侧栏保持一致。 */
+  connectionState?: "checking" | "online" | "offline" | undefined;
   onChatInput: (value: string) => void;
   onSendMessage: (input: string) => void;
   onStopGeneration: () => void;
@@ -72,7 +75,7 @@ export function ChatComposer({
         </div>
         <div className="chat-composer__side chat-composer__side--right">
           <button className="composer-connection" onClick={onOpenSettings} title="模型设置" type="button">
-            <span aria-hidden="true" className="status-dot" />
+            <span aria-hidden="true" className={`status-dot${connectionState ? ` status-dot--${connectionState}` : ""}`} />
             <span>{connectionLabel}</span>
           </button>
           {generationControlsBusy ? (

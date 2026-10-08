@@ -11,6 +11,14 @@ export interface ModelConnection {
   state: ModelConnectionState;
   /** 连接成功时后端读到的模型数（服务没返回列表时为 0）。 */
   modelCount: number;
+  /**
+   * 探测到的模型名。
+   *
+   * 优先用 `testedModel`（后端实际用于这次探测的那个模型），取不到再退回列表里的第一个。
+   * 这样界面不必等 provider 设置加载完才能显示模型名——实测输入框旁就因为 provider
+   * 尚未读取而回落到"默认模型"，而探测其实早就知道是哪个模型了。
+   */
+  model: string | null;
   /** 失败原因（用于界面给出可操作提示），成功时为 null。 */
   reason: string | null;
   /** 失败时的问题定位：是地址、密钥还是模型名的问题。 */
@@ -30,6 +38,7 @@ export interface ModelConnection {
 export function useModelConnection(): ModelConnection {
   const [state, setState] = useState<ModelConnectionState>("checking");
   const [modelCount, setModelCount] = useState(0);
+  const [model, setModel] = useState<string | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [issueField, setIssueField] = useState<ModelConnection["issueField"]>(undefined);
   const reads = useRef(0);
@@ -47,6 +56,7 @@ export function useModelConnection(): ModelConnection {
         const result = await testProvider(undefined, controller.signal);
         if (disposed || revision !== reads.current || !isCurrentConnection()) return;
         setModelCount(result.models.length);
+        setModel(result.testedModel ?? result.models[0] ?? null);
         if (result.ok) { setState("online"); setReason(null); setIssueField(undefined); }
         else { setState("offline"); setReason(result.message); setIssueField(result.issue?.field); }
       } catch (error) {
@@ -83,5 +93,5 @@ export function useModelConnection(): ModelConnection {
     };
   }, []);
 
-  return { state, modelCount, reason, issueField };
+  return { state, modelCount, model, reason, issueField };
 }

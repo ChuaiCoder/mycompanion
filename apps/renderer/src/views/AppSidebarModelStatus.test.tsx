@@ -35,7 +35,7 @@ beforeEach(async () => { await i18n.changeLanguage("zh"); });
 afterEach(async () => { cleanup(); await i18n.changeLanguage("zh"); });
 
 it("says the model is connected only when the model actually answered", () => {
-  render(<AppSidebar {...props({ state: "online", modelCount: 3, reason: null, issueField: undefined })} />);
+  render(<AppSidebar {...props({ state: "online", modelCount: 3, model: "fixture-model", reason: null, issueField: undefined })} />);
   const status = document.querySelector(".service-state")!;
   expect(status.textContent).toContain("模型已连接");
   expect(status.className).toContain("service-state--online");
@@ -44,14 +44,14 @@ it("says the model is connected only when the model actually answered", () => {
 });
 
 it("does not claim the model is connected while it is still being checked", () => {
-  render(<AppSidebar {...props({ state: "checking", modelCount: 0, reason: null, issueField: undefined })} />);
+  render(<AppSidebar {...props({ state: "checking", modelCount: 0, model: "fixture-model", reason: null, issueField: undefined })} />);
   const status = document.querySelector(".service-state")!;
   expect(status.textContent).toContain("检查模型连接中");
   expect(status.textContent).not.toContain("模型已连接");
 });
 
 it("reports a disconnected model instead of a green light", () => {
-  render(<AppSidebar {...props({ state: "offline", modelCount: 0, reason: "连接被拒绝，请检查服务地址。", issueField: "baseUrl" })} />);
+  render(<AppSidebar {...props({ state: "offline", modelCount: 0, model: null, reason: "连接被拒绝，请检查服务地址。", issueField: "baseUrl" })} />);
   const status = document.querySelector(".service-state")!;
   expect(status.textContent).toContain("模型未连接");
   expect(status.className).toContain("service-state--offline");
@@ -61,7 +61,7 @@ it("reports a disconnected model instead of a green light", () => {
 
 it("hides the model count when the provider returned no list", () => {
   // 有些服务（或 Ollama 的某些版本）不返回模型列表，这不是错误，但也不该显示 0 个模型。
-  render(<AppSidebar {...props({ state: "online", modelCount: 0, reason: null, issueField: undefined })} />);
+  render(<AppSidebar {...props({ state: "online", modelCount: 0, model: "fixture-model", reason: null, issueField: undefined })} />);
   const status = document.querySelector(".service-state")!;
   expect(status.textContent).toContain("模型已连接");
   expect(status.querySelector("small")).toBeNull();

@@ -26,6 +26,8 @@ export interface ChatViewProps {
   activeConversation: ConversationDetail | null;
   characters?: CharacterSummary[];
   connectionLabel?: string;
+  /** 连接探测的真实状态，透传给输入框旁的圆点。 */
+  connectionState?: "checking" | "online" | "offline" | undefined;
   chatInput: string;
   isGenerating: boolean;
   runtimeError: string | null;
@@ -66,7 +68,8 @@ export function ChatView({
   generationControlsBusy,
   activeConversation,
   characters = [],
-  connectionLabel = "未连接模型",
+  connectionLabel = "模型未连接",
+  connectionState,
   chatInput,
   isGenerating,
   runtimeError,
@@ -177,6 +180,7 @@ export function ChatView({
           activeConversation={activeConversation}
           chatInput={chatInput}
           connectionLabel={connectionLabel}
+        connectionState={connectionState}
           editingMessageId={editingMessageId}
           generationControlsBusy={generationControlsBusy}
           isGenerating={isGenerating}

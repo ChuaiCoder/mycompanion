@@ -36,6 +36,23 @@ import { WorldInfoPanel } from "./WorldInfoPanel";
 import { CharacterPanel } from "./CharacterPanel";
 import { AppSidebar } from "./AppSidebar";
 
+/**
+ * 输入框旁显示的连接文案。
+ *
+ * 以真实的探测状态为准，并与侧栏的 service.* 文案对齐——实测两处曾经互相矛盾：
+ * 侧栏显示"模型已连接 2"，输入框旁却一直显示"未连接模型"，因为后者读的是另一个只在
+ * 保存/测试时才置真的标志（isConnectionReady），启动时不检查已保存的连接。
+ * 探测进行中不谎报"未连接"，否则每次启动都会闪一下错误状态。
+ *
+ * 模型名优先取探测结果：provider 设置是异步加载的，等它会让这里先显示"默认模型"，
+ * 而探测其实已经知道被测的是哪个模型。
+ */
+function modelConnectionLabel(connection: ModelConnection, model: string | undefined): string {
+  if (connection.state === "checking") return "检查模型连接中";
+  if (connection.state === "offline") return "模型未连接";
+  return connection.model || model || "默认模型";
+}
+
 type SourceFocus = { conversationId: string; messageId: string; revision: number } | null;
 
 // 布局装配层：App 负责钩子编排与数据流，本组件只做视图组合与交互回调。
@@ -270,7 +287,11 @@ export function AppLayout(props: AppLayoutProps) {
         activeConversation={activeConversation}
         chatInput={chatInput}
         characters={characters}
-        connectionLabel={isConnectionReady ? (provider?.model || "默认模型") : "未连接模型"}
+        // 用**真实的探测结果**，而不是 isConnectionReady。后者初始为 false，且只在
+        // 保存/测试设置时才置真——启动时从不检查已保存的连接。实测后果：侧栏显示
+        // "模型已连接 2"，而输入框旁一直显示"未连接模型"，两处互相矛盾。
+        connectionLabel={modelConnectionLabel(modelConnection, provider?.model)}
+        connectionState={modelConnection.state}
         onChatWithCharacter={(id) => void handleChatWithCharacter(id)}
         onOpenImport={openFilePicker}
         editingDraft={editingDraft}
