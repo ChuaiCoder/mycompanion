@@ -21,13 +21,13 @@ for (const path of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'SECURITY.
 for (const path of ['scripts', 'docs', '.github']) await include(path);
 for (const workspace of ['apps/desktop', 'apps/local-service', 'apps/renderer', 'packages/character-card', 'packages/shared']) {
     for (const entry of await readdir(join(project, workspace), { withFileTypes: true })) {
-        if (entry.isFile() && (/^(?:package(?:-lock)?\.json|tsconfig.*\.json|vite.*|vitest.*|index\.html|README\.md|LICENSE|(?:(?:prompt-manager|character-assets|world-info|world-info-vector|provider-converters|byaf|vector|image-headers)-)?upstream\.json)$/.test(entry.name))) files.push(workspace + '/' + entry.name);
+        if (entry.isFile() && (/^(?:package(?:-lock)?\.json|tsconfig.*\.json|vite.*|vitest.*|chunking(?:\.test)?\.ts|index\.html|README\.md|LICENSE|(?:(?:prompt-manager|character-assets|world-info|world-info-vector|provider-converters|byaf|vector|image-headers)-)?upstream\.json)$/.test(entry.name))) files.push(workspace + '/' + entry.name);
         if (entry.isDirectory() && ['src', 'scripts', 'public'].includes(entry.name)) await include(workspace + '/' + entry.name);
     }
 }
 // These small, project-authored regression inputs are required by included tests.
 // This is an exact allowlist, never an inclusion of user cards or installed extensions.
-const ownFixtures = ['packages/character-card/fixtures/ccv2-full.json'];
+const ownFixtures = ['packages/character-card/fixtures/ccv2-full.json', 'examples/cards/fenced-html-greeting.card.json'];
 files.push(...ownFixtures);
 // Fixed-upstream execution outputs are public regression references, not user
 // content. Keep their provenance distinct from our authored fixture inputs.
