@@ -6,7 +6,7 @@
 
 继续使用已固定的 `gpt-tokenizer@4.0.0`（MIT）的 BPE 表；比较了 OpenAI 官方 cookbook 的消息计数、固定 SillyTavern 1.19.0 的计数接口，以及 Ollama、Claude、Gemini 的用量格式。官方 cookbook 也明确指出消息封装的计数是估算，不能保证模型更新后仍准确。gpt-tokenizer 的 chat/function 估算不能替代这些提供商的服务端计量，因此保持现有酒馆兼容计数约定，公开近似边界并记录响应中的用量。
 
-图片尺寸先比较了酒馆异步浏览器解码器和 `image-size@2.0.2`（MIT）。后续独立 OSV 审计实际发现该包的两条 HIGH 无限循环漏洞，已移除通用 npm 包，改为复用 advisory 指向的固定修复提交中的四个 PNG/JPEG/WebP/GIF handler 和工具/类型，函数体不改。宿主按 MIME 明确选择 handler 并校验 header，最多读64 KiB，不执行像素解码、文件读取或远程下载。完整许可、来源哈希与失败/修复证据见 [依赖安全记录](dependency-security.md)；打包门禁核对版权与编译模块、拒绝通用包。远程图片或异常头部标明未知，不能伪称已测尺寸。不推断新的维护日期或零未知风险。
+图片尺寸先比较了酒馆异步浏览器解码器和 `image-size@2.0.2`（MIT）。后续独立 OSV 审计实际发现该包的两条 HIGH 无限循环漏洞，已移除通用 npm 包，改为复用 advisory 指向的固定修复提交中的四个 PNG/JPEG/WebP/GIF handler 和工具/类型，函数体不改。宿主按 MIME 明确选择 handler 并校验 header，最多读64 KiB，不执行像素解码、文件读取或远程下载。完整许可、来源哈希与失败/修复证据记录于项目内部依赖安全资料；打包门禁核对版权与编译模块、拒绝通用包。远程图片或异常头部标明未知，不能伪称已测尺寸。不推断新的维护日期或零未知风险。
 
 2026-10-03 再读当前 OpenAI 官方 Markdown sizing/patch/tile 表，并交叉比较 LiteLLM 的 `litellm_core_utils/token_counter.py`。LiteLLM 核心目录为 MIT、enterprise 另有许可；该 helper 将 auto 作为低清默认值，并在高精度时可请求远程图片。完整 Python/httpx/tiktoken 栈和这些默认行为不直接适配本项目，因此只借鉴区分规则、默认未知尺寸与上界的设计，不复制其代码。只取得当时 main 源码与许可，未取得固定 commit 或新的维护日期。项目自行实现官方公开公式，未引入 LiteLLM 依赖；header 改用上述固定 MIT 摘录。
 

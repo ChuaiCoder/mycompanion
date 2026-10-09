@@ -17,7 +17,7 @@
 //   * `scripts/**` imports of `apps/local-service/dist/<name>.js` are not touched;
 //     they must be repointed at the new subdirectory by hand.
 //
-// Byte-pinned files (docs/byte-pinned-files.md) are never moved, and neither are
+// Byte-pinned files (internal/docs/byte-pinned-files.md) are never moved, and neither are
 // `bounded-zip.ts` / `character-byaf-utils.ts`, which the pinned
 // `character-byaf-upstream.ts` imports by relative path.
 //

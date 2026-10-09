@@ -6,7 +6,7 @@ P02 源码阶段完成于 2026-10-03。此记录不代表最终 EXE 已更新，
 
 比较了固定 SillyTavern 1.19.0 的 connection-manager 与 OpenAI/Ollama vectors、Vercel AI SDK、LibreChat 和官方 ollama-js。酒馆固定提交为 `7e8663cd9c184a550b37238218bdd32c6efc68e9`，AGPL-3.0-only；AI SDK 为 Apache-2.0，LibreChat/ollama-js 为 MIT。完整读取的研究材料与适配成本见 `.cache/reports/p02-provider-routing-research-20261003.md`。
 
-采用连接 ID 与显示名称分离、每项任务独立选择、每次调用固定快照的设计。酒馆账户/命令驱动 UI、LibreChat Mongo/auth 和 AI SDK 完整依赖栈不适合直接搬入当前 SQLite 桌面程序；没有为保存配置安装新 SDK。Embedding 适配与固定向量方法的实际来源、许可证和哈希见 [语义召回记录](memory-semantic-research.md)。GitHub metadata 受限，未声称重新确认上游维护日期；npm 发布日期仅为已取得的包元数据证据。
+采用连接 ID 与显示名称分离、每项任务独立选择、每次调用固定快照的设计。酒馆账户/命令驱动 UI、LibreChat Mongo/auth 和 AI SDK 完整依赖栈不适合直接搬入当前 SQLite 桌面程序；没有为保存配置安装新 SDK。Embedding 适配与固定向量方法的实际来源、许可证和哈希记录于项目内部研究资料。GitHub metadata 受限，未声称重新确认上游维护日期；npm 发布日期仅为已取得的包元数据证据。
 
 ## 实际行为
 

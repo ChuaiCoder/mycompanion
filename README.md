@@ -76,7 +76,7 @@ npm run package:win
 npm run promote:release -- --candidate <candidate.json> --acceptance <acceptance.json>
 ```
 
-流程与中断恢复见 [发布文档](docs/release-workflow.md)。`release` 保持一个正式 EXE，`output` 为空；开发产物尚未签名。
+`release` 保持一个正式 EXE，`output` 为空；开发产物尚未签名。发布门槛与晋升流程属于内部资料，不随公开仓库分发。
 
 ---
 
@@ -94,12 +94,14 @@ npm run promote:release -- --candidate <candidate.json> --acceptance <acceptance
 
 ## 📚 文档
 
-- [当前支持矩阵](docs/current-support.md) —— 兼容范围与能力边界
-- [37 项清单](docs/project-todo.md) 与 [实施证据](docs/history/checklist-implementation.md) —— 推进状态
-- [spec.md](spec.md) 与 [test.md](test.md) —— 产品要求与发布门槛
-- [发布流程](docs/release-workflow.md) —— 候选构建与晋升
-- [来源追踪](docs/source-tracking.md) —— 第三方代码出处
-- [README 历史](docs/history/independent-readme-history.md) —— 历史记录
+`docs/` 收录面向贡献者的技术设计文档：
+
+- 桌面端：[关闭验收边界](docs/desktop-editor-boundaries.md)、[诊断与无障碍](docs/desktop-diagnostics-accessibility.md)、[前台生成](docs/desktop-foreground-generations.md)、[回复窗口](docs/desktop-reply-windows.md)
+- 角色卡：[归档界面](docs/character-archive-ui.md)、[宏阶段](docs/character-macro-phases.md)
+- 生成与记忆：[生成参数](docs/generation-parameters.md)、[token 核算](docs/token-accounting.md)
+- 世界书：[编辑器](docs/world-info-editor.md)、[运行时](docs/world-info-runtime.md)
+- 供应商：[协议](docs/provider-protocols.md)、[任务路由](docs/provider-task-routing.md)
+- 界面：[本地化](docs/ui-localization.md)
 
 ---
 

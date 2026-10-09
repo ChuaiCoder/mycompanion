@@ -15,7 +15,9 @@ export const project = resolve(dirname(fileURLToPath(import.meta.url)), '..');
  * being required to produce passing evidence it can never have.
  */
 export async function readChecklist(root = project) {
-  const markdown = await readFile(join(root, 'docs/project-todo.md'), 'utf8');
+  // 清单位于 internal/（本地内部资料，不入库）；CI 与公开克隆没有该文件，
+  // 晋升门禁只在含 internal/ 的机器上可用。
+  const markdown = await readFile(join(root, 'internal/docs/project-todo.md'), 'utf8');
   const checklist = [...markdown.matchAll(/^.*\*\*([A-Z]\d{2})\s[^\n]*$/gm)]
     .map(match => ({ id: match[1], void: match[0].includes('本项已作废') }));
   assert.equal(new Set(checklist.map(entry => entry.id)).size, 37, 'Release checklist IDs must stay complete');

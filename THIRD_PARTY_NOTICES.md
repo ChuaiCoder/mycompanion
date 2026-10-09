@@ -186,18 +186,18 @@ candidates have been removed, including generated `vendor/sillytavern`, the
 migration converter, preparation scripts and the separate Node 24.18.0 runtime.
 Historical integrations used Node (MIT and bundled notices), isomorphic-git
 1.37.2 (MIT) and js-sha256 0.11.1 (MIT); those integrations are no longer shipped
-or built. Historical attribution and reports remain in `docs/source-tracking.md`.
+or built. Historical attribution and reports remain in the project's internal source-tracking records.
 Separately obtained upstream research checkouts retain their original licenses
 and are excluded from application and source packaging. Electron still includes
 its own Node runtime.
 
 RisuAI (GPL-3.0), Agnai (AGPL-3.0) and TauriTavern (AGPL-3.0) were re-reviewed
 for the independent architecture. No source from those projects was copied.
-Pinned revisions and the evaluation are in `docs/source-tracking.md` and
-`docs/open-source-research.md`.
+Pinned revisions and the evaluation are recorded in the project's internal
+source-tracking and research records.
 
 DeepWrite remains prior art only; no DeepWrite code, templates, styles, media
-or branding are included. See `docs/source-tracking.md` for the revisions.
+or branding are included. The inspected revisions are recorded internally.
 
 JS-Slash-Runner (酒馆助手) was also inspected to identify extension API gaps.
 It is licensed under PolyForm Noncommercial 1.0.0 and is not bundled or

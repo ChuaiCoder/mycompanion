@@ -6,7 +6,7 @@
 
 预览显示后端实际识别的随卡文件数，明确确认之后才写入。SQLite 保存包内引用及未引用辅助文件，角色库侧栏和详情从真实头像接口显示 JPEG/PNG，图片读取失败则保留姓名首字。外部 URI 保留原文，导入时不下载；卡片内的脚本文件作为资产保存，不作为已安装扩展执行。
 
-导出操作提供 JSON、PNG、CHARX。JSON 只保留角色设定；PNG 使用 V3 资产文本块，路径受文本块长度与 Latin-1 编码限制；完整资产迁移优先使用 CHARX。完整备份保留二进制资产。后端格式研究、固定 SillyTavern/RisuAI/V3 specification 的许可证与适配判断见 [character-format-research.md](character-format-research.md)，本界面使用现有 React/API 流程，没有引入另一套安装或迁移入口。
+导出操作提供 JSON、PNG、CHARX。JSON 只保留角色设定；PNG 使用 V3 资产文本块，路径受文本块长度与 Latin-1 编码限制；完整资产迁移优先使用 CHARX。完整备份保留二进制资产。后端格式研究、固定 SillyTavern/RisuAI/V3 specification 的许可证与适配判断记录于项目内部研究资料，本界面使用现有 React/API 流程，没有引入另一套安装或迁移入口。
 
 ## 已通过的实际桌面验证
 

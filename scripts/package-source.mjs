@@ -17,7 +17,7 @@ async function include(path) {
         else if (entry.isFile()) files.push(child);
     }
 }
-for (const path of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'SECURITY.md', 'CONTRIBUTING.md', '.gitignore', '.gitattributes', '.editorconfig', 'spec.md', 'test.md', 'package.json', 'package-lock.json', 'tsconfig.base.json', 'examples/plugins/scene-director.mycompanion-plugin.json']) files.push(path);
+for (const path of ['LICENSE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'SECURITY.md', 'CONTRIBUTING.md', '.gitignore', '.gitattributes', '.editorconfig', 'package.json', 'package-lock.json', 'tsconfig.base.json', 'examples/plugins/scene-director.mycompanion-plugin.json']) files.push(path);
 for (const path of ['scripts', 'docs', '.github']) await include(path);
 for (const workspace of ['apps/desktop', 'apps/local-service', 'apps/renderer', 'packages/character-card', 'packages/shared']) {
     for (const entry of await readdir(join(project, workspace), { withFileTypes: true })) {
