@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, mkdir, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, mkdir, writeFile, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -12,7 +12,9 @@ const destination = join(project, '.cache/packaging/independent-source');
 const archive = join(destination, 'MyCompanion-source.tar.gz');
 const manifest = JSON.parse(await readFile(join(destination, 'source-manifest.json'), 'utf8'));
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
-const workspace = await mkdtemp(join(tmpdir(), 'mycompanion-source-check-'));
+// Canonicalize the temp root: Windows runners hand us an 8.3 short name
+// (C:\Users\RUNNER~1\...), and vitest cannot resolve setupFiles under it.
+const workspace = await mkdtemp(join(await realpath(tmpdir()), 'mycompanion-source-check-'));
 const report = { passed: false, sourceSha256: sha256(await readFile(archive)), workspace,
   checkedAt: new Date().toISOString(), isolatedInstall: !process.argv.includes('--skip-install'), offline: process.argv.includes('--offline'), checks: [] };
 const run = (command, args, cwd = workspace) => new Promise((resolveDone, reject) => {
