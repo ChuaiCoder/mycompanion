@@ -1,4 +1,5 @@
 import type { FastifyInstance } from "fastify";
+import { sendError } from "../http-errors.js";
 import type { RuntimeRepository } from "../persistence/runtime-repository.js";
 
 // Part of the existing extension-settings backup domain, but written through
@@ -19,7 +20,7 @@ export function registerPresetRoutes(app: FastifyInstance, runtime: RuntimeRepos
     schema: { body: { ...body, required: [...body.required, "preset"], properties: { ...properties, preset: { type: "object", additionalProperties: true } } } },
   }, async (request, reply) => {
     const name = request.body.name.trim();
-    if (!name) return reply.status(400).send({ error: "Preset name is empty" });
+    if (!name) return sendError(reply, 400, "PRESET_NAME_EMPTY", "Preset name is empty");
     const entries = read(), entry = { name, preset: request.body.preset }, index = entries.findIndex(item => item.name === name);
     if (index < 0) entries.push(entry); else entries[index] = entry;
     write(entries);
@@ -27,7 +28,7 @@ export function registerPresetRoutes(app: FastifyInstance, runtime: RuntimeRepos
   });
   app.post<{ Body: { apiId: string; name: string } }>("/api/presets/delete", { schema: { body } }, async (request, reply) => {
     const entries = read(), index = entries.findIndex(item => item.name === request.body.name);
-    if (index < 0) return reply.status(404).send({ error: "Preset not found" });
+    if (index < 0) return sendError(reply, 404, "PRESET_NOT_FOUND", "Preset not found");
     entries.splice(index, 1); write(entries); return { ok: true };
   });
   app.post<{ Body: { apiId: string; name: string; newName: string; preset: Record<string, unknown> } }>("/api/presets/rename", {
@@ -35,9 +36,9 @@ export function registerPresetRoutes(app: FastifyInstance, runtime: RuntimeRepos
     schema: { body: { ...body, required: [...body.required, "newName", "preset"], properties: { ...properties, newName: properties.name, preset: { type: "object", additionalProperties: true } } } },
   }, async (request, reply) => {
     const name = request.body.newName.trim(), entries = read(), index = entries.findIndex(item => item.name === request.body.name);
-    if (!name) return reply.status(400).send({ error: "Preset name is empty" });
-    if (index < 0) return reply.status(404).send({ error: "Preset not found" });
-    if (entries.some(item => item.name.localeCompare(name, undefined, { sensitivity: "base" }) === 0)) return reply.status(409).send({ error: "Preset name already exists" });
+    if (!name) return sendError(reply, 400, "PRESET_NAME_EMPTY", "Preset name is empty");
+    if (index < 0) return sendError(reply, 404, "PRESET_NOT_FOUND", "Preset not found");
+    if (entries.some(item => item.name.localeCompare(name, undefined, { sensitivity: "base" }) === 0)) return sendError(reply, 409, "PRESET_NAME_EXISTS", "Preset name already exists");
     entries[index] = { name, preset: request.body.preset }; write(entries); return { name };
   });
   // No upstream preset pack is bundled. This is Tavern's non-default response.

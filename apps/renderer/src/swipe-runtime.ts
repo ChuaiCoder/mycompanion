@@ -1,4 +1,5 @@
 import { chatMessageSchema, type ChatMessage } from "@mycompanion/shared";
+import { readApiPayload } from "./api";
 
 export interface SwipeTarget { conversationId: string; messageId: string }
 
@@ -12,10 +13,5 @@ export async function selectMessageSwipe(target: SwipeTarget, selected: number):
       body: JSON.stringify({ swipeId: selected }),
     },
   );
-  const payload = await response.json() as unknown;
-  if (!response.ok) {
-    const message = (payload as { error?: { message?: unknown } } | null)?.error?.message;
-    throw new Error(typeof message === "string" ? message : "候选回复切换失败。");
-  }
-  return chatMessageSchema.parse(payload);
+  return chatMessageSchema.parse(await readApiPayload(response));
 }

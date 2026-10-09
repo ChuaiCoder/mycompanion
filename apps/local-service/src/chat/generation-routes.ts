@@ -160,7 +160,7 @@ export function registerGenerationRoutes(app: FastifyInstance, runtime: RuntimeR
       const regexContext = character ? createRegexContext(character, conversation.id) : undefined;
       const content = original && character ? await applyRegexStage(character, original.role === "user" ? "input" : "output", parsed.data.content,
         original.role, undefined, true, pipeline.memoryShutdown.signal, regexContext) : parsed.data.content;
-      if (runtime.getConversation(conversation.id)?.activeBranchId !== conversation.activeBranchId) {
+      if (runtime.getActiveBranchId(conversation.id) !== conversation.activeBranchId) {
         return sendError(reply, 409, "BRANCH_CHANGED", "编辑期间故事分支已改变，请重新打开消息。");
       }
       const edited = runtime.withTransaction(() => {

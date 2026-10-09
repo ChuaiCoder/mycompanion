@@ -1,6 +1,6 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
-import { bindBrowserPort, buildApp } from "@mycompanion/local-service";
+import { bindBrowserPort, buildApp, createSessionToken } from "@mycompanion/local-service";
 
 interface SecretStorage {
   isEncryptionAvailable(): boolean;
@@ -17,8 +17,9 @@ export async function startIndependentService(options: {
   await mkdir(options.dataRoot, { recursive: true });
   if (!options.storage.isEncryptionAvailable()) throw new Error("系统密钥加密不可用，无法打开本地服务。");
   const databasePath = join(options.dataRoot, "mycompanion.sqlite");
+  const sessionToken = createSessionToken();
   const service = buildApp({
-    databasePath, rendererRoot: options.rendererRoot,
+    databasePath, rendererRoot: options.rendererRoot, sessionToken,
     secretCodec: {
       seal: value => options.storage.encryptString(value).toString("base64"),
       unseal: value => options.storage.decryptString(Buffer.from(value, "base64")),
@@ -26,7 +27,7 @@ export async function startIndependentService(options: {
   });
   try {
     const origin = await bindBrowserPort(port => service.listen({ host: "127.0.0.1", port }));
-    return { origin, databasePath, stop: () => service.close() };
+    return { origin, databasePath, sessionToken, stop: () => service.close() };
   } catch (error) {
     await service.close();
     throw error;

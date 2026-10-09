@@ -27,6 +27,7 @@ import type { WorkspaceView } from "../hooks/useExtensionResume";
 import type { ModelConnection } from "../hooks/useModelConnection";
 import type { usePlugins } from "../hooks/usePlugins";
 import type { useProviderSettings } from "../hooks/useProviderSettings";
+import { useAdvancedMode } from "../hooks/useAdvancedMode";
 import { LibraryView } from "./LibraryView";
 import { ChatView } from "./ChatView";
 import { SettingsView } from "./SettingsView";
@@ -92,6 +93,7 @@ export interface AppLayoutProps {
 }
 
 export function AppLayout(props: AppLayoutProps) {
+  const { advancedMode } = useAdvancedMode();
   const {
     serviceState,
     modelConnection,
@@ -282,6 +284,7 @@ export function AppLayout(props: AppLayoutProps) {
         characters={characters}
       /> : null}
       <div className="workspace-view" hidden={workspaceView !== "chat"}><ChatView
+        advancedMode={advancedMode}
         generationControlsBusy={generationControlsBusy || conversationsState.branchBusy}
         activeCommands={activeCommands}
         activeConversation={activeConversation}

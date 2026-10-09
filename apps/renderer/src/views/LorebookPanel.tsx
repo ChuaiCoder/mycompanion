@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import "../i18n";
 
 import type {
   CharacterLorebookEntry,
@@ -33,10 +35,11 @@ export interface LorebookPanelProps {
  * 逐条启用/停用、全部启用/停用，以及不修改真实聊天的匹配测试器。
  */
 export function LorebookPanel({ characterId, characterName, runtimeError, primaryWorld }: LorebookPanelProps) {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<CharacterLorebookEntry[] | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
-  const [testInput, setTestInput] = useState("我们现在在哪里？");
+  const [testInput, setTestInput] = useState(() => t("我们现在在哪里？"));
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<LorebookReport | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -100,26 +103,26 @@ export function LorebookPanel({ characterId, characterName, runtimeError, primar
     }
   };
 
-  if (namedBinding) return <section className="document-section lorebook-panel" aria-label="角色世界书绑定">
-    <h2>世界书</h2><p>当前角色使用 <strong>{namedBinding}</strong>。在世界书编辑器中修改条目和启用状态，原始随卡内容仍保留在角色卡中。</p>
-    <button type="button" className="button button--primary button--small" onClick={() => window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name: namedBinding } }))}>编辑绑定的世界书</button>
+  if (namedBinding) return <section className="document-section lorebook-panel" aria-label={t("角色世界书绑定")}>
+    <h2>{t("世界书")}</h2><p>{t("当前角色使用 ")}<strong>{namedBinding}</strong>{t("。在世界书编辑器中修改条目和启用状态，原始随卡内容仍保留在角色卡中。")}</p>
+    <button type="button" className="button button--primary button--small" onClick={() => window.dispatchEvent(new CustomEvent("mycompanion:world-editor", { detail: { name: namedBinding } }))}>{t("编辑绑定的世界书")}</button>
   </section>;
   return (
     <section className="document-section lorebook-panel" aria-labelledby="lorebook-panel-title">
-      <h2 id="lorebook-panel-title">世界书</h2>
+      <h2 id="lorebook-panel-title">{t("世界书")}</h2>
       {entries === null ? (
-        <p>{panelError ?? "正在读取条目…"}</p>
+        <p>{panelError ? t(panelError) : t("正在读取条目…")}</p>
       ) : entries.length === 0 ? (
-        <p className="panel-empty">这个角色卡没有可识别的世界书条目。</p>
+        <p className="panel-empty">{t("这个角色卡没有可识别的世界书条目。")}</p>
       ) : (
         <>
           <p>
-            这里显示原始随卡条目的启用状态。编辑内容和高级匹配时，点击“编辑角色的世界书”保存并绑定到独立世界书。
-            对话实际使用的条目与预算可以在提示词预览中检查。
+            {t("这里显示原始随卡条目的启用状态。编辑内容和高级匹配时，点击“编辑角色的世界书”保存并绑定到独立世界书。")}{" "}
+            {t("对话实际使用的条目与预算可以在提示词预览中检查。")}
           </p>
           <div className="lorebook-panel__actions">
-            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(true)} type="button">全部启用</button>
-            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(false)} type="button">全部停用</button>
+            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(true)} type="button">{t("全部启用")}</button>
+            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(false)} type="button">{t("全部停用")}</button>
           </div>
           <ul className="lorebook-entry-list">
             {entries.map((entry) => (
@@ -133,53 +136,53 @@ export function LorebookPanel({ characterId, characterName, runtimeError, primar
                     onClick={() => void handleToggle(entry)}
                     type="button"
                   >
-                    {entry.enabled ? "停用" : "启用"}
+                    {entry.enabled ? t("停用") : t("启用")}
                   </button>
                 </div>
                 <dl>
-                  <div><dt>触发方式</dt><dd>{entry.constant ? "常驻（每轮注入）" : (entry.keys.length > 0 ? `关键词：${entry.keys.join("、")}${entry.secondaryKeys.length > 0 ? `；可选：${entry.secondaryKeys.join("、")}` : ""}` : "无关键词，不会触发")}</dd></div>
-                  <div><dt>大小写</dt><dd>{entry.caseSensitive ? "区分" : "不区分"}</dd></div>
-                  <div><dt>插入顺序</dt><dd>{entry.insertionOrder}</dd></div>
-                  <div><dt>卡内状态</dt><dd>{entry.sourceEnabled ? "启用" : "停用"}</dd></div>
+                  <div><dt>{t("触发方式")}</dt><dd>{entry.constant ? t("常驻（每轮注入）") : (entry.keys.length > 0 ? `${t("关键词：{{keys}}", { keys: entry.keys.join(t("、")) })}${entry.secondaryKeys.length > 0 ? t("；可选：{{keys}}", { keys: entry.secondaryKeys.join(t("、")) }) : ""}` : t("无关键词，不会触发"))}</dd></div>
+                  <div><dt>{t("大小写")}</dt><dd>{entry.caseSensitive ? t("区分") : t("不区分")}</dd></div>
+                  <div><dt>{t("插入顺序")}</dt><dd>{entry.insertionOrder}</dd></div>
+                  <div><dt>{t("卡内状态")}</dt><dd>{entry.sourceEnabled ? t("启用") : t("停用")}</dd></div>
                 </dl>
                 <code className="lorebook-entry__content">{entry.content}</code>
               </li>
             ))}
           </ul>
-          {panelError ? <p role="alert" className="lorebook-panel__error">{panelError}</p> : null}
-          {runtimeError ? <p role="alert" className="lorebook-panel__error">{runtimeError}</p> : null}
+          {panelError ? <p role="alert" className="lorebook-panel__error">{t(panelError)}</p> : null}
+          {runtimeError ? <p role="alert" className="lorebook-panel__error">{t(runtimeError)}</p> : null}
         </>
       )}
       {entries !== null && entries.length > 0 ? (
         <div className="lorebook-tester">
-          <h3>匹配测试器</h3>
-          <p>对示例文本跑一次关键词匹配，不会修改真实聊天。</p>
+          <h3>{t("匹配测试器")}</h3>
+          <p>{t("对示例文本跑一次关键词匹配，不会修改真实聊天。")}</p>
           <textarea
-            aria-label="测试文本"
+            aria-label={t("测试文本")}
             onChange={(event) => setTestInput(event.target.value)}
             value={testInput}
             rows={3}
           />
           <button className="button button--primary button--small" disabled={isTesting} onClick={() => void handleTest()} type="button">
             <Icon name="sparkles" size={14} />
-            {isTesting ? "正在测试…" : "运行测试"}
+            {isTesting ? t("正在测试…") : t("运行测试")}
           </button>
-          {testError ? <p role="alert">{testError}</p> : null}
+          {testError ? <p role="alert">{t(testError)}</p> : null}
           {testResult ? (
             <div className="lorebook-tester__result">
               {testResult.results.map((result) => (
                 <div key={result.index} className={`lorebook-result lorebook-result--${result.status}`}>
                   <strong>{result.name}</strong>
                   <span>
-                    {entryStatusText[result.status] ?? result.status}
-                    {result.matchedKey ? ` · 命中“${result.matchedKey}”` : ""}
-                    {" · 约 "}{result.tokens} token
+                    {t(entryStatusText[result.status] ?? result.status)}
+                    {result.matchedKey ? t(" · 命中“{{key}}”", { key: result.matchedKey }) : ""}
+                    {t(" · 约 ")}{result.tokens} token
                   </span>
                   {result.diagnostics.length > 0 ? <small>{result.diagnostics.join("；")}</small> : null}
                 </div>
               ))}
-              <p>注入位置：系统提示词“世界书”区域（{testResult.injectedCount} 条 · 预算 {testResult.budgetTokens} token）</p>
-              <p>注入内容：<code className="lorebook-entry__content">{testResult.block || "（本轮没有注入）"}</code></p>
+              <p>{t("注入位置：系统提示词“世界书”区域（{{count}} 条 · 预算 {{budget}} token）", { count: testResult.injectedCount, budget: testResult.budgetTokens })}</p>
+              <p>{t("注入内容：")}<code className="lorebook-entry__content">{testResult.block || t("（本轮没有注入）")}</code></p>
             </div>
           ) : null}
         </div>

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import "../../i18n";
 
 import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX, CARD_PANEL_MESSAGE, CARD_PANEL_STORAGE_KEY, CARD_STORAGE_MESSAGE, persistCardPanelPosition, persistCardStorage, readCardPanelPosition, readCardStorage } from "../../frontend-card-frame";
 import { CARD_BRIDGE_RESPONSE, parseCardBridgeRequest, runCardBridgeRequest, type CardBridgeHost } from "../../frontend-card-bridge";
@@ -10,10 +11,10 @@ const FALLBACK_HEIGHT = 420;
 /** 上限：防止卡片脚本失控把消息撑成无限长。 */
 const MAX_HEIGHT = 4000;
 
-// 一条前端卡消息：卡片界面在隔离 iframe 里渲染，自带脚本在其中运行。
+// 一条前端卡消息：卡片界面在独立子文档（srcdoc iframe）里渲染，自带脚本在其中运行。
 //
-// 这里刻意不消毒卡片 HTML —— 消毒会抹掉文档级结构（整段变空），而且无法阻止卡片 CSS
-// 污染应用界面。隔离文档 + 不透明源 iframe 才是有效边界。
+// 这里刻意不消毒卡片 HTML —— 消毒会抹掉文档级结构（整段变空）。子文档的作用是隔离
+// CSS 与文档结构；它不是安全边界——按产品决策（spec §5.10），卡脚本是可信的高权限代码。
 export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, hostGlobals, conversationId }: {
   markup: string;
   messageId: string;
@@ -38,15 +39,18 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
   const host = useRef(bridge);
   host.current = bridge;
 
+  // 宿主数据只在文档构建时注入一次：它是卡片初始化阶段读取的静态快照（SillyTavern
+  // 桩件等），此后卡片要数据一律走桥（host.current 始终是最新的）。
+  // 绝不能把它放进 effect 依赖：流式期间消息内容逐 delta 变化，序列化值随之变化，
+  // 会导致整个卡片文档每个 delta 重建一次（实测的卡顿来源）。
+  const initialHostGlobals = useRef(hostGlobals);
+
   useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;
     // 已保存的卡存储同步注入：卡在初始化阶段就同步读取它（面板位置、存档选择等）。
-    element.srcdoc = buildCardDocument(markup, runtimeSource, hostGlobals, readCardStorage(conversationId), readCardPanelPosition(conversationId));
-    // hostGlobals 每次渲染都是新对象，但它只是同一份数据的投影；用序列化值做依赖，
-    // 避免每次父组件重渲染都重载整个卡片文档。
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [markup, runtimeSource, conversationId, JSON.stringify(hostGlobals ?? null)]);
+    element.srcdoc = buildCardDocument(markup, runtimeSource, initialHostGlobals.current, readCardStorage(conversationId), readCardPanelPosition(conversationId));
+  }, [markup, runtimeSource, conversationId]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -102,7 +106,7 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
       />
       {scripted ? (
         <p className="frontend-card__notice">
-          {t("这张卡片的交互脚本在本应用的隔离沙箱中运行；沙箱会阻断脚本对应用页面和外部网络的访问。")}
+          {t("这张卡片包含交互脚本，会以完整权限运行：可读写本应用的数据并访问网络。请只使用你信任的卡片。")}
         </p>
       ) : null}
     </div>

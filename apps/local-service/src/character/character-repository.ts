@@ -173,7 +173,11 @@ function rowToDetail(row: CharacterRow): CharacterDetail {
   };
 }
 
-function rowToSummary(row: CharacterRow): CharacterSummary {
+/** 列表投影需要的列：刻意不含 raw_card_json 与 source_png（MB 级，逐卡加载太贵）。 */
+const SUMMARY_COLUMNS = "id, avatar, name, description, tags_json, source_format, source_version, alternate_greetings_json, lorebook_entry_count, regex_script_count, deleted_at, created_at, updated_at";
+type CharacterSummaryRow = Pick<CharacterRow, "id" | "avatar" | "name" | "description" | "tags_json" | "source_format" | "source_version" | "alternate_greetings_json" | "lorebook_entry_count" | "regex_script_count" | "deleted_at" | "created_at" | "updated_at">;
+
+function rowToSummary(row: CharacterSummaryRow): CharacterSummary {
   return {
     id: row.id,
     avatar: row.avatar,
@@ -280,10 +284,10 @@ export class CharacterRepository {
     const rows = this.#database
       .prepare(
         options.includeDeleted
-          ? "SELECT * FROM characters ORDER BY created_at DESC, id DESC"
-          : "SELECT * FROM characters WHERE deleted_at IS NULL ORDER BY created_at DESC, id DESC",
+          ? `SELECT ${SUMMARY_COLUMNS} FROM characters ORDER BY created_at DESC, id DESC`
+          : `SELECT ${SUMMARY_COLUMNS} FROM characters WHERE deleted_at IS NULL ORDER BY created_at DESC, id DESC`,
       )
-      .all() as unknown as CharacterRow[];
+      .all() as unknown as CharacterSummaryRow[];
     // 列表只需要摘要字段；直接投影避免对每张卡重跑完整的 V2/V3 校验。
     const items = rows.map((row) => rowToSummary(row));
     return { items, total: items.length };
@@ -311,6 +315,14 @@ export class CharacterRepository {
       ...(row.source_png ? { sourcePng: new Uint8Array(row.source_png) } : {}),
       ...(includeAssets ? { assets: this.assets.getAll(id) } : {}),
     };
+  }
+
+  /** 头像路由的廉价校验戳：缓存命中时不必加载整张卡（含 PNG BLOB 与 raw_card 解析）。 */
+  avatarStamp(avatar: string): string | undefined {
+    const row = this.#database
+      .prepare("SELECT updated_at FROM characters WHERE avatar = ? COLLATE NOCASE AND deleted_at IS NULL")
+      .get(avatar) as { updated_at: string } | undefined;
+    return row?.updated_at;
   }
 
   getByAvatar(avatar: string): StoredCharacter | undefined {

@@ -1,4 +1,6 @@
 import type { ConversationDetail } from "@mycompanion/shared";
+import { useTranslation } from "react-i18next";
+import "../../i18n";
 
 import { storyExportUrl } from "../../api";
 import { Icon } from "../../components";
@@ -19,28 +21,29 @@ export function ChatHeader({
   onStopGeneration: () => void;
   onOpenSettings: () => void;
 }) {
+  const { t } = useTranslation();
   return (
     <header className="pane-header">
-      <div className="pane-heading"><strong>{activeConversation?.characterName ?? "开始一段故事"}</strong><span>{activeConversation?.title ?? "聊天记录只保存在本机"}</span></div>
+      <div className="pane-heading"><strong>{activeConversation?.characterName ?? t("开始一段故事")}</strong><span>{activeConversation?.title ?? t("聊天记录只保存在本机")}</span></div>
       <div className="pane-header-actions">
         {activeConversation ? (
           <details className="story-export">
-            <summary aria-label="导出故事" className="icon-button" title="导出故事"><Icon name="download" size={16} /></summary>
+            <summary aria-label={t("导出故事")} className="icon-button" title={t("导出故事")}><Icon name="download" size={16} /></summary>
             <div className="story-export__menu" onClick={(event) => event.currentTarget.closest("details")?.removeAttribute("open")}>
               <a download href={storyExportUrl(activeConversation.id, "markdown")}>Markdown</a>
-              <a download href={storyExportUrl(activeConversation.id, "json")}>JSON（全部分支）</a>
+              <a download href={storyExportUrl(activeConversation.id, "json")}>{t("JSON（全部分支）")}</a>
             </div>
           </details>
         ) : null}
-        <button aria-expanded={memoryPanelOpen} aria-label="记忆" className={`icon-button${memoryPanelOpen && activeConversation ? " icon-button--active" : ""}`} disabled={!activeConversation} onClick={onMemoryPanelToggle} title="记忆" type="button">
+        <button aria-expanded={memoryPanelOpen} aria-label={t("记忆")} className={`icon-button${memoryPanelOpen && activeConversation ? " icon-button--active" : ""}`} disabled={!activeConversation} onClick={onMemoryPanelToggle} title={t("记忆")} type="button">
           <Icon name="brain" size={16} />
         </button>
         {isGenerating ? (
-          <button aria-label="停止" className="icon-button" onClick={onStopGeneration} title="停止生成" type="button">
+          <button aria-label={t("停止")} className="icon-button" onClick={onStopGeneration} title={t("停止生成")} type="button">
             <Icon name="stop" size={16} />
           </button>
         ) : (
-          <button aria-label="模型设置" className="icon-button" disabled={!activeConversation} onClick={onOpenSettings} title="模型设置" type="button">
+          <button aria-label={t("模型设置")} className="icon-button" disabled={!activeConversation} onClick={onOpenSettings} title={t("模型设置")} type="button">
             <Icon name="settings" size={16} />
           </button>
         )}

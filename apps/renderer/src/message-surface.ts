@@ -105,8 +105,16 @@ export class MessageSurface {
     const requested = new Set(this.rows.map(row => row.message.id));
     const visible = incoming.filter((message, index) => index >= this.firstIndex || requested.has(message.id));
     for (const message of visible) {
-      const index = indices.get(message.id)!, signature = JSON.stringify([message, name]);
+      const index = indices.get(message.id)!;
       const row = rows.get(message.id);
+      // 流式增量下未变化的消息保持引用稳定（chat-stream-utils 只替换目标消息），
+      // 引用相同即内容与名字相同：跳过重签名与属性重写，避免每个 delta 都对全部
+      // 可见消息各做一次 JSON.stringify。
+      if (row && row.message === message && row.name === name && row.index === index) {
+        if (!this.previous.has(message.id)) this.previous.set(message.id, "");
+        continue;
+      }
+      const signature = JSON.stringify([message, name]);
       if (!row && !this.previous.has(message.id)) {
         const created = this.row(message, index, name);
         rows.set(message.id, created);

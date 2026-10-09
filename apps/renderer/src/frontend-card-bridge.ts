@@ -1,11 +1,11 @@
-// 前端卡的能力桥：卡片脚本运行在不透明源 iframe 里，因此**必须**通过 postMessage 与
-// 宿主通信（它没有任何直接访问应用的途径）。
+// 前端卡的能力桥：在卡片文档里注入 SillyTavern / 酒馆助手风格的 API（消息读写、变量、
+// 世界书、斜杠命令等）。每次调用经 postMessage 转成一次宿主请求并等待回执，
+// 卡片侧看到的是普通的 Promise。
 //
-// 能力策略是**黑名单**：默认放行，逐项禁止。这比白名单弱——未知能力默认是允许的——因此
-// 安全不依赖这份名单，而依赖两道结构性边界：
-//   1. 不透明源 iframe：卡脚本对应用 DOM／location／存储的访问被同源策略直接拒绝；
-//   2. 隔离文档内的 `default-src 'none'`：卡脚本无法联网，名单因此无法被绕过用于外发数据。
-// 名单的作用是拦住"应用自己暴露出去的能力"（读改数据、装扩展等），而不是充当沙箱。
+// 能力策略是**黑名单**：默认放行，逐项禁止。这份名单**不是安全边界**——按产品决策
+// （spec §5.10），卡脚本是可信的高权限代码，与父页面同源，可直接访问应用与本地服务。
+// 名单管理的是"宿主主动提供的 API 表面"：未实现的明确报"未实现"，与浏览器全局重名的
+// 明确拒绝（见下），让卡片脚本走自己的降级分支而不是拿到假数据。
 
 import type { CardVariableMutation, ChatMessage } from "@mycompanion/shared";
 
@@ -19,14 +19,13 @@ export const CARD_BRIDGE_EVENT = "mycompanion:card-event";
 /**
  * 被禁止的宿主能力。
  *
- * 策略已按"开放优先"调整为**默认放行**：名单只保留两类——
+ * 策略是**默认放行**：名单只保留两类——
  *  1. 本应用**没有实现**的方法（放行也只会得到"未实现"，留着只会误导卡片）；
- *  2. 与沙箱本身冲突的逃逸入口（`parent` / `top` / `eval` / `fetch` 等），
- *     它们的可用性由 iframe 的**不透明源**与隔离文档的 **CSP** 决定，
- *     名单在这里只是把"已被结构性阻断"这件事明确回给卡片。
+ *  2. 与浏览器全局重名的名字（`parent` / `top` / `eval` / `fetch` 等）：卡脚本在同源
+ *     文档里本就可以直接使用这些浏览器能力；把它们挡在桥外，是避免卡片把"桥方法"
+ *     误当成"浏览器全局"——桥方法的语义由宿主定义，浏览器全局应由卡片直接调用。
  *
- * 真正的安全边界是 iframe 的 sandbox（不给 allow-same-origin）与 `default-src 'none'`，
- * 不是这份名单——名单拦不住结构性访问，结构性访问也不需要名单来拦。
+ * 再次强调：这份名单不是安全边界（卡脚本是可信代码，见 frontend-card-frame.ts）。
  */
 export const CARD_API_DENYLIST = [
   // 未实现：放行也只会得到"未实现"，保留以免卡片误判环境
@@ -34,7 +33,7 @@ export const CARD_API_DENYLIST = [
   "installExtension", "updateExtension", "uninstallExtension", "getExtensionStatus",
   "getTavernHelperVersion", "updateTavernHelper",
   "registerVariableSchema", "updateVariablesWith",
-  // 逃逸入口：由不透明源与 CSP 结构性阻断，这里给出明确答复
+  // 与浏览器全局重名：卡应直接调用浏览器全局，桥不提供这些名字的宿主版本
   "fetch", "XMLHttpRequest", "importScripts", "eval", "Function",
   "open", "localStorage", "sessionStorage", "indexedDB",
   "getHostDocument", "getHostWindow", "parent", "top",
@@ -409,7 +408,7 @@ export async function runCardBridgeRequest(request: CardBridgeRequest, host: Car
 }
 
 /**
- * 注入隔离文档的桥脚本：在卡片脚本运行前挂上这些全局函数。
+ * 注入卡片文档的桥脚本：在卡片脚本运行前挂上这些全局函数。
  *
  * 每个调用都转成一次 postMessage 请求并等待回执，因此卡片侧看到的是正常的 Promise。
  */

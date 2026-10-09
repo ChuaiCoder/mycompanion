@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import "../i18n";
 import type { ProviderSettings } from "@mycompanion/shared";
 import { getProviderSettings, saveProviderSettings } from "../api";
 import { loadSharedExtensionSettings, saveSharedExtensionSettings } from "../extension-settings";
@@ -30,6 +32,7 @@ function captureProvider(provider: ProviderSettings): Record<string, unknown> {
 }
 
 export function PresetSettings() {
+  const { t } = useTranslation();
   const [entries, setEntries] = useState<PresetEntry[]>([]);
   const [selected, setSelected] = useState("");
   const [bound, setBound] = useState(false);
@@ -46,7 +49,7 @@ export function PresetSettings() {
           fetch("/api/presets/openai", { headers: { Accept: "application/json" } }),
           loadSharedExtensionSettings().catch(() => null),
         ]);
-        if (!response.ok) throw new Error(`预设列表读取失败（HTTP ${response.status}）。`);
+        if (!response.ok) throw new Error(t("预设列表读取失败（HTTP {{status}}）。", { status: response.status }));
         const payload = await response.json() as { entries?: unknown };
         if (disposed) return;
         setEntries(Array.isArray(payload.entries) ? payload.entries as PresetEntry[] : []);
@@ -69,7 +72,7 @@ export function PresetSettings() {
       method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ apiId: "openai", name, preset }),
     });
-    if (!response.ok) throw new Error(`预设保存失败（HTTP ${response.status}）。`);
+    if (!response.ok) throw new Error(t("预设保存失败（HTTP {{status}}）。", { status: response.status }));
     setEntries(current => {
       const index = current.findIndex(item => item.name === name);
       return index < 0 ? [...current, { name, preset }] : current.map((item, itemIndex) => itemIndex === index ? { name, preset } : item);
@@ -85,7 +88,7 @@ export function PresetSettings() {
       contextLimitTokens: patch.contextLimitTokens ?? provider.contextLimitTokens, clearApiKey: false,
     });
     window.dispatchEvent(new CustomEvent("mycompanion:provider-saved", { detail: saved }));
-    setNotice(`已应用预设“${entry.name}”。`);
+    setNotice(t("已应用预设“{{name}}”。", { name: entry.name }));
   }
   async function changeBound(value: boolean): Promise<void> {
     const settings = await loadSharedExtensionSettings();
@@ -96,67 +99,67 @@ export function PresetSettings() {
   }
   const current = entries.find(item => item.name === selected);
   return <section className="settings-card" aria-labelledby="presets-title">
-    <header><h2 id="presets-title">聊天补全预设</h2><p>保存和切换生成参数快照；选中预设即应用到当前模型连接。支持导入酒馆 JSON 预设（映射温度与 Token 参数）。</p></header>
+    <header><h2 id="presets-title">{t("聊天补全预设")}</h2><p>{t("保存和切换生成参数快照；选中预设即应用到当前模型连接。支持导入酒馆 JSON 预设（映射温度与 Token 参数）。")}</p></header>
     {error ? <Notice tone="error">{error}</Notice> : null}
     {notice ? <Notice tone="success">{notice}</Notice> : null}
     <div className="settings-form">
-      <label htmlFor="settings_preset_openai">当前预设</label>
-      <select id="settings_preset_openai" aria-label="当前预设" disabled={busy || !ready} value={selected} onChange={event => {
+      <label htmlFor="settings_preset_openai">{t("当前预设")}</label>
+      <select id="settings_preset_openai" aria-label={t("当前预设")} disabled={busy || !ready} value={selected} onChange={event => {
         const name = event.target.value;
         setSelected(name);
         const entry = entries.find(item => item.name === name);
         if (entry) run(() => apply(entry));
       }}>
-        <option value="">（未选择）</option>
+        <option value="">{t("（未选择）")}</option>
         {entries.map(item => <option key={item.name} value={item.name}>{item.name}</option>)}
       </select>
       <label><span><input type="checkbox" checked={bound} disabled={busy || !ready} onChange={event => {
         const value = event.target.checked;
         run(() => changeBound(value));
-      }} /> 随预设切换连接地址和模型</span></label>
+      }} /> {t("随预设切换连接地址和模型")}</span></label>
       <div className="settings-actions">
         <button className="button button--primary" disabled={busy || !ready} onClick={() => run(async () => {
-          const name = window.prompt("把当前生成参数另存为预设，输入预设名称：", selected || "");
+          const name = window.prompt(t("把当前生成参数另存为预设，输入预设名称："), selected || "");
           if (!name?.trim()) return;
           await savePreset(name.trim(), captureProvider(await getProviderSettings()));
-        })}>另存为</button>
+        })}>{t("另存为")}</button>
         <button className="button button--quiet" disabled={busy || !current} onClick={() => run(async () => {
           await savePreset(current!.name, captureProvider(await getProviderSettings()));
-          setNotice(`已用当前参数更新预设“${current!.name}”。`);
-        })}>保存当前预设</button>
+          setNotice(t("已用当前参数更新预设“{{name}}”。", { name: current!.name }));
+        })}>{t("保存当前预设")}</button>
         <button className="button button--quiet" disabled={busy || !current} onClick={() => run(async () => {
-          const next = window.prompt("重命名预设", current!.name);
+          const next = window.prompt(t("重命名预设"), current!.name);
           if (!next?.trim() || next.trim() === current!.name) return;
           const response = await fetch("/api/presets/rename", {
             method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
             body: JSON.stringify({ apiId: "openai", name: current!.name, newName: next.trim(), preset: current!.preset }),
           });
-          if (response.status === 409) throw new Error("同名预设已存在，请换一个名称。");
-          if (!response.ok) throw new Error(`预设重命名失败（HTTP ${response.status}）。`);
+          if (response.status === 409) throw new Error(t("同名预设已存在，请换一个名称。"));
+          if (!response.ok) throw new Error(t("预设重命名失败（HTTP {{status}}）。", { status: response.status }));
           setEntries(items => items.map(item => item.name === current!.name ? { name: next.trim(), preset: current!.preset } : item));
           setSelected(next.trim());
-        })}>重命名</button>
+        })}>{t("重命名")}</button>
         <button className="button button--quiet" disabled={busy || !current} onClick={() => run(async () => {
-          if (!window.confirm(`删除“${current!.name}”？`)) return;
+          if (!window.confirm(t("删除“{{name}}”？", { name: current!.name }))) return;
           const response = await fetch("/api/presets/delete", {
             method: "POST", headers: { Accept: "application/json", "Content-Type": "application/json" },
             body: JSON.stringify({ apiId: "openai", name: current!.name }),
           });
-          if (!response.ok) throw new Error(`预设删除失败（HTTP ${response.status}）。`);
+          if (!response.ok) throw new Error(t("预设删除失败（HTTP {{status}}）。", { status: response.status }));
           setEntries(items => items.filter(item => item.name !== current!.name));
           setSelected("");
-        })}>删除</button>
+        })}>{t("删除")}</button>
         <button className="button button--quiet" disabled={busy || !current} onClick={() => {
           const url = URL.createObjectURL(new Blob([JSON.stringify(current!.preset, null, 2)], { type: "application/json" }));
           const link = document.createElement("a"); link.href = url; link.download = (current!.name || "preset") + ".json"; link.click();
           setTimeout(() => URL.revokeObjectURL(url), 1000);
-        }}>导出当前参数</button>
+        }}>{t("导出当前参数")}</button>
       </div>
-      <label><span>导入 JSON 预设</span><input type="file" accept=".json,application/json" disabled={busy || !ready} onChange={event => {
+      <label><span>{t("导入 JSON 预设")}</span><input type="file" accept=".json,application/json" disabled={busy || !ready} onChange={event => {
         const file = event.target.files?.[0]; event.target.value = "";
         if (file) run(async () => {
           const data: unknown = JSON.parse(await file.text());
-          if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error("预设必须是 JSON 对象。");
+          if (!data || typeof data !== "object" || Array.isArray(data)) throw new Error(t("预设必须是 JSON 对象。"));
           await savePreset(file.name.replace(/\.json$/i, ""), data as Record<string, unknown>);
         });
       }} /></label>

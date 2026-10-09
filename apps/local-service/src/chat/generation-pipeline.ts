@@ -3,6 +3,7 @@ import type { FastifyInstance, FastifyReply } from "fastify";
 import type {
   CharacterDetail,
   ChatMessage,
+  ConversationDetail,
   ExtensionPrompt,
   GenerationSseEvent,
   LorebookReport,
@@ -163,9 +164,11 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
     settings = runtime.getProvider(),
     macroSession?: MacroEvaluationSession,
     options: { prepareNativeCharacterFields?: boolean; signal?: AbortSignal; regexContext?: NativeRegexContext;
-      dryRun?: boolean; trigger?: string; worldInfoSourceMessages?: ChatMessage[]; worldInfoBranchId?: string; vectorActivation?:WorldInfoVectorActivation } = {},
+      dryRun?: boolean; trigger?: string; worldInfoSourceMessages?: ChatMessage[]; worldInfoBranchId?: string; vectorActivation?:WorldInfoVectorActivation;
+      /** 调用方已持有的会话快照：传入后不再重复加载整段历史。 */
+      conversation?: ConversationDetail | null } = {},
   ): Promise<LorebookReport> => {
-    const conversation = runtime.getConversation(conversationId);
+    const conversation = options.conversation !== undefined ? options.conversation ?? undefined : runtime.getConversation(conversationId);
     const metadata = options.regexContext?.metadata ?? conversation?.chatMetadata ?? {};
     const promptCharacter = characterOverridesResolved ? character
       : characterWithChatOverrides(character, metadata);
@@ -336,8 +339,10 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
     const send = (event: GenerationSseEvent): void => {
       raw.write(`data: ${JSON.stringify(event)}\n\n`);
     };
-    let macroBranchId = runtime.getConversation(conversationId)?.activeBranchId ?? null;
-    const worldInfoScanBranchId = macroBranchId;
+    // 分支归属与全量历史都取自同一个会话快照（下方 snapshot），避免一次生成里
+    // 对整段历史做多遍全量反序列化。
+    let macroBranchId: string | null = null;
+    let worldInfoScanBranchId: string | null = null;
     const phase = <T>(work: () => T | Promise<T>): Promise<T> => Promise.resolve().then(work);
     if (userMessage) {
       send({ type: "user_message", message: userMessage });
@@ -359,10 +364,15 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
         if (userMessage) send({ type: "user_message", message: userMessage });
         sourceHistory = runtime.listMessages(conversationId, 80);
       }
+      // 单次会话快照：此后的分支 id、完整历史、末条消息、用户轮数与世界书扫描
+      // 全部从它取。必须在写入用户消息之后取，快照才包含本轮输入。
+      const snapshot = runtime.getConversation(conversationId);
+      macroBranchId = snapshot?.activeBranchId ?? null;
+      worldInfoScanBranchId = macroBranchId;
       // 模型上下文只带当前分支最近 80 条；更长的历史仍保存在数据库并完整展示在 UI。
       // 历史在创建 streaming 助手占位消息之前读取，避免占位消息占用窗口。
       const rawHistory = sourceHistory ?? runtime.listMessages(conversationId, 80);
-      const fullSourceHistory = runtime.getConversation(conversationId)?.messages ?? [];
+      const fullSourceHistory = snapshot?.messages ?? [];
       const worldInfoSourceMessages = options.prepareAssistant && !options.continueFrom ? fullSourceHistory.slice(0, -1) : fullSourceHistory;
       // 根据消息角色和倒数深度处理提示词副本，不覆盖已保存原文。
       const history: ChatMessage[] = [];
@@ -375,14 +385,14 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
       const lorebook = await phase(() => buildLorebookReport(character, rawHistory, conversationId, extensionPrompts, 0, false, settings, macroSession,
         { signal: controller.signal, regexContext, dryRun: options.dryRun ?? false,
           trigger: options.generationType ?? (options.prepareAssistant ? "regenerate" : "normal"),
-          worldInfoSourceMessages, vectorActivation, ...(macroBranchId ? { worldInfoBranchId: macroBranchId } : {}) }));
+          worldInfoSourceMessages, vectorActivation, conversation: snapshot ?? null, ...(macroBranchId ? { worldInfoBranchId: macroBranchId } : {}) }));
       send({ type: "lorebook", report: lorebook });
       // 长期记忆检索（FR-MEM-005）：基于当前分支可达记忆与本轮上下文；
       // 报告通过 SSE 下发，block 由预算决定最终是否进入提示词。
       if (!options.dryRun) runtime.syncMemoryReachability(conversationId);
       // A regenerate request uses the prefix preceding the old response even
       // before accepting a new branch. Its derived facts must not enter preflight.
-      const excludedSourceId = options.prepareAssistant && !options.continueFrom ? runtime.getConversation(conversationId)?.messages.at(-1)?.id : undefined;
+      const excludedSourceId = options.prepareAssistant && !options.continueFrom ? snapshot?.messages.at(-1)?.id : undefined;
       const memories = runtime.listMemories(conversationId).filter(memory => !excludedSourceId
         || memory.conversationId !== conversationId || !memory.sourceMessageIds.includes(excludedSourceId));
       const memory = await retrieveMemory({
@@ -437,7 +447,7 @@ export function createGenerationPipeline(app: FastifyInstance, deps: GenerationP
         extensionPrompts,
         chatMetadata: regexContext.metadata,
         extensionSettings: regexContext.extensionSettings,
-        userTurnCount: runtime.getConversation(conversationId)?.messages.filter(message => message.role === "user").length ?? 0,
+        userTurnCount: snapshot?.messages.filter(message => message.role === "user").length ?? 0,
         settings,
         ...(apiKey ? { apiKey } : {}),
         character,

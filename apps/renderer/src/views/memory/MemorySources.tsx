@@ -15,8 +15,8 @@ export interface MemorySourcesProps {
 }
 
 export function MemorySources({ memory, replacement, navigationBusy, onOpenSource }: MemorySourcesProps) {
-  const { i18n } = useTranslation();
-  const en = i18n.language.startsWith("en"), text = (value: string) => memoryText(i18n.language, value);
+  const { t, i18n } = useTranslation();
+  const text = (value: string) => memoryText(i18n.language, value);
   const [open, setOpen] = useState(false);
   const [story, setStory] = useState<StoryExportJson | null>(null);
   const [error, setError] = useState("");
@@ -29,7 +29,7 @@ export function MemorySources({ memory, replacement, navigationBusy, onOpenSourc
     return () => controller.abort();
   }, [open, memory.conversationId, memory.sourceMessageIds.join("/")]);
   return <details className="memory-sources" open={open}>
-    <summary onClick={event => { event.preventDefault(); setOpen(value => !value); }}>{en ? `Sources and changes (${memory.sourceMessageIds.length} messages)` : `来源与变更（${memory.sourceMessageIds.length} 条）`}</summary>
+    <summary onClick={event => { event.preventDefault(); setOpen(value => !value); }}>{t("来源与变更（{{count}} 条）", { count: memory.sourceMessageIds.length })}</summary>
     <p>{text("这条记忆从以下对话提取；可查看原文后使用“编辑”更正。")}</p>
     {memory.status === "orphaned" ? <p>{text("来源不在当前分支；打开仍存在的来源分支可查看原文。")}</p> : null}
     {memory.supersededBy ? <p>{text("已被另一条记忆取代：")}{replacement?.content ?? text("替代记忆不在当前列表中，可切换状态筛选查看。")}</p> : null}

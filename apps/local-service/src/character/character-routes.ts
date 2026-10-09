@@ -58,39 +58,6 @@ export class InvalidImportRequestError extends Error {
   }
 }
 
-export function convertedExamplesMatchCard(
-  raw: string,
-  characterName: string,
-  blocks: Array<Array<{ role: string; content: string; name?: string | undefined }>>,
-): boolean {
-  if (!raw.trim()) return false;
-  const expected: Array<{ name: string; content: string }> = [];
-  for (const block of raw.replace(/\r/g, "").split(/<START>/gi)) {
-    let current: { name: string; lines: string[] } | null = null;
-    const flush = (): void => {
-      if (current) expected.push({ name: current.name, content: current.lines.join("\n").trim() });
-    };
-    for (const line of block.split("\n")) {
-      const match = /^(.{1,100}?)[:：]\s*(.*)$/.exec(line);
-      const speaker = match?.[1]?.trim();
-      const name = speaker === characterName || /^\{\{char\}\}$/i.test(speaker ?? "")
-        ? "example_assistant"
-        : speaker === "User" || /^\{\{user\}\}$/i.test(speaker ?? "")
-          ? "example_user" : null;
-      if (match && name) {
-        flush();
-        current = { name, lines: [match[2] ?? ""] };
-      } else if (current) current.lines.push(line);
-    }
-    flush();
-  }
-  const received = blocks.flat();
-  return expected.length > 0 && expected.length === received.length &&
-    expected.every((item, index) => received[index]?.role === "system" &&
-      item.content === received[index]?.content.trim() &&
-      (received[index]?.name === undefined || received[index]?.name === item.name));
-}
-
 async function readImport(body: unknown, contentType = ""): Promise<{
   imported: CharacterImport;
   requestHash: string;
@@ -154,30 +121,13 @@ function sendImportError(
   if (error instanceof CharacterImportTargetError)
     return sendError(reply, error.statusCode, error.statusCode === 409 ? "CHARACTER_VERSION_CONFLICT" : "CHARACTER_NOT_FOUND", error.message);
   if (error instanceof InvalidImportRequestError) {
-    return reply.status(400).send({
-      error: {
-        code: "INVALID_REQUEST",
-        message: error.message,
-        ...(error.details.length > 0 ? { details: error.details } : {}),
-      },
-    } satisfies ApiErrorResponse);
+    return sendError(reply, 400, "INVALID_REQUEST", error.message, error.details);
   }
   if (error instanceof CharacterCardParseError) {
-    return reply.status(422).send({
-      error: {
-        code: "INVALID_CHARACTER_CARD",
-        message: error.message,
-        details: error.issues,
-      },
-    } satisfies ApiErrorResponse);
+    return sendError(reply, 422, "INVALID_CHARACTER_CARD", error.message, error.issues);
   }
   if (error instanceof IdempotencyConflictError) {
-    return reply.status(409).send({
-      error: {
-        code: "IDEMPOTENCY_CONFLICT",
-        message: error.message,
-      },
-    } satisfies ApiErrorResponse);
+    return sendError(reply, 409, "IDEMPOTENCY_CONFLICT", error.message);
   }
   return undefined;
 }
@@ -223,27 +173,39 @@ export function registerCharacterRoutes(app: FastifyInstance, characters: Charac
       return characterDetailSchema.parse(updated.detail);
     } catch (error) {
       if (error instanceof CharacterCardParseError) {
-        return reply.status(422).send({
-          error: {
-            code: "INVALID_CHARACTER_CARD",
-            message: error.message,
-            details: error.issues,
-          },
-        } satisfies ApiErrorResponse);
+        return sendError(reply, 422, "INVALID_CHARACTER_CARD", error.message, error.issues);
       }
       throw error;
     }
   });
 
   // 角色头像图像：URL 与酒馆兼容层保持一致（原生 UI 的 CharacterAvatar 直接使用）。
+  // 编码结果按 (avatar, updated_at) 缓存：角色更新会推进 updated_at，缓存随之自然失效。
+  // 否则角色库每渲染一张头像都要把整卡 JSON 重新 base64 嵌入 PNG 重组装一次（MB 级）。
+  const avatarCache = new Map<string, { stamp: string; contentType: string; body: Buffer }>();
   app.get<{ Params: { avatar: string } }>("/characters/:avatar", async (request, reply) => {
+    const key = request.params.avatar.toLowerCase();
+    const stamp = characters.avatarStamp(request.params.avatar);
+    const cached = stamp ? avatarCache.get(key) : undefined;
+    if (cached && cached.stamp === stamp) {
+      return reply.type(cached.contentType).header("Cache-Control", "no-store").send(cached.body);
+    }
     const stored = characters.getByAvatar(request.params.avatar);
+    let contentType = "image/png";
+    let body: Buffer | undefined;
     if (stored) {
       const path = mainIconPath(stored.rawCard), asset = path ? characters.assets.get(stored.detail.id,path) : undefined;
-      if (asset) return reply.type(characterAssetContentType(path!)).header("Cache-Control","no-store").send(asset);
+      if (asset) { contentType = characterAssetContentType(path!); body = Buffer.from(asset); }
+      else body = Buffer.from(encodeCharacterCardPng(stored.rawCard, stored.sourcePng));
     }
-    return stored ? reply.type("image/png").header("Cache-Control", "no-store").send(Buffer.from(encodeCharacterCardPng(stored.rawCard, stored.sourcePng)))
-      : reply.code(404).send({ error: "Character not found" });
+    if (body && stamp) {
+      // 上限保护：条目是 MB 级 Buffer，超出时淘汰最旧（Map 迭代即插入序）。
+      if (avatarCache.size >= 64) avatarCache.delete(avatarCache.keys().next().value!);
+      avatarCache.set(key, { stamp, contentType, body });
+    }
+    return body
+      ? reply.type(contentType).header("Cache-Control", "no-store").send(body)
+      : sendError(reply, 404, "CHARACTER_NOT_FOUND", "Character not found");
   });
 
   app.get<{

@@ -124,7 +124,11 @@ export async function readProviderStream(protocol:CompletionProtocol,response:Re
   const candidates=new Map<number,ModelCandidateSnapshot>(),calls=new Map<number,Map<number,ModelResponseState["toolCalls"][number]>>();
   let multi=protocol==="openai"&&Number(callbacks.n)>1;
   const snapshot=()=>{if(multi)callbacks.onCandidates?.(structuredClone([...candidates.values()].sort((a,b)=>a.index-b.index)));};
-  const emit=(delta:string)=>{if(delta){full+=delta;callbacks.onDelta(delta);}callbacks.onState?.(structuredClone(state));};
+  let stateDirty=false;
+  const emit=(delta:string)=>{if(delta){full+=delta;callbacks.onDelta(delta);}
+    // 状态没变就不发射也不拷贝：纯文本 delta 占绝大多数，此前每个 delta 都对
+    // 整个 state structuredClone 一次。发射时机仍保留中间态（调用方契约）。
+    if(stateDirty){stateDirty=false;callbacks.onState?.(structuredClone(state));}};
   const parser=createParser({onEvent:event=>{
     if(terminal)return;
     if(event.data.trim()==="[DONE]"){terminal=true;for(const candidate of candidates.values())candidate.finishReason??="done";snapshot();return;}
@@ -147,11 +151,11 @@ export async function readProviderStream(protocol:CompletionProtocol,response:Re
       }
       if(data.type==="message_delta"&&data.delta?.stop_reason)finishReason=normalizedFinishReason(protocol,data.delta.stop_reason);
       if(data.type==="message_stop")terminal=true;
-      claudeState(claudeBlocks.filter(Boolean),state);emit(delta);
+      claudeState(claudeBlocks.filter(Boolean),state);stateDirty=true;emit(delta);
     }else if(protocol==="gemini"){
       const candidate=array(data.candidates)[0]??{};
       if(candidate.finishReason)finishReason=normalizedFinishReason(protocol,candidate.finishReason);
-      emit(addGeminiParts(array(candidate.content?.parts),state));
+      stateDirty=true;emit(addGeminiParts(array(candidate.content?.parts),state));
     }else{
       const choices=array(data.choices);if(choices.length>1||choices.some(choice=>typeof choice.index==="number"&&choice.index>0))multi=true;
       for(const choice of choices){
@@ -159,21 +163,26 @@ export async function readProviderStream(protocol:CompletionProtocol,response:Re
         let candidate=candidates.get(index);if(!candidate){const responseState=emptyResponseState("openai");if(callbacks.model)responseState.model=callbacks.model;
           candidate={index,content:"",responseState};candidates.set(index,candidate);}
         const current=candidate.responseState;if(choice.finish_reason)candidate.finishReason=text(choice.finish_reason);
-        current.reasoning+=text(delta.reasoning_content??delta.reasoning);if(delta.signature)current.signature=text(delta.signature);
+        const reasoningText=text(delta.reasoning_content??delta.reasoning);
+        if(reasoningText){current.reasoning+=reasoningText;stateDirty=true;}
+        if(delta.signature){current.signature=text(delta.signature);stateDirty=true;}
+        const deltaCalls=array(delta.tool_calls);
         const ordinals=calls.get(index)??new Map<number,ModelResponseState["toolCalls"][number]>();calls.set(index,ordinals);
-        for(const call of array(delta.tool_calls)){
+        for(const call of deltaCalls){
           const ordinal=call.index??0;if(typeof ordinal!=="number"||!Number.isSafeInteger(ordinal)||ordinal<0)throw new ModelRequestError("模型返回了无效的工具序号。",502);
           let target=ordinals.get(ordinal);if(!target){target={id:"",type:"function",function:{name:"",arguments:""}};ordinals.set(ordinal,target);}
           if(call.id)target.id=text(call.id);target.function.name+=text(call.function?.name);target.function.arguments+=text(call.function?.arguments);
           if(call.signature)target.signature=text(call.signature);
         }
-        current.toolCalls=[...ordinals].sort((a,b)=>a[0]-b[0]).map(([,call])=>call);
-        if(delta.audio?.data)current.media.push({mimeType:delta.audio.format==="wav"?"audio/wav":"audio/mpeg",data:text(delta.audio.data)});
+        if(deltaCalls.length){current.toolCalls=[...ordinals].sort((a,b)=>a[0]-b[0]).map(([,call])=>call);stateDirty=true;}
+        if(delta.audio?.data){current.media.push({mimeType:delta.audio.format==="wav"?"audio/wav":"audio/mpeg",data:text(delta.audio.data)});stateDirty=true;}
         const chunk=typeof delta.content==="string"?delta.content:array(delta.content).map(part=>text(part.text)).join("");candidate.content+=chunk;
-        for(const part of array(delta.content)){
+        const contentParts=array(delta.content);
+        for(const part of contentParts){
           current.providerContent.push(structuredClone(part));const match=/^data:([^;]+);base64,(.*)$/s.exec(text(part.image_url?.url));
           if(match)current.media.push({mimeType:match[1]!,data:match[2]!});
         }
+        if(contentParts.length)stateDirty=true;
         if(index===0){state=current;finishReason=candidate.finishReason;emit(chunk);}
         snapshot();
       }

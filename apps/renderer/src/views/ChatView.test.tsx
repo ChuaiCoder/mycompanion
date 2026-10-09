@@ -47,13 +47,28 @@ it("keeps the chat shell's child count in step with its declared grid columns", 
   expect(noStoryShell.children).toHaveLength(1);
 });
 
+it("shows the prompt preview only in advanced mode", () => {
+  // 简单模式（默认）下面板不挂载：提示词预览是给诊断用的，新手界面不常驻它。
+  const conversation: ConversationDetail = { id: "story", characterId: "character", characterName: "旅人", title: "Story", lastMessagePreview: "reply", messageCount: 1, activeBranchId: "branch", createdAt: "2026-10-02", updatedAt: "2026-10-02", messages: [] };
+  const noop = () => {};
+  const base: ChatViewProps = { activeConversation: conversation, chatInput: "", isGenerating: false, generationControlsBusy: false, runtimeError: null, editingMessageId: null, editingDraft: "", activeCommands: [], lastLorebookReport: null, lastMemoryReport: null, lastPromptBudget: null, memoryPanelOpen: false, messageListRef: { current: null }, onChatInput: noop, onSendMessage: noop, onStopGeneration: noop, onRegenerate: noop, onGenerate: noop, onEditMessage: noop, onEditingDraft: noop, onSaveEdit: noop, onCancelEdit: noop, onDeleteMessage: noop, onOpenSettings: noop, onGoToLibrary: noop, onMemoryPanelToggle: noop };
+
+  const simple = render(<ChatView {...base} />);
+  expect(simple.container.querySelector(".prompt-preview")).toBeNull();
+  cleanup();
+
+  const advanced = render(<ChatView {...base} advancedMode />);
+  expect(advanced.container.querySelector(".prompt-preview")).not.toBeNull();
+});
+
 it("aborts a stale open preview on a same-story source revision and ignores its late response", async () => {
   vi.useFakeTimers();
   const conversation: ConversationDetail = { id: "preview-story", characterId: "character", characterName: "Role", title: "Story", lastMessagePreview: "", messageCount: 0, activeBranchId: "original", createdAt: "2026-10-03", updatedAt: "2026-10-03T00:00:00.000Z", messages: [] };
   const noop = () => {};
-  const props: ChatViewProps = { activeConversation: conversation, chatInput: "same draft", isGenerating: false, generationControlsBusy: false, runtimeError: null, editingMessageId: null, editingDraft: "", activeCommands: [], lastLorebookReport: null, lastMemoryReport: null, lastPromptBudget: null, memoryPanelOpen: false, messageListRef: { current: null }, onChatInput: noop, onSendMessage: noop, onStopGeneration: noop, onRegenerate: noop, onGenerate: noop, onEditMessage: noop, onEditingDraft: noop, onSaveEdit: noop, onCancelEdit: noop, onDeleteMessage: noop, onOpenSettings: noop, onGoToLibrary: noop, onMemoryPanelToggle: noop };
+  const props: ChatViewProps = { activeConversation: conversation, advancedMode: true, chatInput: "same draft", isGenerating: false, generationControlsBusy: false, runtimeError: null, editingMessageId: null, editingDraft: "", activeCommands: [], lastLorebookReport: null, lastMemoryReport: null, lastPromptBudget: null, memoryPanelOpen: false, messageListRef: { current: null }, onChatInput: noop, onSendMessage: noop, onStopGeneration: noop, onRegenerate: noop, onGenerate: noop, onEditMessage: noop, onEditingDraft: noop, onSaveEdit: noop, onCancelEdit: noop, onDeleteMessage: noop, onOpenSettings: noop, onGoToLibrary: noop, onMemoryPanelToggle: noop };
   let resolveOld!: (value: PromptPreviewResponse) => void;
-  const result = (label: string): PromptPreviewResponse => ({ messages: [], regions: [{ key: "character_core", label, tokens: 1 }], totalTokens: 1, recentMessageCount: 0, redactions: 0, diagnostics: [] });
+  // 用消息内容区分新旧预览：区域图例现在按区域 key 显示固定中文名，不再透出后端标识符。
+  const result = (label: string): PromptPreviewResponse => ({ messages: [{ role: "user", content: label }], regions: [], totalTokens: 1, recentMessageCount: 0, redactions: 0, diagnostics: [] });
   const request = vi.spyOn(api, "promptPreview").mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; })).mockResolvedValue(result("Latest branch preview"));
   const view = render(<ChatView {...props} />);
   fireEvent.click(document.querySelector('.prompt-preview > summary')!);

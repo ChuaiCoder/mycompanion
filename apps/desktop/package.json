@@ -34,8 +34,7 @@
       "output": "../../.cache/packaging/candidate-staging"
     },
     "files": [
-      "dist/main.js",
-      "dist/main.js.map",
+      "dist/**",
       "package.json",
       "!**/*.sqlite*",
       "!**/*.db",

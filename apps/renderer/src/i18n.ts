@@ -1,6 +1,7 @@
 import i18next from "i18next";
 import { initReactI18next } from "react-i18next";
 import { loadSharedExtensionSettings, saveSharedExtensionSettings } from "./extension-settings";
+import { zhKeyedMessages } from "./i18n-zh-messages";
 
 const messages = {
   "nav.import": ["导入角色卡", "Import character"], "nav.reading": ["正在读取角色卡…", "Reading character…"],
@@ -26,6 +27,11 @@ const messages = {
   "settings.next": ["第 3 步：开始对话", "Step 3: Start chatting"], "settings.back": ["返回角色库", "Back to characters"], "settings.loading": ["正在读取模型设置…", "Loading model settings…"], "settings.presets": ["聊天预设与提示词设置", "Chat presets and prompts"],
   "settings.fixKey": ["修改密钥", "Edit key"], "settings.fixModel": ["修改模型", "Edit model"], "settings.fixAddress": ["检查服务地址", "Check service address"],
   "settings.pageIntro": ["连接模型、管理生成参数与应用数据。日常聊天只需完成“连接模型”一张卡片。", "Connect a model, manage generation settings and app data. Everyday chat only needs the connection card."],
+  "settings.tab.model": ["模型", "Model"], "settings.tab.backup": ["备份与恢复", "Backup & restore"],
+  "settings.tab.advanced": ["高级", "Advanced"],
+  "settings.advancedMode": ["高级模式", "Advanced mode"],
+  "settings.advancedModeIntro": ["开启后聊天页会显示提示词预览等诊断入口。只改变可见性，不改变聊天行为和已保存的数据。", "When on, the chat page shows diagnostic entries like the prompt preview. Visibility only — chat behavior and saved data are unchanged."],
+  "settings.advancedModeToggle": ["显示提示词预览等高级诊断", "Show advanced diagnostics like the prompt preview"],
   "conversation.delete": ["删除故事“{{title}}”", "Delete story “{{title}}”"],
   "conversation.deleteConfirm": ["删除故事", "Delete story"],
   "conversation.deletePrompt": ["删除？", "Delete?"],
@@ -45,7 +51,7 @@ const messages = {
   "conversation.deleteNoneSelected": ["请先选择要删除的故事。", "Select at least one story first."],
   "message.truncated": ["回复在 {{tokens}} token 处被截断，正文可能停在句中。可在设置 → 高级生成参数里调高「最大输出 Token」，再重新生成。", "The reply hit the {{tokens}}-token limit and may stop mid-sentence. Raise “Maximum output tokens” in Settings → advanced generation settings, then regenerate."],
 } as const;
-const resources = Object.fromEntries(["zh", "en"].map((language, index) => [language, { translation: Object.fromEntries(Object.entries(messages).map(([key, value]) => [key, value[index]])) }]));
+const resources = Object.fromEntries(["zh", "en"].map((language, index) => [language, { translation: Object.fromEntries([...Object.entries(messages), ...Object.entries(zhKeyedMessages)].map(([key, value]) => [key, value[index]])) }]));
 void i18next.use(initReactI18next).init({ lng: "zh", fallbackLng: "zh", resources, initAsync: false, keySeparator: false, interpolation: { escapeValue: false } });
 i18next.on("languageChanged", language => {
   const normalized = language === "en" ? "en" : "zh";

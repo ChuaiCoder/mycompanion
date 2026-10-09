@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import "../i18n";
 import type { ChatMessage, ConversationDetail } from "@mycompanion/shared";
 import { fetchStoryExport } from "../api";
 import { replyBranches, type ReplyBranch } from "../branch-candidates";
@@ -10,7 +11,7 @@ export function ReplyCandidates({ message, conversation, disabled, onActivateBra
   onActivateBranch?: ((conversationId: string, branchId: string) => Promise<void>) | undefined;
   onSwiped?: ((conversationId: string) => Promise<void> | void) | undefined;
 }) {
-  const { i18n } = useTranslation(), en = i18n.language.startsWith("en"), locale = en ? "en-US" : "zh-CN";
+  const { t, i18n } = useTranslation(), locale = i18n.language.startsWith("en") ? "en-US" : "zh-CN";
   const scope = `${conversation.id}/${conversation.activeBranchId}/${message.id}`;
   const current = useRef(scope); current.current = scope;
   const readRevision = useRef(""); readRevision.current = `${scope}/${conversation.updatedAt}`;
@@ -38,10 +39,10 @@ export function ReplyCandidates({ message, conversation, disabled, onActivateBra
     await onSwiped?.(conversation.id);
   });
   return <>
-    {valid.length > 1 ? <div className="message-actions swipe-controls" role="group" aria-label={en ? "Reply candidates" : "候选回复"}>
-      <button type="button" className="message-action swipe_left" aria-label={en ? "Previous reply candidate" : "上一条候选回复"} disabled={disabled || busy || position <= 0} onClick={() => void select(valid[position - 1]!)}>{en ? "Previous" : "上一条"}</button>
+    {valid.length > 1 ? <div className="message-actions swipe-controls" role="group" aria-label={t("候选回复")}>
+      <button type="button" className="message-action swipe_left" aria-label={t("上一条候选回复")} disabled={disabled || busy || position <= 0} onClick={() => void select(valid[position - 1]!)}>{t("上一条")}</button>
       <span className="swipes-counter" aria-live="polite">{(position + 1).toLocaleString(locale)} / {valid.length.toLocaleString(locale)}</span>
-      <button type="button" className="message-action swipe_right" aria-label={en ? "Next reply candidate" : "下一条候选回复"} disabled={disabled || busy || position < 0 || position >= valid.length - 1} onClick={() => void select(valid[position + 1]!)}>{en ? "Next" : "下一条"}</button>
+      <button type="button" className="message-action swipe_right" aria-label={t("下一条候选回复")} disabled={disabled || busy || position < 0 || position >= valid.length - 1} onClick={() => void select(valid[position + 1]!)}>{t("下一条")}</button>
     </div> : null}
     {last && message.parentMessageId && onActivateBranch ? <div className="reply-branches">
       <button type="button" className="message-action" aria-expanded={open} disabled={disabled || busy} onClick={() => {
@@ -51,11 +52,11 @@ export function ReplyCandidates({ message, conversation, disabled, onActivateBra
           if (readRevision.current !== captured) return;
           setBranches(replyBranches(story, conversation)); setOpen(true);
         });
-      }}>{en ? "Reply branches" : "回复分支"}</button>
-      {open ? branches.length > 1 ? <label>{en ? "Switch reply" : "切换回复"}<select aria-label={en ? "Switch reply branch" : "切换回复分支"} disabled={disabled || busy} value={conversation.activeBranchId} onChange={event => void run(() => onActivateBranch(conversation.id, event.target.value))}>
-        {branches.map((branch, index) => <option key={branch.branchId} value={branch.branchId}>{en ? `Candidate ${(index + 1).toLocaleString(locale)}: ` : `候选 ${(index + 1).toLocaleString(locale)}：`}{branch.content.slice(0, 45) || (en ? "(Empty reply)" : "（空回复）")}</option>)}
-      </select></label> : <small>{en ? "After regenerating, switch between replies to the same turn here." : "重新生成后，可以在这里切换同一轮的回复。"}</small> : null}
+      }}>{t("回复分支")}</button>
+      {open ? branches.length > 1 ? <label>{t("切换回复")}<select aria-label={t("切换回复分支")} disabled={disabled || busy} value={conversation.activeBranchId} onChange={event => void run(() => onActivateBranch(conversation.id, event.target.value))}>
+        {branches.map((branch, index) => <option key={branch.branchId} value={branch.branchId}>{t("候选 {{index}}：", { index: (index + 1).toLocaleString(locale) })}{branch.content.slice(0, 45) || t("（空回复）")}</option>)}
+      </select></label> : <small>{t("重新生成后，可以在这里切换同一轮的回复。")}</small> : null}
     </div> : null}
-    {error ? <p role="alert" className="panel-error">{en ? "Reply candidate action failed: " : "候选回复操作失败："}{error}</p> : null}
+    {error ? <p role="alert" className="panel-error">{t("候选回复操作失败：")}{error}</p> : null}
   </>;
 }

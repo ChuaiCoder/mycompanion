@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type SetStateAction } from "react";
 import type { ProviderConnectionResponse, ProviderSettings, UpdateProviderSettings } from "@mycompanion/shared";
 
 import { ApiRequestError, saveProviderSettings, testProvider } from "../api";
+import i18n from "../i18n";
 import { observeProviderConnection } from "../provider-connection";
 
 // 模型提供方设置：本地草稿、保存/测试，以及扩展保存后广播的 provider-saved 事件订阅。
@@ -61,7 +62,7 @@ export function useProviderSettings(deps: {
       window.dispatchEvent(new CustomEvent("mycompanion:provider-saved", { detail: saved }));
       connectionIsCurrent = observeProviderConnection();
       setIsConnectionReady(Boolean(result?.ok));
-      setProviderNotice(result ? `${result.message} 设置已安全保存，可以开始对话。` : "模型设置已安全保存到本机。");
+      setProviderNotice(result ? i18n.t("{{message}} 设置已安全保存，可以开始对话。", { message: result.message }) : i18n.t("模型设置已安全保存到本机。"));
       if (result) window.dispatchEvent(new CustomEvent("mycompanion:provider-tested", { detail: { ok: true, model: saved.model } }));
       return true;
     } catch (error) {

@@ -16,7 +16,7 @@ async function startApplication(): Promise<void> {
     rendererRoot: app.isPackaged ? join(process.resourcesPath, "renderer") : resolve(app.getAppPath(), "../renderer/dist"),
     storage: safeStorage,
   });
-  mainWindow = await createDesktopWindow(service.origin);
+  mainWindow = await createDesktopWindow(service.origin, true, service.sessionToken);
   closeGuard = installDesktopCloseGuard(mainWindow, {
     beforeClose: async () => { await service?.stop(); service = null; },
     onError: error => dialog.showErrorBox("草稿尚未保存", `${error instanceof Error ? error.message : String(error)}\n窗口已保留；请检查本地服务或连接后重试关闭。`),

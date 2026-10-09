@@ -135,6 +135,18 @@ describe("CHARX byte-preserving import and export", () => {
     expect((await target.inject({method:"GET",url:`/api/characters/${character.id}/assets/assets/audio/greeting.wav`})).rawPayload).toEqual(sound);
     const again = (await target.inject({method:"GET",url:"/api/backup"})).json(); expect(again.characters[0].assets).toEqual(backup.characters[0].assets);
   });
+  it("serves avatars from the stamp-validated cache and never serves a stale avatar after delete", async () => {
+    const app = buildApp(); apps.push(app);
+    const imported = await request(app, await archive(entries())); expect(imported.statusCode).toBe(201);
+    const character = imported.json();
+    const first = await app.inject({method:"GET",url:`/characters/${character.avatar}`});
+    const second = await app.inject({method:"GET",url:`/characters/${character.avatar}`});
+    expect(first.statusCode).toBe(200); expect(second.rawPayload).toEqual(image);
+    expect(second.rawPayload).toEqual(first.rawPayload);
+    // 软删除后校验戳失效，缓存不得继续供出旧头像。
+    expect((await app.inject({method:"DELETE",url:`/api/characters/${character.id}`})).statusCode).toBe(200);
+    expect((await app.inject({method:"GET",url:`/characters/${character.avatar}`})).statusCode).toBe(404);
+  });
   it("rolls back card, all assets and idempotency on an actual second-asset write failure, then retries", async () => {
     const database = new DatabaseSync(":memory:"), repository = new CharacterRepository(database);
     try {

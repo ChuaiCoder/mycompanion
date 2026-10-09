@@ -209,3 +209,15 @@ it("localizes asset counts and preview disclosures while preserving expanded sta
   await act(() => i18n.changeLanguage("zh"));
   expect(screen.getByRole("button", { name: "确认导入" })).toBeInTheDocument(); expect(disclosure.open).toBe(true);
 });
+
+it("gates scripted card imports behind an explicit trust confirmation", () => {
+  const base = props({ preview: { ...preview, containsScripts: true }, draftFileName: "含脚本卡.png" });
+  render(<LibraryView {...base} />);
+  expect(screen.getByText("包含交互脚本")).toBeInTheDocument();
+  const commit = screen.getByRole("button", { name: "确认导入" });
+  expect(commit).toBeDisabled();
+  fireEvent.click(screen.getByRole("checkbox"));
+  expect(commit).toBeEnabled();
+  fireEvent.click(commit);
+  expect(base.onCommit).toHaveBeenCalledTimes(1);
+});

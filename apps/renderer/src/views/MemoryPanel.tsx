@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import "../i18n";
 
 import type {
   MemoryListQuery,
@@ -34,8 +35,8 @@ export interface MemoryPanelProps {
  * 列表项、检索测试器、阶段摘要分别由 memory/ 下的子组件承担。
  */
 export function MemoryPanel({ conversationId, conversationTitle, runtimeError, navigationBusy, onOpenSource, sourceRevision }: MemoryPanelProps) {
-  const { i18n } = useTranslation();
-  const en = i18n.language.startsWith("en"), text = (value: string) => memoryText(i18n.language, value);
+  const { t, i18n } = useTranslation();
+  const text = (value: string) => memoryText(i18n.language, value);
   const [filters, setFilters] = useState<MemoryListQuery>({});
   const [memories, setMemories] = useState<MemoryRecord[] | null>(null);
   const [isBusy, setIsBusy] = useState(false);
@@ -138,7 +139,7 @@ export function MemoryPanel({ conversationId, conversationTitle, runtimeError, n
   };
 
   const handleDelete = async (memory: MemoryRecord): Promise<void> => {
-    if (!window.confirm(en ? `Delete this memory (${memory.content})? This cannot be undone.` : `删除这条记忆（${memory.content}）？此操作不可撤销。`)) return;
+    if (!window.confirm(t("删除这条记忆（{{content}}）？此操作不可撤销。", { content: memory.content }))) return;
     const origin = activeContext.current.revision;
     setIsBusy(true);
     setPanelError(null);

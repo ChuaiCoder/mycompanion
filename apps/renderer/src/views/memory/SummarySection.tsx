@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import "../../i18n";
 
 import type { StageSummary } from "@mycompanion/shared";
 
@@ -14,8 +15,8 @@ export interface SummarySectionProps {
 
 /** 阶段摘要（FR-MEM-008）：摘要编辑、恢复上一版本、自动摘要开关。 */
 export function SummarySection({ conversationId, onPanelError }: SummarySectionProps) {
-  const { i18n } = useTranslation();
-  const en = i18n.language.startsWith("en"), text = (value: string) => memoryText(i18n.language, value);
+  const { t, i18n } = useTranslation();
+  const text = (value: string) => memoryText(i18n.language, value);
   const [autoSummaryEnabled, setAutoSummaryEnabled] = useState<boolean | null>(null);
   const [summary, setSummary] = useState<StageSummary | null>(null);
   const [summaryDraft, setSummaryDraft] = useState("");
@@ -101,7 +102,7 @@ export function SummarySection({ conversationId, onPanelError }: SummarySectionP
           </button>
         ) : null}
       </div>
-      <p>{text("摘要压缩较早的剧情以节省上下文；摘要失败不会阻塞聊天。")}{summary ? (en ? `Covers ${summary.coveredMessageCount} messages; model ${summary.model}.` : `覆盖 ${summary.coveredMessageCount} 条消息 · 模型 ${summary.model}`) : text("尚未生成；对话足够长后自动生成。")}</p>
+      <p>{text("摘要压缩较早的剧情以节省上下文；摘要失败不会阻塞聊天。")}{summary ? t("覆盖 {{count}} 条消息 · 模型 {{model}}", { count: summary.coveredMessageCount, model: summary.model }) : text("尚未生成；对话足够长后自动生成。")}</p>
       {summaryLoadError ? <div><p role="alert">{text("无法读取阶段摘要，请重试。")}</p><button type="button" onClick={() => setReloadRevision(value => value + 1)}>{text("重试读取阶段摘要")}</button></div> : null}
       {summary?.valid === false ? <p role="status">{text("来源已改变，需重新生成或校正；这份摘要暂不用于对话。")}</p> : null}
       <textarea

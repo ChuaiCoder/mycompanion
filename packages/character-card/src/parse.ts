@@ -244,6 +244,44 @@ function compatibilityDefaultPaths(card: CharacterCard): string[] {
   return paths;
 }
 
+// 前端卡识别约定与渲染层 frontend-card.ts 保持一致：整条消息是代码围栏、且内容具备
+// HTML 文档特征时视为卡片界面；其中出现 <script> 即视为携带可执行脚本。
+const CARD_DOCUMENT_MARKERS = ["html>", "<head>", "<body"] as const;
+const WHOLE_MESSAGE_FENCE = /^\s*```[^\n]*\r?\n([\s\S]*?)\r?\n?```\s*$/;
+
+/** 一条开场白是否是一份带脚本的前端卡文档。 */
+function greetingCarriesScript(content: string): boolean {
+  const fenced = WHOLE_MESSAGE_FENCE.exec(content);
+  const body = (fenced ? fenced[1]! : content).trim();
+  if (!body) return false;
+  const markers = CARD_DOCUMENT_MARKERS.filter(marker => body.includes(marker)).length;
+  if (fenced ? markers === 0 : markers < 2) return false;
+  return /<script[\s>]/i.test(body);
+}
+
+/**
+ * 卡片是否携带可执行脚本：前端卡开场白里的 <script>，或 tavern_helper 脚本库
+ * （数据形态的脚本条目，由宿主作为 ES module 执行）。预览响应携带该标记，
+ * 导入界面据此要求用户显式确认信任卡片来源（spec §5.10：卡脚本是可信的高权限代码）。
+ */
+function cardCarriesScripts(data: {
+  first_mes: string;
+  alternate_greetings: string[];
+  extensions: Record<string, unknown>;
+}): boolean {
+  if (greetingCarriesScript(data.first_mes)) return true;
+  if (data.alternate_greetings.some(greetingCarriesScript)) return true;
+  const helper = data.extensions.tavern_helper;
+  if (helper === null || typeof helper !== "object" || Array.isArray(helper)) return false;
+  const scripts = (helper as Record<string, unknown>).scripts;
+  if (!Array.isArray(scripts)) return false;
+  return scripts.some(entry => {
+    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) return false;
+    const content = (entry as Record<string, unknown>).content;
+    return typeof content === "string" && content.trim().length > 0;
+  });
+}
+
 export function parseCharacterCardDocument(input: unknown): ParsedCharacterCard {
   const legacy = convertLegacyCharacterCard(input);
   if (legacy) {
@@ -340,6 +378,7 @@ export function parseCharacterCardDocument(input: unknown): ParsedCharacterCard 
       unknownFieldPaths: paths,
       compatibilityDefaultPaths: defaultedPaths,
       warningCodes: [...warnings],
+      containsScripts: cardCarriesScripts(card.data),
     },
   };
 }

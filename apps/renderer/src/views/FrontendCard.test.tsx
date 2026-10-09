@@ -170,7 +170,7 @@ it("lays the card's screens out at full width, one at a time", () => {
 
 it("allows card runtimes to load from their CDNs while still refusing navigation", () => {
   const document = buildCardDocument("<style>body{background:#000}</style><script>1</script>");
-  // 卡片内容原样进入隔离文档（不消毒，否则文档级结构会被整段抹掉）。
+  // 卡片内容原样进入子文档（不消毒，否则文档级结构会被整段抹掉）。
   expect(document).toContain("<style>body{background:#000}</style>");
   expect(document).toContain("<script>1</script>");
   expect(document.startsWith("<!DOCTYPE html>")).toBe(true);
@@ -178,8 +178,8 @@ it("allows card runtimes to load from their CDNs while still refusing navigation
   expect(CARD_IFRAME_CSP).toContain("script-src *");
   expect(CARD_IFRAME_CSP).toContain("connect-src *");
   expect(CARD_IFRAME_CSP).toContain("img-src *");
-  // 卡自带运行时通过 Blob 模块 URL 加载；不透明源下是 `blob:null/…`，
-  // 所以 script-src 必须包含 blob:，否则模块装载直接失败（实测过）。
+  // 卡自带运行时通过 Blob 模块 URL 加载；script-src 必须包含 blob:，
+  // 否则模块装载直接失败（实测过）。
   expect(CARD_IFRAME_CSP).toContain("script-src * blob:");
   // 仍然拒绝改基址与提交表单。
   expect(CARD_IFRAME_CSP).toContain("form-action 'none'");
@@ -187,8 +187,8 @@ it("allows card runtimes to load from their CDNs while still refusing navigation
   expect(document).toContain('http-equiv="Content-Security-Policy"');
   // 脚本能力保留（卡片自带动画与运行时依赖它）。
   expect(CARD_IFRAME_CSP).toContain("'unsafe-inline'");
-  // 卡自带运行时需要访问宿主环境（SillyTavern/TavernHelper 桩件、父页面状态），
-  // 因此沙箱按需求已加上 allow-same-origin。这移除了结构性隔离，影响记录在 spec §5.10。
+  // 按产品决策（spec §5.10），卡脚本是可信的高权限代码：sandbox 含 allow-same-origin，
+  // 卡自带运行时借此访问宿主环境（SillyTavern/TavernHelper 桩件、父页面状态）与本地服务。
   expect(CARD_IFRAME_SANDBOX).toContain("allow-scripts");
   expect(CARD_IFRAME_SANDBOX).toContain("allow-same-origin");
 });
@@ -232,9 +232,9 @@ it("inlines host data so that markup and line separators cannot break the script
   expect(parsed).toEqual(hostGlobals);
 });
 
-it("gives card scripts a working storage shim instead of a hard SecurityError", () => {
-  // 不透明源文档里 localStorage 会抛 SecurityError，而卡脚本常在初始化就读它，
-  // 抛错会让整段脚本中断。实测确认 defineProperty 在该 sandbox 下可用，故由宿主提供实现。
+it("gives card scripts a per-story storage shim", () => {
+  // 卡文档与父页面同源，不用垫片时卡的 localStorage 会直接落在应用自己的存储上；
+  // 垫片把卡的读写接管到按故事隔离的命名空间，并保证初始化阶段的同步读取语义。
   const shim = buildCardStorageScript();
   expect(shim).toContain("localStorage");
   expect(shim).toContain("sessionStorage");
@@ -246,8 +246,8 @@ it("gives card scripts a working storage shim instead of a hard SecurityError", 
   const document = buildCardDocument("<p>card</p>");
   expect(document.indexOf("createStorage")).toBeGreaterThan(-1);
   expect(document.indexOf("createStorage")).toBeLessThan(document.indexOf("<p>card</p>"));
-  // 沙箱已按需求放开同源（见上一处说明）；存储垫片仍然保留，作为
-  // 将来收紧沙箱时的兜底。
+  // 沙箱含 allow-same-origin（见上一处说明）；存储垫片仍然保留，
+  // 作用是让卡存储按故事隔离，而不是落在应用自己的存储里。
   expect(CARD_IFRAME_SANDBOX).toContain("allow-scripts");
 });
 

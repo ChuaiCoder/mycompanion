@@ -143,6 +143,9 @@ export const characterCardPreviewResponseSchema = z.object({
   unknownFieldPaths: z.array(z.string()),
   compatibilityDefaultPaths: z.array(z.string()).default([]),
   warningCodes: z.array(characterCardPreviewWarningCodeSchema),
+  // 卡片是否携带可执行脚本（前端卡开场白 / tavern_helper 脚本库）；导入界面据此要求
+  // 用户显式确认信任来源。可选以兼容旧数据与旧测试夹具，缺省视为 false。
+  containsScripts: z.boolean().optional(),
 });
 
 export type CharacterCardPreviewResponse = z.infer<

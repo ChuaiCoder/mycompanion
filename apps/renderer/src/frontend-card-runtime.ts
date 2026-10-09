@@ -17,7 +17,7 @@
 //  1. **顺序**：MVU 必须先跑完，后续模块才拿得到 `_` 与 `Mvu`；ZOD 还依赖全局 `z`。
 //  2. **全局 zod**：MVU 不自带 zod，而 `mvu_zod.js` 直接用裸标识符 `z`（`const r = z`），
 //     所以宿主必须先提供 `window.z`。实测 MVU 与 zod-util 里都没有 `window.z = …`。
-//  3. 这些模块是远程 ES module，需要 `script-src` 允许外部来源（隔离文档已按需放开）。
+//  3. 这些模块是远程 ES module，需要 `script-src` 允许外部来源（卡片文档已按需放开）。
 //
 // 这里只负责"取出来 + 按顺序加载"，不解释脚本内容。
 
@@ -99,7 +99,7 @@ export function planCardRuntime(rawExtensions: Record<string, unknown> | undefin
 }
 
 /**
- * 生成注入隔离文档的模块脚本。
+ * 生成注入卡片文档的模块脚本。
  *
  * 每个卡脚本作为**独立模块**加载并逐个 await，保证顺序；单个失败不影响后续，
  * 因为卡里常有互相独立的可选运行时（例如 Wiki 挂件失败不该拖垮 MVU）。

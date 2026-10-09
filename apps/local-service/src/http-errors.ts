@@ -8,8 +8,9 @@ export function sendError(
   status: number,
   code: string,
   message: string,
+  details?: string[],
 ): FastifyReply {
   return reply.status(status).send({
-    error: { code, message },
+    error: details?.length ? { code, message, details } : { code, message },
   } satisfies ApiErrorResponse);
 }

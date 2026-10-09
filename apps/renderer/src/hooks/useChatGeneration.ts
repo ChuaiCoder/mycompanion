@@ -1,6 +1,7 @@
 import type { NativeGenerationOptions } from "../api";
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { flushSync } from "react-dom";
+import i18n from "../i18n";
 
 import type {
   ChatMessage,
@@ -117,7 +118,7 @@ export function useChatGeneration(deps: {
       // A user can type while hydration is pending. That newer input wins.
       if (!editedAtNavigation && revision === inputRevision.current) setInput(store.read(id) ?? (firstComposer.current ? initialInput : ""));
       firstComposer.current = false; setDraftTarget(id);
-    }).catch(error => { if (!disposed) setRuntimeError("输入草稿暂时无法恢复：" + (error instanceof Error ? error.message : String(error))); });
+    }).catch(error => { if (!disposed) setRuntimeError(i18n.t("输入草稿暂时无法恢复：{{reason}}", { reason: error instanceof Error ? error.message : String(error) })); });
     return () => { disposed = true; };
   }, [activeConversation?.id]);
   useEffect(() => {

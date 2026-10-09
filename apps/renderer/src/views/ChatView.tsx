@@ -1,5 +1,7 @@
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
+import { useTranslation } from "react-i18next";
+import "../i18n";
 import { MessageSurface } from "../message-surface";
 
 import type {
@@ -19,6 +21,7 @@ import { ChatMessageRow } from "./chat/ChatMessageRow";
 import { DisplayTextProvider } from "../display-text";
 import { ChatAuxiliary } from "./chat/ChatAuxiliary";
 import { ChatComposer } from "./chat/ChatComposer";
+import { ChatStatusBar } from "./chat/ChatStatusBar";
 import { PromptPreviewPanel } from "./chat/PromptPreviewPanel";
 
 export interface ChatViewProps {
@@ -38,6 +41,8 @@ export interface ChatViewProps {
   lastMemoryReport: MemoryRetrievalReport | null;
   lastPromptBudget: PromptBudgetReport | null;
   memoryPanelOpen: boolean;
+  /** 高级模式（spec 4.3）：开启后才显示提示词预览等诊断入口；缺省关闭。 */
+  advancedMode?: boolean;
   messageListRef: MessageListRef;
   onChatInput: (value: string) => void;
   onChatWithCharacter?: (id: string) => void;
@@ -80,6 +85,7 @@ export function ChatView({
   lastMemoryReport,
   lastPromptBudget,
   memoryPanelOpen,
+  advancedMode = false,
   messageListRef,
   onChatInput,
   onChatWithCharacter,
@@ -103,6 +109,7 @@ export function ChatView({
   onSwiped,
 }: ChatViewProps) {
   const [surface] = useState(() => new MessageSurface());
+  const { t } = useTranslation();
   const [, updateSurface] = useState(0);
   useLayoutEffect(() => {
     if (!messageListRef.current) return;
@@ -120,7 +127,7 @@ export function ChatView({
   }, [surface, activeConversation, sourceFocus]);
   return (
     <main className={`runtime-shell ${memoryPanelOpen && activeConversation ? "runtime-shell--memory" : ""}`}>
-      <section className="chat-pane" aria-label="角色对话">
+      <section className="chat-pane" aria-label={t("角色对话")}>
         <ChatHeader
           activeConversation={activeConversation}
           memoryPanelOpen={memoryPanelOpen}
@@ -167,7 +174,7 @@ export function ChatView({
             onChatWithCharacter={onChatWithCharacter}
             onOpenImport={onOpenImport}
           />, surface.auxiliary)}
-        {activeConversation ? (
+        {activeConversation && advancedMode ? (
           <PromptPreviewPanel
             conversationId={activeConversation.id}
             sourceRevision={activeConversation.activeBranchId + "/" + activeConversation.updatedAt}
@@ -192,12 +199,13 @@ export function ChatView({
           onSendMessage={onSendMessage}
           onStopGeneration={onStopGeneration}
         />
+        <ChatStatusBar activeConversation={activeConversation} lastPromptBudget={lastPromptBudget} />
       </section>
       {memoryPanelOpen && activeConversation ? (
-        <aside className="memory-side-pane" aria-label="记忆中心">
+        <aside className="memory-side-pane" aria-label={t("记忆中心")}>
           <div className="memory-side-pane__bar">
-            <strong>记忆中心</strong>
-            <button type="button" onClick={onMemoryPanelToggle}>关闭</button>
+            <strong>{t("记忆中心")}</strong>
+            <button type="button" onClick={onMemoryPanelToggle}>{t("关闭")}</button>
           </div>
           <MemoryPanel
             conversationId={activeConversation.id}

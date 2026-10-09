@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import "../i18n";
 import type { ModelResponseState } from "@mycompanion/shared";
 import { decodeModelMedia } from "../model-media";
 
 function MediaItem({ parts, index }: { parts: ModelResponseState["media"]; index: number }) {
   const media = parts[0]!;
-  const { i18n } = useTranslation(), en = i18n.language.startsWith("en");
+  const { t } = useTranslation();
   const [url, setUrl] = useState(""), [failed, setFailed] = useState(false);
   useEffect(() => {
     let objectUrl = "";
@@ -16,10 +17,10 @@ function MediaItem({ parts, index }: { parts: ModelResponseState["media"]; index
   }, [parts]);
   const image = /^image\//i.test(media.mimeType), audio = /^audio\//i.test(media.mimeType);
   return <figure className="model-media-item" data-model-media={index}>
-    {url && image ? <img src={url} alt={en ? `Model image ${index + 1}` : `模型生成图片 ${index + 1}`} loading="lazy" onError={() => setFailed(true)} /> : null}
-    {url && audio ? <audio src={url} controls preload="metadata" aria-label={en ? `Model audio ${index + 1}` : `模型生成音频 ${index + 1}`} onError={() => setFailed(true)} /> : null}
-    {failed ? <p role="status">{en ? "This media could not be decoded or played." : "此媒体暂时无法解码或播放。"}</p> : null}
-    {url ? <figcaption><a href={url} download={`model-media-${index + 1}`}>{en ? "Save media" : "保存媒体"}</a><small>{media.mimeType}</small></figcaption> : null}
+    {url && image ? <img src={url} alt={t("模型生成图片 {{index}}", { index: index + 1 })} loading="lazy" onError={() => setFailed(true)} /> : null}
+    {url && audio ? <audio src={url} controls preload="metadata" aria-label={t("模型生成音频 {{index}}", { index: index + 1 })} onError={() => setFailed(true)} /> : null}
+    {failed ? <p role="status">{t("此媒体暂时无法解码或播放。")}</p> : null}
+    {url ? <figcaption><a href={url} download={`model-media-${index + 1}`}>{t("保存媒体")}</a><small>{media.mimeType}</small></figcaption> : null}
   </figure>;
 }
 export function ModelMedia({ media }: { media?: ModelResponseState["media"] | undefined }) {

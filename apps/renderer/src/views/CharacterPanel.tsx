@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import "../i18n";
 import type { CharacterDetail } from "@mycompanion/shared";
 import { ApiRequestError, fetchCharacterCard, updateCharacter } from "../api";
 import { CharacterAvatar } from "../components";
@@ -69,6 +71,7 @@ export function CharacterPanel({ open, online, character, onSaved, onClose }: {
   onSaved(updated: CharacterDetail): void; onClose(): void;
 }) {
   const card = useRef<Record<string, unknown> | null>(null);
+  const { t } = useTranslation();
   const [form, setForm] = useState<CharacterForm>(emptyForm);
   const [worlds, setWorlds] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
@@ -110,47 +113,47 @@ export function CharacterPanel({ open, online, character, onSaved, onClose }: {
     } finally { setBusy(false); }
   }
   const disabled = !online || loading || busy || !character;
-  return <aside className="character-editor-dock" hidden={!open} aria-label="编辑角色">
-    <header><h2>编辑角色</h2><button type="button" className="button button--quiet button--small" onClick={onClose}>关闭</button></header>
-    {!character ? <p>请先在角色库选择角色。</p> : <>
-      {error ? <p role="alert">{error}</p> : null}
-      {notice ? <p role="status">{notice}</p> : null}
+  return <aside className="character-editor-dock" hidden={!open} aria-label={t("编辑角色")}>
+    <header><h2>{t("编辑角色")}</h2><button type="button" className="button button--quiet button--small" onClick={onClose}>{t("关闭")}</button></header>
+    {!character ? <p>{t("请先在角色库选择角色。")}</p> : <>
+      {error ? <p role="alert">{t(error)}</p> : null}
+      {notice ? <p role="status">{t(notice)}</p> : null}
       <form onSubmit={event => { event.preventDefault(); void save(); }}>
-        <p data-character-status aria-live="polite">{loading ? "正在读取角色卡…" : character.name}</p>
+        <p data-character-status aria-live="polite">{loading ? t("正在读取角色卡…") : character.name}</p>
         <fieldset disabled={disabled}>
           <CharacterAvatar character={character} large />
-          <label>名称<input name="ch_name" required value={form.ch_name} onChange={event => patch({ ch_name: event.target.value })} /></label>
-          <label>人物设定<textarea name="description" rows={6} value={form.description} onChange={event => patch({ description: event.target.value })} /></label>
-          <label>性格<textarea name="personality" rows={3} value={form.personality} onChange={event => patch({ personality: event.target.value })} /></label>
-          <label>场景<textarea name="scenario" rows={3} value={form.scenario} onChange={event => patch({ scenario: event.target.value })} /></label>
-          <label>默认开场白<textarea name="first_mes" rows={5} value={form.first_mes} onChange={event => patch({ first_mes: event.target.value })} /></label>
-          <details><summary className="open_alternate_greetings">备用开场白</summary>
+          <label>{t("名称")}<input name="ch_name" required value={form.ch_name} onChange={event => patch({ ch_name: event.target.value })} /></label>
+          <label>{t("人物设定")}<textarea name="description" rows={6} value={form.description} onChange={event => patch({ description: event.target.value })} /></label>
+          <label>{t("性格")}<textarea name="personality" rows={3} value={form.personality} onChange={event => patch({ personality: event.target.value })} /></label>
+          <label>{t("场景")}<textarea name="scenario" rows={3} value={form.scenario} onChange={event => patch({ scenario: event.target.value })} /></label>
+          <label>{t("默认开场白")}<textarea name="first_mes" rows={5} value={form.first_mes} onChange={event => patch({ first_mes: event.target.value })} /></label>
+          <details><summary className="open_alternate_greetings">{t("备用开场白")}</summary>
             <div id="alternate-greetings-list">
-              {form.alternateGreetings.map((greeting, index) => <label key={index}>备用开场白 {index + 1}
+              {form.alternateGreetings.map((greeting, index) => <label key={index}>{t("备用开场白 {{index}}", { index: index + 1 })}
                 <textarea rows={3} value={greeting} onChange={event => patch({ alternateGreetings: form.alternateGreetings.map((item, itemIndex) => itemIndex === index ? event.target.value : item) })} />
-                <button type="button" className="button button--quiet button--small" onClick={() => patch({ alternateGreetings: form.alternateGreetings.filter((_item, itemIndex) => itemIndex !== index) })}>移除</button>
+                <button type="button" className="button button--quiet button--small" onClick={() => patch({ alternateGreetings: form.alternateGreetings.filter((_item, itemIndex) => itemIndex !== index) })}>{t("移除")}</button>
               </label>)}
             </div>
-            <button type="button" className="button button--quiet button--small" data-add-greeting onClick={() => patch({ alternateGreetings: [...form.alternateGreetings, ""] })}>添加开场白</button>
+            <button type="button" className="button button--quiet button--small" data-add-greeting onClick={() => patch({ alternateGreetings: [...form.alternateGreetings, ""] })}>{t("添加开场白")}</button>
           </details>
-          <label>主世界书<select className="character_world_info_selector" aria-label="主世界书" value={form.world} onChange={event => patch({ world: event.target.value })}>
-            <option value="">（无）</option>
+          <label>{t("主世界书")}<select className="character_world_info_selector" aria-label={t("主世界书")} value={form.world} onChange={event => patch({ world: event.target.value })}>
+            <option value="">{t("（无）")}</option>
             {worlds.map(name => <option key={name} value={name}>{name}</option>)}
-            {form.world && !worlds.includes(form.world) ? <option value={form.world}>{form.world}（未找到）</option> : null}
+            {form.world && !worlds.includes(form.world) ? <option value={form.world}>{t("{{name}}（未找到）", { name: form.world })}</option> : null}
           </select></label>
-          <details><summary>更多设定</summary>
-            <label>角色深度提示<textarea name="depth_prompt_prompt" rows={4} value={form.depthPrompt} onChange={event => patch({ depthPrompt: event.target.value })} /></label>
-            <label>提示插入深度<input name="depth_prompt_depth" type="number" min={0} max={1000} value={form.depthDepth} onChange={event => { if (Number.isFinite(event.target.valueAsNumber)) patch({ depthDepth: event.target.valueAsNumber }); }} /></label>
-            <label>提示消息身份<select name="depth_prompt_role" value={form.depthRole} onChange={event => patch({ depthRole: Number(event.target.value) })}><option value={0}>系统</option><option value={1}>用户</option><option value={2}>角色</option></select></label>
-            <label>示例对话<textarea name="mes_example" rows={4} value={form.mes_example} onChange={event => patch({ mes_example: event.target.value })} /></label>
-            <label>系统提示词<textarea name="system_prompt" rows={4} value={form.system_prompt} onChange={event => patch({ system_prompt: event.target.value })} /></label>
-            <label>历史后置提示词<textarea name="post_history_instructions" rows={3} value={form.post_history_instructions} onChange={event => patch({ post_history_instructions: event.target.value })} /></label>
-            <label>作者备注<textarea name="creator_notes" rows={3} value={form.creator_notes} onChange={event => patch({ creator_notes: event.target.value })} /></label>
-            <label>作者<input name="creator" value={form.creator} onChange={event => patch({ creator: event.target.value })} /></label>
-            <label>版本<input name="character_version" value={form.character_version} onChange={event => patch({ character_version: event.target.value })} /></label>
-            <label>标签（逗号分隔）<input name="tags" value={form.tags} onChange={event => patch({ tags: event.target.value })} /></label>
+          <details><summary>{t("更多设定")}</summary>
+            <label>{t("角色深度提示")}<textarea name="depth_prompt_prompt" rows={4} value={form.depthPrompt} onChange={event => patch({ depthPrompt: event.target.value })} /></label>
+            <label>{t("提示插入深度")}<input name="depth_prompt_depth" type="number" min={0} max={1000} value={form.depthDepth} onChange={event => { if (Number.isFinite(event.target.valueAsNumber)) patch({ depthDepth: event.target.valueAsNumber }); }} /></label>
+            <label>{t("提示消息身份")}<select name="depth_prompt_role" value={form.depthRole} onChange={event => patch({ depthRole: Number(event.target.value) })}><option value={0}>{t("系统")}</option><option value={1}>{t("用户")}</option><option value={2}>{t("角色")}</option></select></label>
+            <label>{t("示例对话")}<textarea name="mes_example" rows={4} value={form.mes_example} onChange={event => patch({ mes_example: event.target.value })} /></label>
+            <label>{t("系统提示词")}<textarea name="system_prompt" rows={4} value={form.system_prompt} onChange={event => patch({ system_prompt: event.target.value })} /></label>
+            <label>{t("历史后置提示词")}<textarea name="post_history_instructions" rows={3} value={form.post_history_instructions} onChange={event => patch({ post_history_instructions: event.target.value })} /></label>
+            <label>{t("作者备注")}<textarea name="creator_notes" rows={3} value={form.creator_notes} onChange={event => patch({ creator_notes: event.target.value })} /></label>
+            <label>{t("作者")}<input name="creator" value={form.creator} onChange={event => patch({ creator: event.target.value })} /></label>
+            <label>{t("版本")}<input name="character_version" value={form.character_version} onChange={event => patch({ character_version: event.target.value })} /></label>
+            <label>{t("标签（逗号分隔）")}<input name="tags" value={form.tags} onChange={event => patch({ tags: event.target.value })} /></label>
           </details>
-          <button id="create_button" className="button button--primary" type="submit" disabled={disabled}>{busy ? "正在保存…" : "保存角色"}</button>
+          <button id="create_button" className="button button--primary" type="submit" disabled={disabled}>{busy ? t("正在保存…") : t("保存角色")}</button>
         </fieldset>
       </form>
     </>}

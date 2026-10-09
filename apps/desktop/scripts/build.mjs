@@ -17,6 +17,9 @@ await build({
   bundle: true,
   platform: "node",
   format: "esm",
+  // 代码分割：四个入口共享的依赖（local-service、gpt-tokenizer 的 BPE 表等约 9MB）
+  // 抽成公共 chunk，不再每个入口各复制一份。
+  splitting: true,
   target: "node22",
   external: ["electron", "node:*"],
   sourcemap: true,

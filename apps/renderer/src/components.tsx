@@ -120,7 +120,7 @@ export function ImportedContentDetails({
               <li key={`${entry.index}-${entry.name}`}>
                 <div className="content-preview-heading"><strong>{entry.name}</strong><span>{translate(entry.sourceEnabled ? "卡内启用" : "卡内停用")}</span></div>
                 <p>{entry.contentPreview || translate("（空内容）")}</p>
-                <dl><div><dt>{translate("关键词")}</dt><dd>{entry.keys.join("、") || translate("无")}</dd></div><div><dt>{translate("触发")}</dt><dd>{translate(entry.constant ? "常驻" : entry.useRegex ? "正则关键词" : "普通关键词")}</dd></div><div><dt>{translate("顺序")}</dt><dd>{locale ? entry.insertionOrder.toLocaleString(locale) : entry.insertionOrder}</dd></div></dl>
+                <dl><div><dt>{translate("关键词")}</dt><dd>{entry.keys.join(translate("、")) || translate("无")}</dd></div><div><dt>{translate("触发")}</dt><dd>{translate(entry.constant ? "常驻" : entry.useRegex ? "正则关键词" : "普通关键词")}</dd></div><div><dt>{translate("顺序")}</dt><dd>{locale ? entry.insertionOrder.toLocaleString(locale) : entry.insertionOrder}</dd></div></dl>
               </li>
             ))}
           </ol>
@@ -134,7 +134,7 @@ export function ImportedContentDetails({
               <li key={`${script.index}-${script.name}`}>
                 <div className="content-preview-heading"><strong>{script.name}</strong><span className="status-disabled">{translate("已禁用")}</span></div>
                 <code className="regex-source">{script.findRegexPreview || translate("（未提供查找表达式）")}</code>
-                <dl><div><dt>{translate("卡内状态")}</dt><dd>{translate(script.sourceDisabled ? "停用" : "启用")}</dd></div><div><dt>{translate("作用阶段")}</dt><dd>{script.placements.map(value => translate(placementText(value))).join("、") || translate("未声明")}</dd></div><div><dt>{translate("编辑时运行")}</dt><dd>{translate(script.runOnEdit ? "是" : "否")}</dd></div></dl>
+                <dl><div><dt>{translate("卡内状态")}</dt><dd>{translate(script.sourceDisabled ? "停用" : "启用")}</dd></div><div><dt>{translate("作用阶段")}</dt><dd>{script.placements.map(value => translate(placementText(value))).join(translate("、")) || translate("未声明")}</dd></div><div><dt>{translate("编辑时运行")}</dt><dd>{translate(script.runOnEdit ? "是" : "否")}</dd></div></dl>
               </li>
             ))}
           </ol>

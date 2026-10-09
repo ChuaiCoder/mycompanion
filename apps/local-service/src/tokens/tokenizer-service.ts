@@ -15,11 +15,29 @@ export function tokenizerDescriptor(model: string) {
   return { encoding, estimated: mapped !== encoding && mapped !== "o200k_harmony", knownModel: mapped !== undefined } as const;
 }
 
+/**
+ * BPE 编码结果的进程内缓存。
+ *
+ * BPE 编码是纯函数但昂贵（gpt-tokenizer 纯 JS 约 1M 字符/s），而提示词组装会在准入与
+ * 裁剪循环里反复编码同一批字符串（一条消息的文本在一次发送中可被编码几十次）。
+ * 按 (编码, 文本) 记忆化后同一内容第二次起是 O(1)。Map 的键只持有字符串引用，
+ * 不复制内容；条目数到达上限时整体清空重建（简单 FIFO，命中率不受影响）。
+ */
+const MAX_TOKEN_CACHE_ENTRIES = 4000;
+const tokenCountCache = new Map<string, number>();
+
 /** Same BPE table as the extension token-count endpoint, usable by sync budgets. */
 export function countTextTokens(text: string, model = ""): number {
   if (!text) return 0;
-  const tokenizer = tokenizerDescriptor(model).encoding === "o200k_base" ? o200k : cl100k;
-  return tokenizer.countTokens(text, { disallowedSpecial: new Set() });
+  const encoding = tokenizerDescriptor(model).encoding;
+  const key = encoding + "\n" + text;
+  const cached = tokenCountCache.get(key);
+  if (cached !== undefined) return cached;
+  const tokenizer = encoding === "o200k_base" ? o200k : cl100k;
+  const tokens = tokenizer.countTokens(text, { disallowedSpecial: new Set() });
+  if (tokenCountCache.size >= MAX_TOKEN_CACHE_ENTRIES) tokenCountCache.clear();
+  tokenCountCache.set(key, tokens);
+  return tokens;
 }
 
 export async function tokenizerFor(model: string) {

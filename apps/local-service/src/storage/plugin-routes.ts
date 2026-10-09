@@ -23,13 +23,7 @@ export function registerPluginRoutes(app: FastifyInstance, runtime: RuntimeRepos
   app.post<{ Body: unknown }>("/api/plugins/install", async (request, reply) => {
     const parsed = pluginManifestSchema.safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(422).send({
-        error: {
-          code: "INVALID_PLUGIN_MANIFEST",
-          message: "插件清单无效；当前仅支持 MyCompanion 声明式插件格式。",
-          details: parsed.error.issues.map((issue) => issue.message),
-        },
-      } satisfies ApiErrorResponse);
+      return sendError(reply, 422, "INVALID_PLUGIN_MANIFEST", "插件清单无效；当前仅支持 MyCompanion 声明式插件格式。", parsed.error.issues.map((issue) => issue.message));
     }
     if (
       parsed.data.contributes.systemPrompt &&

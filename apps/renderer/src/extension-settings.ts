@@ -2,6 +2,8 @@
 // 各领域（编辑器草稿、界面语言、向量匹配、预设绑定）在同一个缓存对象上读写，
 // 保存时整体 PUT；串行队列避免并发写互相覆盖，服务端会保留预设存储域。
 
+import { readApiPayload } from "./api";
+
 declare global { interface Window { __mycompanionFlushDrafts?: () => Promise<void> } }
 
 let cache: Record<string, unknown> | undefined;
@@ -13,8 +15,7 @@ const listeners = new Set<() => void>();
 export function loadSharedExtensionSettings(): Promise<Record<string, unknown>> {
   return loading ??= (async () => {
     const response = await fetch("/api/extensions/settings", { headers: { Accept: "application/json" } });
-    if (!response.ok) throw new Error(`扩展设置读取失败（HTTP ${response.status}）。`);
-    const payload = await response.json() as { extensionSettings?: unknown };
+    const payload = await readApiPayload(response) as { extensionSettings?: unknown };
     cache = payload.extensionSettings && typeof payload.extensionSettings === "object" && !Array.isArray(payload.extensionSettings)
       ? payload.extensionSettings as Record<string, unknown> : {};
     return cache;
@@ -29,7 +30,7 @@ export function saveSharedExtensionSettings(): Promise<void> {
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body,
     });
-    if (!response.ok) throw new Error(`扩展设置保存失败（HTTP ${response.status}）。`);
+    await readApiPayload(response);
   });
   queue = run.catch(() => {});
   return run.then(() => { for (const listener of listeners) listener(); });

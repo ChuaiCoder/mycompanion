@@ -33,7 +33,9 @@ export function DisplayTextProvider({ conversationId, messages, children }: {
   const [texts, setTexts] = useState<ReadonlyMap<string, string>>(new Map());
   // 只依赖"需要转换的那些消息"的内容，避免普通消息变化触发无谓转换。
   const targets = useMemo(
-    () => messages.filter(message => needsDisplayTransform(message.content)).map(message => ({ messageId: message.id, text: message.content })),
+    // 流式中的消息内容逐 delta 变化：转换部分内容没有意义，且会每个 delta 发一次
+    // 转换请求。等它落定（status 离开 streaming）后再进入转换目标。
+    () => messages.filter(message => message.status !== "streaming" && needsDisplayTransform(message.content)).map(message => ({ messageId: message.id, text: message.content })),
     [messages],
   );
   const signature = useMemo(

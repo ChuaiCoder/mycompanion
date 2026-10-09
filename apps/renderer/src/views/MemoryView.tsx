@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { MemoryListQuery, MemoryRecord } from "@mycompanion/shared";
 import { useTranslation } from "react-i18next";
+import "../i18n";
 
 import { deleteMemory, listMemoryInventory, restoreMemory, updateMemory } from "../api";
 import { Notice } from "../components";
@@ -38,7 +39,7 @@ export function MemoryView({ online, onOpenSource }: MemoryViewProps) {
 
   const reads = useRef(0);
   const editor = useRef<HTMLTextAreaElement>(null);
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const text = (value: string) => memoryText(i18n.language, value);
 
   const load = useCallback(async (next: MemoryListQuery) => {
@@ -124,7 +125,7 @@ export function MemoryView({ online, onOpenSource }: MemoryViewProps) {
   };
 
   const handleDelete = async (memory: MemoryRecord): Promise<void> => {
-    if (!window.confirm(`删除这条记忆（${memory.content}）？此操作不可撤销。`)) return;
+    if (!window.confirm(t("删除这条记忆（{{content}}）？此操作不可撤销。", { content: memory.content }))) return;
     setIsBusy(true);
     setError(null);
     try {
@@ -148,11 +149,11 @@ export function MemoryView({ online, onOpenSource }: MemoryViewProps) {
     <main className="memory-workspace" aria-labelledby="memory-library-title">
       <header className="memory-page-head">
         <div>
-          <p className="eyebrow">MYCOMPANION · 记忆库</p>
-          <h1 id="memory-library-title">记忆</h1>
-          <p>系统从对话里自动提取的事实、状态、目标与关系。按故事分组；固定记忆会优先进入上下文。</p>
+          <p className="eyebrow">{text("MYCOMPANION · 记忆库")}</p>
+          <h1 id="memory-library-title">{text("记忆")}</h1>
+          <p>{text("系统从对话里自动提取的事实、状态、目标与关系。按故事分组；固定记忆会优先进入上下文。")}</p>
         </div>
-        <div className="memory-page-stat"><strong>{items === null ? "…" : active}</strong><span>条记忆</span></div>
+        <div className="memory-page-stat"><strong>{items === null ? "…" : active}</strong><span>{text("条记忆")}</span></div>
       </header>
 
       {error ? <Notice tone="error">{text(error)}</Notice> : null}
@@ -186,15 +187,15 @@ export function MemoryView({ online, onOpenSource }: MemoryViewProps) {
       ) : active === 0 ? (
         <div className="memory-page-empty">
           <span aria-hidden="true">🧠</span>
-          <strong>还没有记忆</strong>
-          <p>在故事里继续对话，系统会自动提取；这里会按故事汇总显示。</p>
+          <strong>{text("还没有记忆")}</strong>
+          <p>{text("在故事里继续对话，系统会自动提取；这里会按故事汇总显示。")}</p>
         </div>
       ) : (
         groups.map(group => (
           <section className="memory-page-group" key={group.conversationId} aria-labelledby={`memory-group-${group.conversationId}`}>
             <header className="memory-page-group__head">
-              <h2 id={`memory-group-${group.conversationId}`}>{group.conversationTitle || "（故事已删除）"}</h2>
-              <small>{group.items.length} 条</small>
+              <h2 id={`memory-group-${group.conversationId}`}>{group.conversationTitle || text("（故事已删除）")}</h2>
+              <small>{t("{{count}} 条", { count: group.items.length })}</small>
             </header>
             <ul className="memory-list">
               {group.items.map(memory => (
@@ -221,7 +222,7 @@ export function MemoryView({ online, onOpenSource }: MemoryViewProps) {
           </section>
         ))
       )}
-      {isBusy ? <p role="status" className="visually-hidden-input">正在更新</p> : null}
+      {isBusy ? <p role="status" className="visually-hidden-input">{text("正在更新")}</p> : null}
     </main>
   );
 }

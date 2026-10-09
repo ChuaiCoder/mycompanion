@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import "../../i18n";
 
 import type { MemoryRetrievalReport } from "@mycompanion/shared";
 
@@ -15,8 +16,8 @@ export interface RetrievalTesterProps {
 
 /** 检索测试器（FR-MEM-007）：对示例文本试跑检索，展示注入结果与诊断，不改真实聊天。 */
 export function RetrievalTester({ conversationId, sourceRevision }: RetrievalTesterProps) {
-  const { i18n } = useTranslation();
-  const en = i18n.language.startsWith("en"), text = (value: string) => memoryText(i18n.language, value);
+  const { t, i18n } = useTranslation();
+  const text = (value: string) => memoryText(i18n.language, value);
   const [testInput, setTestInput] = useState(() => text("我们现在在哪里？"));
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<MemoryRetrievalReport | null>(null);
@@ -54,7 +55,7 @@ export function RetrievalTester({ conversationId, sourceRevision }: RetrievalTes
         <Icon name="sparkles" size={14} />
         {text(isTesting ? "正在检索…" : "运行检索")}
       </button>
-      <p role="status">{isTesting ? text("正在检索…") : testError ? "" : testResult ? (en ? `Retrieval complete: ${testResult.injectedCount} memories included.` : `检索完成：注入 ${testResult.injectedCount} 条记忆。`) : ""}</p>
+      <p role="status">{isTesting ? text("正在检索…") : testError ? "" : testResult ? t("检索完成：注入 {{count}} 条记忆。", { count: testResult.injectedCount }) : ""}</p>
       {testError ? <p role="alert">{text(testError)}</p> : null}
       {testResult ? (
         <div className="memory-panel__test-result">
@@ -62,10 +63,10 @@ export function RetrievalTester({ conversationId, sourceRevision }: RetrievalTes
             <div key={result.memoryId} className={`memory-test-result ${result.injected ? "memory-test-result--injected" : "memory-test-result--skipped"}`}>
               <strong>{result.content ? `…${result.content.slice(0, 24)}` : text("（无内容）")}</strong>
               <span>{text(result.injected ? "已注入" : "未注入")} · {text("得分")} {result.score}</span>
-              {result.diagnostics.length > 0 ? <small>{result.diagnostics.map(text).join(en ? "; " : "；")}</small> : null}
+              {result.diagnostics.length > 0 ? <small>{result.diagnostics.map(text).join(t("；"))}</small> : null}
             </div>
           ))}
-          <p>{en ? `Included before recent messages (${testResult.injectedCount} memories; ${testResult.budgetTokens} token budget).` : `注入位置：近期消息之前（${testResult.injectedCount} 条 · 预算 ${testResult.budgetTokens} token）`}</p>
+          <p>{t("注入位置：近期消息之前（{{count}} 条 · 预算 {{budget}} token）", { count: testResult.injectedCount, budget: testResult.budgetTokens })}</p>
           <p>{text("注入内容：")}<code className="memory-item__content">{testResult.block || text("（本轮没有注入）")}</code></p>
           <MemoryRetrievalDiagnostics retrieval={testResult.retrieval} />
         </div>

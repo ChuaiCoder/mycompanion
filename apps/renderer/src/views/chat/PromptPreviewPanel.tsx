@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 
 import type { PromptPreviewResponse } from "@mycompanion/shared";
 
@@ -12,7 +13,22 @@ function contentSnippet(content: string): string {
   return flat.length > 140 ? `${flat.slice(0, 140)}…` : flat;
 }
 
-const roleLabel = (role: string): string => role === "system" ? "系统提示词" : role === "user" ? "用户" : "助手";
+/* 图例按区域 key 归并，标签也应描述区域而不是后端的内部标识符（main、
+   charDescription 等）。已知 key 用固定中文名；未认识的 key 回落到后端标签。 */
+const REGION_LABELS: Record<string, string> = {
+  character_core: "角色核心",
+  example_dialogue: "示例对话",
+  worldbook_constant: "常驻世界书",
+  worldbook: "世界书",
+  memory: "检索记忆",
+  memory_pinned: "固定记忆",
+  stage_summary: "阶段摘要",
+  plugins: "插件",
+  extension_prompts: "其他注入",
+  post_history: "历史后指令",
+  current_input: "当前输入",
+};
+const regionLabel = (key: string, fallback: string): string => REGION_LABELS[key] ?? fallback;
 
 // 发送前的完整提示词预览（默认收起，展开才请求；与真实请求相同组装，凭据已脱敏）。
 export function PromptPreviewPanel({
@@ -26,6 +42,8 @@ export function PromptPreviewPanel({
   draft: string;
   isGenerating: boolean;
 }) {
+  const { t } = useTranslation();
+  const roleLabel = (role: string): string => role === "system" ? t("系统提示词") : role === "user" ? t("用户") : t("助手");
   // 默认收起（发送前按需展开）；收起时不发起预览请求。
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState<PromptPreviewResponse | null>(null);
@@ -49,7 +67,7 @@ export function PromptPreviewPanel({
         .then((result) => { if (!controller.signal.aborted) setPreview(result); })
         .catch((cause: unknown) => {
           if (controller.signal.aborted || cause instanceof DOMException && cause.name === "AbortError") return;
-          setError("提示词预览加载失败。");
+          setError(t("提示词预览加载失败。"));
         })
         .finally(() => {
           if (!controller.signal.aborted) setIsLoading(false);
@@ -72,11 +90,11 @@ export function PromptPreviewPanel({
     <details className="prompt-preview" open={open}>
       <summary onClick={(event) => { event.preventDefault(); setOpen((value) => !value); }}>
         <Icon name="book" size={14} />
-        提示词预览
+        {t("提示词预览")}
         <span>
           {open
-            ? <>约 {preview?.totalTokens ?? "…"} token{isLoading ? " · 更新中" : ""}</>
-            : "发送前查看完整提示词（已脱敏）"}
+            ? <>{t("约 {{tokens}} token", { tokens: preview?.totalTokens ?? "…" })}{isLoading ? t(" · 更新中") : ""}</>
+            : t("发送前查看完整提示词（已脱敏）")}
         </span>
       </summary>
       {error ? <p className="prompt-preview__error">{error}</p> : null}
@@ -106,7 +124,7 @@ export function PromptPreviewPanel({
                       className={`prompt-preview__bar-seg prompt-preview__bar-seg--${part.key}`}
                       key={part.key}
                       style={{ flexGrow: part.tokens }}
-                      title={`${part.label}：约 ${part.tokens} token`}
+                      title={`${t(regionLabel(part.key, part.label))}：${t("约 {{tokens}} token", { tokens: part.tokens })}`}
                     />
                   ))}
                 </div>
@@ -114,15 +132,15 @@ export function PromptPreviewPanel({
                   {parts.map(part => (
                     <li className="prompt-preview__legend-item" key={part.key}>
                       <i aria-hidden="true" style={{ background: `var(--region-${part.key}, var(--text-faint))` }} />
-                      <span>{part.label}</span>
+                      <span>{t(regionLabel(part.key, part.label))}</span>
                       {/* 只给绝对用量：后端仅归类了部分区域（其余是近期对话正文），
                           百分比会让人误以为占满整个提示词。 */}
-                      <small>约 {part.tokens} token</small>
+                      <small>{t("约 {{tokens}} token", { tokens: part.tokens })}</small>
                     </li>
                   ))}
                 </ul>
                 {/* 条数无法从 token 反推，单独给出；占比只对上面已归类的区域成立。 */}
-                <p className="prompt-preview__legend-note">近期原始对话 {preview.recentMessageCount} 条进入上下文</p>
+                <p className="prompt-preview__legend-note">{t("近期原始对话 {{count}} 条进入上下文", { count: preview.recentMessageCount })}</p>
               </div>
             );
           })()}
@@ -131,14 +149,14 @@ export function PromptPreviewPanel({
           {preview.diagnostics.length ? (
             <ul className="prompt-preview__diagnostics">
               {preview.diagnostics.map((line) => (
-                <li key={line}><strong>被裁剪</strong><small>{line}</small></li>
+                <li key={line}><strong>{t("被裁剪")}</strong><small>{line}</small></li>
               ))}
             </ul>
           ) : null}
           <div className="prompt-preview__messages">
             <div className="prompt-preview__messages-head">
-              <span>最终请求消息</span>
-              <small>{preview.messages.length} 条</small>
+              <span>{t("最终请求消息")}</span>
+              <small>{t("{{count}} 条", { count: preview.messages.length })}</small>
             </div>
             {preview.messages.map((message, index) => {
               const expandedKey = `message-${index}`;
@@ -148,8 +166,8 @@ export function PromptPreviewPanel({
                 <details className="prompt-preview__message" key={expandedKey} open={isExpanded}>
                   <summary onClick={(event) => { event.preventDefault(); toggleRegion(index); }}>
                     <span className={`prompt-preview__role prompt-preview__role--${message.role}`}>{roleLabel(message.role)}</span>
-                    <span className="prompt-preview__snippet">{message.name ? `${message.name} · ` : ""}{snippet || "（空内容）"}</span>
-                    <small>{isExpanded ? "收起" : "展开"}</small>
+                    <span className="prompt-preview__snippet">{message.name ? `${message.name} · ` : ""}{snippet || t("（空内容）")}</span>
+                    <small>{isExpanded ? t("收起") : t("展开")}</small>
                   </summary>
                   {isExpanded ? <pre className="prompt-preview__content">{message.content}</pre> : null}
                 </details>
@@ -158,7 +176,7 @@ export function PromptPreviewPanel({
           </div>
         </div>
       ) : null}
-      {isGenerating ? <p className="prompt-preview__hint">生成中，预览仅反映发送前的草稿。</p> : null}
+      {isGenerating ? <p className="prompt-preview__hint">{t("生成中，预览仅反映发送前的草稿。")}</p> : null}
     </details>
   );
 }

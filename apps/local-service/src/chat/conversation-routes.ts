@@ -121,17 +121,20 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
   });
 
   // 记忆中心（FR-MEM-007）：按作用域/类型/状态筛选。
-  app.get<{ Params: IdParams; QueryString: MemoryListQuery }>(
+  app.get<{ Params: IdParams; Querystring: MemoryListQuery }>(
     "/api/conversations/:id/memories",
     async (request, reply) => {
       const conversation = runtime.getConversation(request.params.id);
       if (!conversation) {
         return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事不存在。");
       }
-      const query = memoryListQuerySchema.parse(request.query);
+      const query = memoryListQuerySchema.safeParse(request.query);
+      if (!query.success) {
+        return sendError(reply, 400, "INVALID_REQUEST", "记忆筛选条件无效。");
+      }
       // 列表展示前刷新分支可达性（FR-MEM-008）：切回原分支后 orphaned 记忆立即恢复。
       runtime.syncMemoryReachability(conversation.id);
-      const items = runtime.listMemories(conversation.id, query);
+      const items = runtime.listMemories(conversation.id, query.data);
       return { conversationId: conversation.id, items, total: items.length };
     },
   );
@@ -344,13 +347,13 @@ export function registerConversationRoutes(app: FastifyInstance, runtime: Runtim
   app.get<{ Params: IdParams }>("/api/conversations/:id/greeting", async (request, reply) => {
     const conversation = runtime.getConversation(request.params.id);
     const character = conversation && characters.get(conversation.characterId);
-    if (!conversation || !character) return reply.code(404).send({ error: { message: "故事或角色不存在。" } });
+    if (!conversation || !character) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事或角色不存在。");
     const regexContext = createRegexContext(character, conversation.id);
     const message = await buildCharacterGreeting(character, regexContext.extensionSettings, {
       transform: text => applyRegexStage(character, "output", text, "assistant", undefined, false, pipeline.memoryShutdown.signal, regexContext),
     });
     const latest = runtime.getConversation(request.params.id);
-    if (!latest) return reply.code(404).send({ error: { message: "故事已删除。" } });
+    if (!latest) return sendError(reply, 404, "CONVERSATION_NOT_FOUND", "故事已删除。");
     if (latest.activeBranchId !== conversation.activeBranchId) return sendError(reply, 409, "BRANCH_CHANGED", "预览期间故事分支已改变，请重新读取开场白。");
     return reply.header("Cache-Control", "no-store").send({
       characterId: character.id, branchId: latest.activeBranchId,

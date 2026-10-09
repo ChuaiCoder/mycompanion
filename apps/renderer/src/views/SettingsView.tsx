@@ -1,10 +1,11 @@
-import { useRef, useState, type ChangeEvent, type FormEvent } from "react";
+import { useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { changeUiLanguage, type UiLanguage } from "../i18n";
 
 import { MAX_CONTEXT_TOKENS, type ProviderConnectionResponse, type ProviderSettings } from "@mycompanion/shared";
 
 import { Notice } from "../components";
+import { useAdvancedMode } from "../hooks/useAdvancedMode";
 import { PresetSettings } from "./PresetSettings";
 import { BackupPanel } from "./BackupPanel";
 import { ProviderProfiles } from "./ProviderProfiles";
@@ -30,6 +31,10 @@ export interface SettingsViewProps {
   selectedCharacterName?: string | undefined;
   onContinue?: () => void;
 }
+
+/** 设置页分页：默认落在「模型」，其余页签按需挂载。 */
+type SettingsTab = "model" | "language" | "advanced" | "backup";
+const SETTINGS_TAB_ORDER: SettingsTab[] = ["model", "language", "advanced", "backup"];
 
 export function SettingsView({
   provider,
@@ -62,6 +67,28 @@ export function SettingsView({
    */
   const [isSaved, setIsSaved] = useState(false);
   const [presetId, setPresetId] = useState<string | null>(null);
+  // 设置页曾经一整页排到底，模型卡片之外的内容把页面拉得很长；
+  // 改为页签后只挂载当前页，「模型」保持默认（新人引导落点不变）。
+  const [activeTab, setActiveTab] = useState<SettingsTab>("model");
+  const { advancedMode, setAdvancedMode } = useAdvancedMode();
+  const settingsTabs: Array<{ id: SettingsTab; label: string }> = [
+    { id: "model", label: t("settings.tab.model") },
+    { id: "language", label: t("language.label") },
+    { id: "advanced", label: t("settings.tab.advanced") },
+    { id: "backup", label: t("settings.tab.backup") },
+  ];
+  /** WAI 页签键盘约定：方向键/Home/End 移动并立即激活。 */
+  const handleTabKey = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+    event.preventDefault();
+    const index = SETTINGS_TAB_ORDER.indexOf(activeTab);
+    const next = event.key === "Home" ? 0
+      : event.key === "End" ? SETTINGS_TAB_ORDER.length - 1
+      : (index + (event.key === "ArrowRight" ? 1 : -1) + SETTINGS_TAB_ORDER.length) % SETTINGS_TAB_ORDER.length;
+    const id = SETTINGS_TAB_ORDER[next]!;
+    setActiveTab(id);
+    document.getElementById(`settings-tab-${id}`)?.focus();
+  };
   const preset = presetId
     ? PROVIDER_PRESETS.find(entry => entry.id === presetId) ?? null
     : provider ? findPreset(provider) : null;
@@ -185,10 +212,20 @@ export function SettingsView({
   return (
     <main className="settings-workspace">
       <header className="settings-page-head"><h1>{t("nav.settings")}</h1><p>{t("settings.pageIntro")}</p></header>
+      <div className="settings-tabs" role="tablist" aria-label={t("nav.settings")} onKeyDown={handleTabKey}>
+        {settingsTabs.map(tab => (
+          <button key={tab.id} type="button" role="tab" id={`settings-tab-${tab.id}`}
+            aria-selected={activeTab === tab.id} aria-controls={`settings-panel-${tab.id}`}
+            tabIndex={activeTab === tab.id ? 0 : -1}
+            onClick={() => setActiveTab(tab.id)}>{tab.label}</button>
+        ))}
+      </div>
+      {activeTab === "model" ? (
+      <div role="tabpanel" id="settings-panel-model" aria-labelledby="settings-tab-model">
       <section className="settings-card" aria-labelledby="provider-title">
         <header><h2 id="provider-title">{t("settings.title")}</h2><p>{selectedCharacterName ? t("settings.roleReady", { name: selectedCharacterName }) : t("settings.importFirst")}{t("settings.intro")}</p></header>
-        {runtimeError ? <Notice tone="error">{runtimeError}</Notice> : null}
-        {providerNotice ? <Notice tone="success">{providerNotice}</Notice> : null}
+        {runtimeError ? <Notice tone="error">{t(runtimeError)}</Notice> : null}
+        {providerNotice ? <Notice tone="success">{t(providerNotice)}</Notice> : null}
         {providerIssue ? <div className="provider-correction"><p>{providerIssue.suggestion}</p><button type="button" className="button button--quiet" onClick={() => {
           const id = providerIssue.field === "apiKey" ? "provider-api-key" : providerIssue.field === "model" ? "provider-model" : "provider-base-url";
           document.getElementById(id)?.focus();
@@ -231,6 +268,11 @@ export function SettingsView({
         ) : <p className="panel-empty">{t("settings.loading")}</p>}
       </section>
       <ProviderProfiles disabled={Boolean(applicationBusy || isSavingProvider)} />
+      <details className="settings-card"><summary>{t("settings.presets")}</summary><PresetSettings /></details>
+      </div>
+      ) : null}
+      {activeTab === "language" ? (
+      <div role="tabpanel" id="settings-panel-language" aria-labelledby="settings-tab-language">
       <section className="settings-card" aria-labelledby="language-title">
         <header><h2 id="language-title">{t("language.label")}</h2><p>{t("language.intro")}</p></header>
         <div className="settings-form">
@@ -240,8 +282,23 @@ export function SettingsView({
         </div>
         {languageError ? <p role="alert">{languageError}</p> : null}
       </section>
-      <details className="settings-card"><summary>{t("settings.presets")}</summary><PresetSettings /></details>
-      <BackupPanel busy={Boolean(applicationBusy)} />
+      </div>
+      ) : null}
+      {activeTab === "advanced" ? (
+      <div role="tabpanel" id="settings-panel-advanced" aria-labelledby="settings-tab-advanced">
+      <section className="settings-card" aria-labelledby="advanced-title">
+        <header><h2 id="advanced-title">{t("settings.advancedMode")}</h2><p>{t("settings.advancedModeIntro")}</p></header>
+        <div className="settings-form">
+          <label><input type="checkbox" checked={advancedMode} onChange={event => setAdvancedMode(event.target.checked)} />{t("settings.advancedModeToggle")}</label>
+        </div>
+      </section>
+      </div>
+      ) : null}
+      {activeTab === "backup" ? (
+      <div role="tabpanel" id="settings-panel-backup" aria-labelledby="settings-tab-backup">
+        <BackupPanel busy={Boolean(applicationBusy)} />
+      </div>
+      ) : null}
     </main>
   );
 }

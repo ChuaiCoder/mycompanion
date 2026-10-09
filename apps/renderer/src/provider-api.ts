@@ -1,16 +1,11 @@
-import { apiErrorResponseSchema, providerProfilesSchema, providerProfileSchema, providerConnectionResponseSchema,
+import { providerProfilesSchema, providerProfileSchema, providerConnectionResponseSchema,
   type ProviderProfiles, type ProviderProfile, type SaveProviderProfile, type ProviderTaskAssignments, type UpdateProviderSettings } from "@mycompanion/shared";
-import { ApiRequestError } from "./api";
+import { readApiPayload } from "./api";
 
 async function request(path: string, method = "GET", body?: unknown, signal?: AbortSignal): Promise<unknown> {
   const response = await fetch(path, { method, headers: { Accept: "application/json", ...(body !== undefined ? { "Content-Type": "application/json" } : {}) },
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}), ...(signal ? { signal } : {}) });
-  const data: unknown = await response.json();
-  if (!response.ok) {
-    const parsed = apiErrorResponseSchema.safeParse(data);
-    throw new ApiRequestError(parsed.success ? parsed.data.error.code : "PROVIDER_REQUEST_FAILED", parsed.success ? parsed.data.error.message : "无法更新模型连接。");
-  }
-  return data;
+  return readApiPayload(response);
 }
 export const getProviderProfiles = async (signal?: AbortSignal): Promise<ProviderProfiles> => providerProfilesSchema.parse(await request("/api/settings/providers", "GET", undefined, signal));
 export const saveProviderProfile = async (id: string | null, value: SaveProviderProfile): Promise<ProviderProfile> => providerProfileSchema.parse(await request(id ? `/api/settings/providers/${encodeURIComponent(id)}` : "/api/settings/providers", id ? "PUT" : "POST", value));

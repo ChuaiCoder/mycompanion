@@ -1,8 +1,10 @@
 import { DatabaseSync } from "node:sqlite";
 import { drainHttpConnectionsOnShutdown } from "./http-shutdown.js";
+import { requireSessionToken } from "./auth-token.js";
+import { sendError } from "./http-errors.js";
 
 import fastifyStatic from "@fastify/static";
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyError, type FastifyInstance } from "fastify";
 
 import { CharacterRepository } from "./character/character-repository.js";
 import { RuntimeRepository } from "./persistence/runtime-repository.js";
@@ -34,6 +36,8 @@ export interface BuildAppOptions {
   logger?: boolean;
   rendererRoot?: string;
   secretCodec?: SecretCodec;
+  /** 会话令牌：配置后所有请求（含静态资源与 /version）都必须携带，见 auth-token.ts。 */
+  sessionToken?: string;
 }
 
 export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
@@ -43,6 +47,9 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     requestIdHeader: "x-request-id",
   });
   drainHttpConnectionsOnShutdown(app);
+  // 会话令牌守卫（可选）：桌面主进程在 session 层为窗口的每个请求注入令牌头，
+  // 渲染层与前端卡脚本无需感知；onRequest 在路由之前执行，流式路由（hijack）同样覆盖。
+  if (options.sessionToken) app.addHook("onRequest", requireSessionToken(options.sessionToken));
   const database = new DatabaseSync(options.databasePath ?? ":memory:");
   // Fastify executes onClose hooks in reverse registration order. Register the
   // database first so pending generation/memory work and workers finish first.
@@ -74,6 +81,14 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
     (_request, body, done) => done(null, body),
   );
 
+  // 未捕获错误统一包成 ApiErrorResponse（Fastify 的 schema 校验失败保留其 400 状态码），
+  // 渲染层 readApiPayload 才能拿到一致的 error.code / error.message。
+  app.setErrorHandler((error: FastifyError, _request, reply) => {
+    const status = typeof error.statusCode === "number" && error.statusCode >= 400 && error.statusCode < 500 ? error.statusCode : 500;
+    if (status === 500) return sendError(reply, 500, "INTERNAL_ERROR", "本地服务内部错误。");
+    return sendError(reply, status, "INVALID_REQUEST", error.message);
+  });
+
   if (options.rendererRoot) {
     void app.register(fastifyStatic, {
       root: options.rendererRoot,
@@ -104,3 +119,4 @@ export function buildApp(options: BuildAppOptions = {}): FastifyInstance {
   return app;
 }
 export { bindBrowserPort } from "./browser-port.js";
+export { createSessionToken, SESSION_TOKEN_HEADER } from "./auth-token.js";

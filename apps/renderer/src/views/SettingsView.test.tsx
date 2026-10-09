@@ -70,3 +70,31 @@ it("renders real English connection instructions and accessible labels when the 
   expect(screen.getByRole("button", { name: "Test, then save" })).toBeVisible();
   expect(document.documentElement.lang).toBe("en");
 });
+
+it("keeps the model form on the default tab and mounts the other tabs on demand", () => {
+  render(<SettingsView {...props()} />);
+  // 默认落在「模型」：表单立即可见，其余页签尚未挂载。
+  expect(screen.getByRole("tab", { name: "模型" })).toHaveAttribute("aria-selected", "true");
+  expect(document.getElementById("provider-api-key")).not.toBeNull();
+  expect(screen.queryByText("Backup editor")).toBeNull();
+
+  fireEvent.click(screen.getByRole("tab", { name: "备份与恢复" }));
+  expect(screen.getByText("Backup editor")).toBeInTheDocument();
+  expect(document.getElementById("provider-api-key")).toBeNull();
+
+  fireEvent.click(screen.getByRole("tab", { name: "界面语言" }));
+  expect(screen.getByRole("combobox", { name: "界面语言" })).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("tab", { name: "模型" }));
+  expect(document.getElementById("provider-api-key")).not.toBeNull();
+});
+
+it("offers the advanced-mode toggle on its own tab", () => {
+  // 高级模式只控制诊断入口可见性；开关状态先本地生效，持久化失败也不回弹。
+  render(<SettingsView {...props()} />);
+  fireEvent.click(screen.getByRole("tab", { name: "高级" }));
+  const toggle = screen.getByRole("checkbox", { name: "显示提示词预览等高级诊断" });
+  expect(toggle).not.toBeChecked();
+  fireEvent.click(toggle);
+  expect(toggle).toBeChecked();
+});

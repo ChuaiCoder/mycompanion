@@ -30,21 +30,21 @@ export function registerWorldInfoRoutes(app: FastifyInstance, books: WorldInfoRe
   const nameSchema = { type: "object", required: ["name"], properties: { name: { type: "string", minLength: 1, pattern: "^[^\\u0000]+$" } } };
   app.post<{ Body: { name: string } }>("/api/worldinfo/get", { schema: { body: nameSchema } }, async (request, reply) => {
     const book = books.get(request.body.name);
-    return book ?? reply.status(404).send({ error: "World info not found" });
+    return book ?? sendError(reply, 404, "WORLD_INFO_NOT_FOUND", "World info not found");
   });
   app.post<{ Body: { name: string; data: unknown } }>("/api/worldinfo/edit", { bodyLimit: 500 * 1024 * 1024, schema: { body: nameSchema } }, async (request, reply) => {
     const parsed = worldInfoDocumentSchema.safeParse(request.body.data);
-    if (!parsed.success || !request.body.name.trim()) return reply.status(400).send({ error: "Invalid world info document" });
+    if (!parsed.success || !request.body.name.trim()) return sendError(reply, 400, "INVALID_WORLD_INFO_DOCUMENT", "Invalid world info document");
     books.save(request.body.name, parsed.data);
     return { ok: true };
   });
   app.post<{ Body: { name: string } }>("/api/worldinfo/delete", { schema: { body: nameSchema } }, async (request, reply) => {
-    return books.delete(request.body.name) ? { ok: true } : reply.status(404).send({ error: "World info not found" });
+    return books.delete(request.body.name) ? { ok: true } : sendError(reply, 404, "WORLD_INFO_NOT_FOUND", "World info not found");
   });
   app.get("/api/worldinfo/settings", async (_request, reply) => reply.header("Cache-Control", "no-store").send(books.settings()));
   app.put<{ Body: unknown }>("/api/worldinfo/settings", async (request, reply) => {
     const parsed = worldInfoSettingsSchema.safeParse(request.body);
-    if (!parsed.success) return reply.status(400).send({ error: "Invalid world info settings", details: parsed.error.issues });
+    if (!parsed.success) return sendError(reply, 400, "INVALID_WORLD_INFO_SETTINGS", "Invalid world info settings", parsed.error.issues.map((issue) => issue.message));
     books.saveSettings(parsed.data);
     return parsed.data;
   });
@@ -73,9 +73,9 @@ export function registerWorldInfoRoutes(app: FastifyInstance, books: WorldInfoRe
         return sendError(reply,409,"MACRO_CONTEXT_CHANGED","故事与角色已变化，请重新组装提示词。");
     }
     const character = body.characterId ? characters.get(body.characterId) : undefined;
-    if (body.characterId && !character) return reply.status(404).send({ error: "Character not found" });
+    if (body.characterId && !character) return sendError(reply, 404, "CHARACTER_NOT_FOUND", "Character not found");
     const parsed = worldInfoSettingsSchema.safeParse(body.settings ?? books.settings());
-    if (!parsed.success) return reply.status(400).send({ error: "Invalid world info settings" });
+    if (!parsed.success) return sendError(reply, 400, "INVALID_WORLD_INFO_SETTINGS", "Invalid world info settings");
     const provider = runtime.getProvider();
     const extensionSettings = runtime.getExtensionSettings();
     if(body.globalVariables !== undefined) extensionSettings.variables = {global:body.globalVariables};

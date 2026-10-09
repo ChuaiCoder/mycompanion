@@ -214,4 +214,34 @@ describe("parseCharacterCard", () => {
     expect(Array.from(preview.descriptionPreview)).toHaveLength(501);
     expect(preview.descriptionPreview.endsWith("🧭…")).toBe(true);
   });
+
+  it("flags cards whose greetings carry a scripted frontend card", () => {
+    const card = v2Card();
+    const data = card.data as Record<string, unknown>;
+    expect(parseCharacterCard(card).containsScripts).toBe(false);
+
+    data.first_mes = "```html\n<html><head></head><body><p>开局</p><script>1</script></body></html>\n```";
+    expect(parseCharacterCard(card).containsScripts).toBe(true);
+
+    // 无脚本的纯界面卡不触发确认。
+    data.first_mes = "```html\n<html><head></head><body><p>开局</p></body></html>\n```";
+    expect(parseCharacterCard(card).containsScripts).toBe(false);
+
+    // 备用开场白里的前端卡同样计数。
+    data.first_mes = "你好。";
+    data.alternate_greetings = ["```html\n<html><body><script>1</script></body></html>\n```"];
+    expect(parseCharacterCard(card).containsScripts).toBe(true);
+  });
+
+  it("flags cards carrying a tavern_helper script library", () => {
+    const card = v2Card();
+    const data = card.data as Record<string, unknown>;
+    const extensions = data.extensions as Record<string, unknown>;
+    extensions.tavern_helper = { scripts: [{ name: "MVU", enabled: true, content: "import 'https://cdn.example/mvu.js';" }] };
+    expect(parseCharacterCard(card).containsScripts).toBe(true);
+
+    // 空脚本条目不算（内容被清掉的壳）。
+    extensions.tavern_helper = { scripts: [{ name: "empty", content: "  " }] };
+    expect(parseCharacterCard(card).containsScripts).toBe(false);
+  });
 });

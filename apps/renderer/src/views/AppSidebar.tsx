@@ -149,9 +149,9 @@ export function AppSidebar({
     <aside className="sidebar">
       <div className="brand-row">
         <button className="brand-button" onClick={() => onNavigate("chat")} type="button"><span aria-hidden="true" className="brand-mark">M</span><span className="brand-name">MyCompanion</span></button>
-        <button aria-expanded={!collapsed} aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"} className="sidebar-collapse" onClick={onCollapseToggle} type="button">{collapsed ? "▣" : "◫"}</button>
+        <button aria-expanded={!collapsed} aria-label={collapsed ? t("展开侧边栏") : t("收起侧边栏")} className="sidebar-collapse" onClick={onCollapseToggle} type="button">{collapsed ? "▣" : "◫"}</button>
       </div>
-      <nav aria-label="主导航" className="primary-nav">
+      <nav aria-label={t("主导航")} className="primary-nav">
         <button className="nav-row nav-row--new" disabled={busy} onClick={onOpenFilePicker} type="button"><Icon name="plus" /><span>{t(isImporting ? "nav.reading" : "nav.import")}</span><kbd>Ctrl I</kbd></button>
         <button aria-current={view === "library" ? "page" : undefined} className={`nav-row ${view === "library" ? "nav-row--active" : ""}`} onClick={() => onNavigate("library")} type="button"><Icon name="character" /><span>{t("nav.library")}</span></button>
         <button aria-current={view === "chat" ? "page" : undefined} className={`nav-row ${view === "chat" ? "nav-row--active" : ""}`} onClick={onChatNav} type="button"><Icon name="book" /><span>{t("nav.chat")}</span><small>{conversationCount || ""}</small></button>
@@ -184,9 +184,9 @@ export function AppSidebar({
           </div>
         ) : null}
         {groups.length === 0 ? (
-          <div className="tree-empty"><span>还没有对话</span><small>在角色库选择角色，开始第一段故事</small></div>
+          <div className="tree-empty"><span>{t("还没有对话")}</span><small>{t("在角色库选择角色，开始第一段故事")}</small></div>
         ) : (
-          <ul className="conversation-groups" aria-label="按角色分组的对话">
+          <ul className="conversation-groups" aria-label={t("按角色分组的对话")}>
             {groups.map((group) => {
               const isCollapsed = collapsedGroups.has(group.characterId);
               // 只有一段角色时分组头只是重复标题（角色名往往和每条故事的标题前缀一样），
@@ -219,11 +219,11 @@ export function AppSidebar({
                               <label className="conversation-select">
                                 <input type="checkbox" checked={selectedIds.has(conversation.id)} onChange={() => toggleSelected(conversation.id)} aria-label={t("conversation.selectToggle", { title: conversation.title })} />
                                 <span>{conversation.title}</span>
-                                <small>{conversation.messageCount} 条</small>
+                                <small>{t("{{count}} 条", { count: conversation.messageCount })}</small>
                               </label>
                             ) : (
                               <>
-                                <button data-conversation-id={conversation.id} aria-pressed={activeConversationId === conversation.id} className="conversation-row" onClick={() => onOpenConversation(conversation.id)} type="button"><span>{conversation.title}</span><small>{conversation.messageCount} 条</small></button>
+                                <button data-conversation-id={conversation.id} aria-pressed={activeConversationId === conversation.id} className="conversation-row" onClick={() => onOpenConversation(conversation.id)} type="button"><span>{conversation.title}</span><small>{t("{{count}} 条", { count: conversation.messageCount })}</small></button>
                                 <button aria-label={t("conversation.delete", { title: conversation.title })} className="conversation-delete" onClick={() => setPendingDeleteId(conversation.id)} type="button"><span aria-hidden="true">×</span></button>
                               </>
                             )}
@@ -239,7 +239,7 @@ export function AppSidebar({
         )}
       </section>
       <footer className="sidebar-footer">
-        <div className={`service-state service-state--${modelConnection.state}`} title={modelConnection.reason ?? undefined}><span aria-hidden="true" className="status-dot" /><span>{t("service." + modelConnection.state)}</span>{modelConnection.state === "online" && modelConnection.modelCount > 0 ? <small>{modelConnection.modelCount}</small> : null}</div>
+        <div className={`service-state service-state--${modelConnection.state}`} title={modelConnection.reason ? t(modelConnection.reason) : undefined}><span aria-hidden="true" className="status-dot" /><span>{t("service." + modelConnection.state)}</span>{modelConnection.state === "online" && modelConnection.modelCount > 0 ? <small>{modelConnection.modelCount}</small> : null}</div>
         <button aria-label={t("nav.settings")} aria-pressed={view === "settings"} onClick={() => onNavigate("settings")} type="button"><Icon name="settings" size={18} /></button>
       </footer>
       <input ref={fileInputRef} multiple accept=".json,.png,.yaml,.yml,.charx,.zip,.byaf,.jpg,.jpeg,application/json,image/png,application/charx,application/zip,application/byaf,application/yaml,text/yaml" aria-label={libraryText(i18n.language, "选择角色卡文件")} className="visually-hidden-input" disabled={busy} onChange={onCardFile} type="file" />

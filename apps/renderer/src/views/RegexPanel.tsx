@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import "../i18n";
 
 import type {
   CharacterRegexRule,
@@ -54,10 +56,16 @@ export interface RegexPanelProps {
  * 逐条启用/停用、全部启用/停用，以及不修改真实聊天的规则测试器。
  */
 export function RegexPanel({ characterId, characterName, runtimeError }: RegexPanelProps) {
+  const { t } = useTranslation();
+  // 未知阶段值（数字或字符串）走插值；已知值直接按中文名查表。
+  const placementDisplay = (value: unknown): string => {
+    const label = placementLabel(value);
+    return label.startsWith("未知阶段 ") ? t("未知阶段 {{value}}", { value: label.slice("未知阶段 ".length) }) : t(label);
+  };
   const [rules, setRules] = useState<CharacterRegexRule[] | null>(null);
   const [isBusy, setIsBusy] = useState(false);
   const [panelError, setPanelError] = useState<string | null>(null);
-  const [testInput, setTestInput] = useState("你好，世界。");
+  const [testInput, setTestInput] = useState(() => t("你好，世界。"));
   const [isTesting, setIsTesting] = useState(false);
   const [testResult, setTestResult] = useState<RegexTestResponse | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
@@ -111,20 +119,20 @@ export function RegexPanel({ characterId, characterName, runtimeError }: RegexPa
 
   return (
     <section className="document-section regex-panel" aria-labelledby="regex-panel-title">
-      <h2 id="regex-panel-title">正则规则</h2>
+      <h2 id="regex-panel-title">{t("正则规则")}</h2>
       {rules === null ? (
-        <p>{panelError ?? "正在读取规则…"}</p>
+        <p>{panelError ? t(panelError) : t("正在读取规则…")}</p>
       ) : rules.length === 0 ? (
-        <p className="panel-empty">这个角色卡没有可识别的正则规则。</p>
+        <p className="panel-empty">{t("这个角色卡没有可识别的正则规则。")}</p>
       ) : (
         <>
           <p>
-            导入的规则默认停用；启用后会在对话中按阶段执行。
-            单条规则超过 250 ms 或输出超过 2 MiB 会被自动跳过。
+            {t("导入的规则默认停用；启用后会在对话中按阶段执行。")}{" "}
+            {t("单条规则超过 250 ms 或输出超过 2 MiB 会被自动跳过。")}
           </p>
           <div className="regex-panel__actions">
-            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(true)} type="button">全部启用</button>
-            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(false)} type="button">全部停用</button>
+            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(true)} type="button">{t("全部启用")}</button>
+            <button className="button button--quiet button--small" disabled={isBusy} onClick={() => void handleAll(false)} type="button">{t("全部停用")}</button>
           </div>
           <ul className="regex-rule-list">
             {rules.map((rule) => (
@@ -138,53 +146,53 @@ export function RegexPanel({ characterId, characterName, runtimeError }: RegexPa
                     onClick={() => void handleToggle(rule)}
                     type="button"
                   >
-                    {rule.disabled ? "启用" : "停用"}
+                    {rule.disabled ? t("启用") : t("停用")}
                   </button>
                 </div>
                 <code className="regex-source">{rule.findRegex}</code>
                 <dl>
-                  <div><dt>作用阶段</dt><dd>{rule.promptOnly ? "仅模型上下文" : (rule.placement.map(placementLabel).join("、") || "输入、输出与显示")}</dd></div>
-                  <div><dt>替换文本</dt><dd>{rule.replaceString || "（空）"}</dd></div>
-                  <div><dt>编辑时运行</dt><dd>{rule.runOnEdit ? "是" : "否"}</dd></div>
+                  <div><dt>{t("作用阶段")}</dt><dd>{rule.promptOnly ? t("仅模型上下文") : (rule.placement.map(placementDisplay).join(t("、")) || t("输入、输出与显示"))}</dd></div>
+                  <div><dt>{t("替换文本")}</dt><dd>{rule.replaceString || t("（空）")}</dd></div>
+                  <div><dt>{t("编辑时运行")}</dt><dd>{rule.runOnEdit ? t("是") : t("否")}</dd></div>
                 </dl>
               </li>
             ))}
           </ul>
-          {panelError ? <p role="alert" className="regex-panel__error">{panelError}</p> : null}
-          {runtimeError ? <p role="alert" className="regex-panel__error">{runtimeError}</p> : null}
+          {panelError ? <p role="alert" className="regex-panel__error">{t(panelError)}</p> : null}
+          {runtimeError ? <p role="alert" className="regex-panel__error">{t(runtimeError)}</p> : null}
         </>
       )}
       {rules !== null && rules.length > 0 ? (
         <div className="regex-tester">
-          <h3>规则测试器</h3>
-          <p>对示例文本跑一遍四个阶段，不会修改真实聊天。</p>
+          <h3>{t("规则测试器")}</h3>
+          <p>{t("对示例文本跑一遍四个阶段，不会修改真实聊天。")}</p>
           <textarea
-            aria-label="测试文本"
+            aria-label={t("测试文本")}
             onChange={(event) => setTestInput(event.target.value)}
             value={testInput}
             rows={3}
           />
           <button className="button button--primary button--small" disabled={isTesting} onClick={() => void handleTest()} type="button">
             <Icon name="sparkles" size={14} />
-            {isTesting ? "正在测试…" : "运行测试"}
+            {isTesting ? t("正在测试…") : t("运行测试")}
           </button>
-          {testError ? <p role="alert">{testError}</p> : null}
+          {testError ? <p role="alert">{t(testError)}</p> : null}
           {testResult ? (
             <div className="regex-tester__result">
               {testResult.stages.map((stage) => (
                 <details key={stage.stage} open={stage.output !== stage.input}>
                   <summary>
-                    <strong>{stageText[stage.stage] ?? stage.stage}</strong>
-                    <span>{stage.output === stage.input ? "无变化" : "已改写"}</span>
+                    <strong>{t(stageText[stage.stage] ?? stage.stage)}</strong>
+                    <span>{stage.output === stage.input ? t("无变化") : t("已改写")}</span>
                   </summary>
                   {stage.rules.length === 0 ? (
-                    <p>该阶段没有启用的规则。</p>
+                    <p>{t("该阶段没有启用的规则。")}</p>
                   ) : (
                     <ul>
                       {stage.rules.map((rule) => (
                         <li key={rule.name} className={`regex-rule-result regex-rule-result--${rule.status}`}>
                           <strong>{rule.name}</strong>
-                          <span>{ruleStatusText[rule.status] ?? rule.status} · {rule.durationMs.toFixed(1)} ms</span>
+                          <span>{t(ruleStatusText[rule.status] ?? rule.status)} · {rule.durationMs.toFixed(1)} ms</span>
                           {rule.diagnostics.length > 0 ? <small>{rule.diagnostics.join("；")}</small> : null}
                         </li>
                       ))}
@@ -192,7 +200,7 @@ export function RegexPanel({ characterId, characterName, runtimeError }: RegexPa
                   )}
                 </details>
               ))}
-              <p>最终输出：<code className="regex-source">{testResult.finalOutput}</code></p>
+              <p>{t("最终输出：")}<code className="regex-source">{testResult.finalOutput}</code></p>
             </div>
           ) : null}
         </div>

@@ -24,13 +24,7 @@ export function registerSettingsRoutes(app: FastifyInstance, runtime: RuntimeRep
   app.put<{ Body: unknown }>("/api/settings/provider", async (request, reply) => {
     const result = updateProviderSettingsSchema.safeParse(request.body);
     if (!result.success) {
-      return reply.status(400).send({
-        error: {
-          code: "INVALID_PROVIDER_SETTINGS",
-          message: "模型设置无效。",
-          details: result.error.issues.map((issue) => issue.message),
-        },
-      } satisfies ApiErrorResponse);
+      return sendError(reply, 400, "INVALID_PROVIDER_SETTINGS", "模型设置无效。", result.error.issues.map((issue) => issue.message));
     }
     try {
       const url = new URL(result.data.baseUrl);

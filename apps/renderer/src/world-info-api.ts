@@ -5,6 +5,7 @@ import {
   type WorldInfoDocument,
   type WorldInfoSettings,
 } from "@mycompanion/shared";
+import { ApiRequestError, readApiPayload } from "./api";
 
 // 世界书 REST 直连（/api/worldinfo/*）。每次变更后广播 mycompanion:world-info，
 // 与角色世界书面板（LorebookPanel）和世界书编辑器的监听保持一致。
@@ -14,33 +15,31 @@ function changed(detail: { name?: string; deleted?: boolean } = {}): void {
   window.dispatchEvent(new CustomEvent("mycompanion:world-info", { detail }));
 }
 
-async function request(url: string, init: RequestInit | undefined, label: string): Promise<Response> {
-  const response = await fetch(url, init);
-  if (!response.ok) throw new Error(`${label}（HTTP ${response.status}）。`);
-  return response;
-}
-
 const json = { Accept: "application/json", "Content-Type": "application/json" };
 
 export async function listWorldInfoNames(): Promise<string[]> {
-  const response = await request("/api/worldinfo/list", { headers: { Accept: "application/json" } }, "世界书列表读取失败");
-  const payload = await response.json() as { world_names?: unknown };
+  const response = await fetch("/api/worldinfo/list", { headers: { Accept: "application/json" } });
+  const payload = await readApiPayload(response) as { world_names?: unknown };
   return Array.isArray(payload.world_names) ? payload.world_names.filter((name): name is string => typeof name === "string") : [];
 }
 
 export async function loadWorldInfo(name: string): Promise<WorldInfoDocument | null> {
-  const response = await fetch("/api/worldinfo/get", {
-    method: "POST", headers: json, body: JSON.stringify({ name }),
-  });
-  if (response.status === 404) return null;
-  if (!response.ok) throw new Error(`世界书读取失败（HTTP ${response.status}）。`);
-  return worldInfoDocumentSchema.parse(await response.json());
+  try {
+    const response = await fetch("/api/worldinfo/get", {
+      method: "POST", headers: json, body: JSON.stringify({ name }),
+    });
+    return worldInfoDocumentSchema.parse(await readApiPayload(response));
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.code === "WORLD_INFO_NOT_FOUND") return null;
+    throw error;
+  }
 }
 
 export async function saveWorldInfo(name: string, data: WorldInfoDocument): Promise<void> {
-  await request("/api/worldinfo/edit", {
+  const response = await fetch("/api/worldinfo/edit", {
     method: "POST", headers: json, body: JSON.stringify({ name, data }),
-  }, "世界书保存失败");
+  });
+  await readApiPayload(response);
   changed({ name });
 }
 
@@ -48,33 +47,38 @@ export async function saveWorldInfo(name: string, data: WorldInfoDocument): Prom
 export async function createWorldInfo(name: string): Promise<boolean> {
   const names = await listWorldInfoNames();
   if (!name.trim() || names.some(existing => existing.localeCompare(name, undefined, { sensitivity: "base" }) === 0)) return false;
-  await request("/api/worldinfo/edit", {
+  const response = await fetch("/api/worldinfo/edit", {
     method: "POST", headers: json, body: JSON.stringify({ name, data: { entries: {} } }),
-  }, "世界书创建失败");
+  });
+  await readApiPayload(response);
   changed({ name });
   return true;
 }
 
 export async function deleteWorldInfo(name: string): Promise<boolean> {
-  const response = await fetch("/api/worldinfo/delete", {
-    method: "POST", headers: json, body: JSON.stringify({ name }),
-  });
-  if (response.status === 404) return false;
-  if (!response.ok) throw new Error(`世界书删除失败（HTTP ${response.status}）。`);
+  try {
+    const response = await fetch("/api/worldinfo/delete", {
+      method: "POST", headers: json, body: JSON.stringify({ name }),
+    });
+    await readApiPayload(response);
+  } catch (error) {
+    if (error instanceof ApiRequestError && error.code === "WORLD_INFO_NOT_FOUND") return false;
+    throw error;
+  }
   changed({ name, deleted: true });
   return true;
 }
 
 export async function getWorldInfoSettings(): Promise<WorldInfoSettings> {
-  const response = await request("/api/worldinfo/settings", { headers: { Accept: "application/json" } }, "世界书设置读取失败");
-  return worldInfoSettingsSchema.parse(await response.json());
+  const response = await fetch("/api/worldinfo/settings", { headers: { Accept: "application/json" } });
+  return worldInfoSettingsSchema.parse(await readApiPayload(response));
 }
 
 export async function saveWorldInfoSettings(settings: WorldInfoSettings): Promise<WorldInfoSettings> {
-  const response = await request("/api/worldinfo/settings", {
+  const response = await fetch("/api/worldinfo/settings", {
     method: "PUT", headers: json, body: JSON.stringify(settings),
-  }, "世界书设置保存失败");
-  const saved = worldInfoSettingsSchema.parse(await response.json());
+  });
+  const saved = worldInfoSettingsSchema.parse(await readApiPayload(response));
   changed();
   return saved;
 }

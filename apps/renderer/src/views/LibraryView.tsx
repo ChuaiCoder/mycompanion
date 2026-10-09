@@ -4,6 +4,7 @@ import type {
   CharacterSummary,
 } from "@mycompanion/shared";
 
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { characterExportUrl } from "../api";
 import { uiLocale } from "../i18n";
@@ -95,6 +96,11 @@ export function LibraryView({
   const { i18n } = useTranslation();
   const text = (value: string) => libraryText(i18n.language, value);
   const locale = uiLocale();
+  // 含脚本的卡片要求用户显式确认信任来源后才允许导入（spec §5.10：卡脚本以完整权限
+  // 运行）。换一张卡（preview 引用变化）时重新要求确认。
+  const [scriptConsent, setScriptConsent] = useState(false);
+  const previewContainsScripts = preview?.containsScripts === true;
+  useEffect(() => { setScriptConsent(false); }, [preview]);
   const currentTitle = preview?.name ?? selectedCharacter?.name ?? text("角色库");
   // 角色库只是浏览已保存角色（网格或角色详情）时，导入助手整栏没有内容可做，却要
   // 占掉约 62% 宽度，并把库网格挤成一条窄缝；此时收起助手，让库区占满。导入入口仍
@@ -165,8 +171,15 @@ export function LibraryView({
             {preview.lorebookEntries.length > 0 || preview.regexScripts.length > 0 ? <section className="document-section imported-content" aria-label={text("角色卡附属内容")}><ImportedContentDetails locale={locale} translate={text} lorebookEntries={preview.lorebookEntries} regexScripts={preview.regexScripts} /></section> : null}
             <section className="document-section" aria-labelledby="compatibility-title"><h2 id="compatibility-title">{text("兼容性")}</h2>{preview.warningCodes.length > 0 ? <ul className="warning-list">{preview.warningCodes.map((warning) => <li key={warning}><span aria-hidden="true">i</span>{text(warningText[warning])}</li>)}</ul> : <p className="ready-message"><span aria-hidden="true">✓</span>{text("格式检查通过，没有需要处理的警告。")}</p>}</section>
             {preview.unknownFieldPaths.length > 0 || preview.compatibilityDefaultPaths.length > 0 ? <details className="content-disclosure compatibility-paths"><summary><span>{text("字段处理明细")}</span><small>{text(`${preview.unknownFieldPaths.length + preview.compatibilityDefaultPaths.length} 项`)}</small></summary>{preview.unknownFieldPaths.length > 0 ? <div><strong>{text("原样保留的未知字段")}</strong><ul>{preview.unknownFieldPaths.map((path) => <li key={path}><code>{path}</code></li>)}</ul></div> : null}{preview.compatibilityDefaultPaths.length > 0 ? <div><strong>{text("使用安全默认值")}</strong><ul>{preview.compatibilityDefaultPaths.map((path) => <li key={path}><code>{path}</code></li>)}</ul></div> : null}</details> : null}
-            {preview.duplicates?.length ? <section className="document-section import-duplicates" aria-label={text("已有角色匹配")}><h2>{text("发现已有角色")}</h2><p>{text("可打开既有角色、导入独立副本，或用当前卡片替换。替换会保留既有故事和角色 ID。")}</p><ul>{preview.duplicates.map(item => <li key={item.id} data-character-id={item.id}><strong>{item.name}</strong><span>{item.match === "exact" ? text("相同卡片内容") : text("名称相同")}</span><div><button className="button button--quiet" type="button" disabled={isSaving} onClick={() => onOpenDuplicate?.(item.id)}>{text("打开既有角色")}</button><button className="button button--quiet" type="button" disabled={isSaving} onClick={() => onReplaceDuplicate?.(item.id, item.updatedAt)}>{text("用当前卡片替换")}</button></div></li>)}</ul><button className="button button--quiet" type="button" disabled={isSaving || isImporting} onClick={onRefreshPreview}>{text("重新检查角色匹配")}</button></section> : null}
-            <div className="sticky-actions"><button className="button button--primary" disabled={isSaving} onClick={onCommit} type="button">{isSaving ? text("正在保存…") : preview.duplicates?.length ? text("导入独立副本") : text("确认导入")}</button>{batchItems.length > 1 ? <button className="button button--quiet" disabled={isSaving} onClick={onSkipFile} type="button">{text("跳过此文件")}</button> : null}<button className="button button--quiet" disabled={isSaving} onClick={onCancelImport} type="button">{batchItems.length > 1 ? text("取消整批") : text("取消")}</button></div>
+            {preview.duplicates?.length ? <section className="document-section import-duplicates" aria-label={text("已有角色匹配")}><h2>{text("发现已有角色")}</h2><p>{text("可打开既有角色、导入独立副本，或用当前卡片替换。替换会保留既有故事和角色 ID。")}</p><ul>{preview.duplicates.map(item => <li key={item.id} data-character-id={item.id}><strong>{item.name}</strong><span>{item.match === "exact" ? text("相同卡片内容") : text("名称相同")}</span><div><button className="button button--quiet" type="button" disabled={isSaving} onClick={() => onOpenDuplicate?.(item.id)}>{text("打开既有角色")}</button><button className="button button--quiet" type="button" disabled={isSaving || (previewContainsScripts && !scriptConsent)} onClick={() => onReplaceDuplicate?.(item.id, item.updatedAt)}>{text("用当前卡片替换")}</button></div></li>)}</ul><button className="button button--quiet" type="button" disabled={isSaving || isImporting} onClick={onRefreshPreview}>{text("重新检查角色匹配")}</button></section> : null}
+            {previewContainsScripts ? (
+              <section className="document-section script-consent" aria-label={text("脚本确认")}>
+                <h2>{text("包含交互脚本")}</h2>
+                <p>{text("这张卡片包含交互脚本，导入后将以完整权限运行：可读写本应用的数据并访问网络。请只导入你信任的卡片。")}</p>
+                <label className="script-consent__check"><input checked={scriptConsent} onChange={(event) => setScriptConsent(event.currentTarget.checked)} type="checkbox" />{text("我了解风险，信任这张卡片的来源")}</label>
+              </section>
+            ) : null}
+            <div className="sticky-actions"><button className="button button--primary" disabled={isSaving || (previewContainsScripts && !scriptConsent)} onClick={onCommit} type="button">{isSaving ? text("正在保存…") : preview.duplicates?.length ? text("导入独立副本") : text("确认导入")}</button>{batchItems.length > 1 ? <button className="button button--quiet" disabled={isSaving} onClick={onSkipFile} type="button">{text("跳过此文件")}</button> : null}<button className="button button--quiet" disabled={isSaving} onClick={onCancelImport} type="button">{batchItems.length > 1 ? text("取消整批") : text("取消")}</button></div>
           </section>
         ) : selectedCharacter ? (
           <section className="inspector-scroll character-page" aria-labelledby="character-detail-title">

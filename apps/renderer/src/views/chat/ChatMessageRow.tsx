@@ -1,6 +1,8 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { useTranslation } from "react-i18next";
+import "../../i18n";
+import type { TFunction } from "i18next";
 
 import type { ChatMessage, ConversationDetail, WorldInfoDocument } from "@mycompanion/shared";
 
@@ -21,11 +23,11 @@ import { FrontendCardMessage } from "./FrontendCardMessage";
 // 避免每条卡片消息都重新拉取角色详情。
 const runtimeSourceCache = new Map<string, string | undefined>();
 
-function statusLabel(message: ChatMessage): string | null {
-  if (message.status === "failed") return "生成失败";
-  if (message.status === "stopped") return "已停止";
-  if (message.status === "streaming") return "生成中…";
-  if (message.generationMetadata?.completionOutcome === "truncated") return "达到回复长度";
+function statusLabel(message: ChatMessage, t: TFunction): string | null {
+  if (message.status === "failed") return t("生成失败");
+  if (message.status === "stopped") return t("已停止");
+  if (message.status === "streaming") return t("生成中…");
+  if (message.generationMetadata?.completionOutcome === "truncated") return t("达到回复长度");
   return null;
 }
 
@@ -174,12 +176,13 @@ function MessageActions({
   onGenerate?: (() => void) | undefined;
 }) {
   // 只有当前分支可达的消息可操作；重新生成仅对最后一条助手回复开放。
+  const { t } = useTranslation();
   const isActiveBranch = message.branchId === conversation.activeBranchId;
   if (!isActiveBranch) return null;
   const isLastAssistant =
     conversation.messages.at(-1)?.id === message.id && message.role === "assistant";
   return (
-    <div className="message-actions" role="group" aria-label="消息操作">
+    <div className="message-actions" role="group" aria-label={t("消息操作")}>
       {message.status !== "streaming" ? (
         <button
           className="message-action mes_edit"
@@ -187,7 +190,7 @@ function MessageActions({
           onClick={() => onEdit(message)}
           type="button"
         >
-          编辑
+          {t("编辑")}
         </button>
       ) : null}
       {isLastAssistant ? (
@@ -197,7 +200,7 @@ function MessageActions({
           onClick={onRegenerate}
           type="button"
         >
-          重新生成
+          {t("重新生成")}
         </button>
       ) : null}
       <button
@@ -206,7 +209,7 @@ function MessageActions({
         onClick={() => onDelete(message.id)}
         type="button"
       >
-        删除
+        {t("删除")}
       </button>
     </div>
   );
@@ -265,23 +268,23 @@ export function ChatMessageRow({
   return (
     <>
       <div className="chat-message__author">
-        <span>{message.role === "user" ? "你" : characterInitial(name)}</span>
-        <strong className="ch_name"><span className="name_text">{typeof message.extensionData?.name === "string" ? message.extensionData.name : message.role === "user" ? "你" : name}</span></strong>
-        <small>{statusLabel(message)}</small>
+        <span>{message.role === "user" ? t("你") : characterInitial(name)}</span>
+        <strong className="ch_name"><span className="name_text">{typeof message.extensionData?.name === "string" ? message.extensionData.name : message.role === "user" ? t("你") : name}</span></strong>
+        <small>{statusLabel(message, t)}</small>
       </div>
       {editingMessageId === message.id ? (
         <div className="chat-message__editor">
           <textarea
             className="edit_textarea"
-            aria-label="编辑消息"
+            aria-label={t("编辑消息")}
             defaultValue={message.content}
             onChange={(event) => onEditingDraft(event.target.value)}
             onKeyDown={handleEditKeyDown}
             rows={Math.max(3, Math.ceil(message.content.length / 40))}
           />
           <div className="chat-message__editor-actions">
-            <button className="button button--primary button--small mes_edit_done" disabled={!editingDraft.trim()} onClick={() => onSaveEdit(message.id)} type="button">保存</button>
-            <button className="button button--quiet button--small mes_edit_cancel" onClick={onCancelEdit} type="button">取消</button>
+            <button className="button button--primary button--small mes_edit_done" disabled={!editingDraft.trim()} onClick={() => onSaveEdit(message.id)} type="button">{t("保存")}</button>
+            <button className="button button--quiet button--small mes_edit_cancel" onClick={onCancelEdit} type="button">{t("取消")}</button>
           </div>
         </div>
       ) : (
