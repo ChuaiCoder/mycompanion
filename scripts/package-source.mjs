@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readdir, writeFile, copyFile, readFile, rename } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, writeFile, copyFile, readFile, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -73,6 +73,7 @@ await new Promise((resolveDone, reject) => {
     child.once('exit', code => code === 0 ? resolveDone() : reject(new Error('Source archiving failed: ' + code)));
 });
 await rename(join(destination, 'MyCompanion-source.tmp.tar.gz'), join(destination, 'MyCompanion-source.tar.gz'));
+await rm(staging, { recursive: true, force: true });
 const manifest = { formatVersion: 1, license: 'AGPL-3.0-only',
   archiveSha256: sha256(await readFile(join(destination, 'MyCompanion-source.tar.gz'))),
   files: inputs };
