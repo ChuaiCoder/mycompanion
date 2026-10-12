@@ -88,8 +88,8 @@ export function buildCardDocument(
   hostGlobals?: Record<string, unknown>,
   /** 该故事已保存的卡存储（local/session），在卡片初始化前同步注入。 */
   cardStorage?: Record<string, Record<string, string>>,
-  /** 已保存的浮动面板位置（宿主代卡的助手记住的），缺省表示首次运行。 */
-  panelPosition?: { left: number; top: number } | null,
+  /** 浮动面板位置的宿主存档（按角色卡）；缺省表示首次运行，由卡用默认值。 */
+  panel?: { characterId: string; positions: CardPanelPositions | null },
 ): string {
   const meta = `<meta http-equiv="Content-Security-Policy" content="${CARD_IFRAME_CSP}">`;
   return [
@@ -120,7 +120,7 @@ export function buildCardDocument(
     markup,
     // 浮动面板位置由宿主代记：卡自己没存（见 buildCardPanelScript 的说明）。
     // 放在卡的内容之后，让它能在卡挂载出面板时立刻观察与恢复。
-    `<script>${inlineScript(buildCardPanelScript(CARD_PANEL_STORAGE_KEY, panelPosition ?? null))}</script>`,
+    `<script>${inlineScript(buildCardPanelScript(CARD_PANEL_STORAGE_KEY, panel?.characterId ?? "", panel?.positions ?? null))}</script>`,
     `<script>${inlineScript(CARD_HEIGHT_SCRIPT)}</script>`,
     "</body>",
     "</html>",
@@ -141,35 +141,77 @@ export const CARD_STORAGE_MESSAGE = "mycompanion:card-storage";
  */
 export const CARD_PANEL_MESSAGE = "mycompanion:card-panel";
 
-/** 卡存储里保存浮动面板位置的键。 */
+/** 面板位置消息里的键名（位置实际存在 `CARD_PANEL_POSITION_PREFIX` 下，按角色卡记忆）。 */
 export const CARD_PANEL_STORAGE_KEY = "mycompanion:panel-position";
+
+/**
+ * 一个浮动面板的存档位置。`at` 是保存时的时间戳：重建文档内联的存档可能落后于
+ * 拖动途中的最新值（流式期间文档每个 delta 都重建），守卫按它只采纳更新的存档。
+ */
+export interface CardPanelPosition {
+  left: number;
+  top: number;
+  at: number;
+}
+
+/** 各浮动面板的存档：`bubble` 是悬浮球（launcher），`panel` 是点开后的配置面板。 */
+export interface CardPanelPositions {
+  bubble?: CardPanelPosition;
+  panel?: CardPanelPosition;
+}
 
 /**
  * 代理第三方助手记住浮动面板位置。
  *
- * 为什么需要：实测这张卡的配置助手把面板位置放在**内联样式**里（`bubble.style.left/top`），
- * 全文件只有两处 `setItem`（出生地、模式），位置从未落盘，所以每次文档重建都回到默认值。
- * 而酒馆助手自己的浮窗是**会存**的（`Dialog.vue`：`TH-Dialog-<id>:pos` 存 `{left, top}`，
- * 挂载时读取、拖动时保存、恢复后夹进视口）。这里按同一思路补上它缺的那一步。
+ * 为什么需要：实测这张卡的配置助手（远程脚本 道渊配置小助手.min.js）把悬浮球与面板
+ * 挂到**父页面文档**（`p.document.body`，p = window.parent），位置写在**内联样式**里
+ * （`bubble.style.left/top`），从未落盘，所以每次文档重建都回到默认值（气泡
+ * `left:60px; top:40vh`，面板 `left:110px; top:35vh`）。酒馆助手自己的浮窗
+ * （`Dialog.vue`）是另一种架构：位置是组件状态、DOM 只是投影，存储只在拖动结束等
+ * 显式事件里写（`TH-Dialog-<id>:pos`），恢复在挂载时同步完成——卡的任何代码都插不进来。
  *
- * 三条约束：
- *  1. **只在本页首次出现时恢复一次**：之后完全由卡自己掌控。若卡将来自己实现了恢复，
- *     它会在我们之后再设一次样式，从而覆盖我们的值——以卡为准，不打架。
- *  2. **只接受像素值**：卡默认写的是 `40vh` 这类视口单位，忽略它，避免把视口单位当像素读。
- *  3. **恢复前夹进当前视口**：窗口变小后旧坐标可能落在屏幕外，与助手自己的
- *     `checkAndAdjustBounds` 同理。
+ * 我们改不了卡，只能把这个思路移植到宿主侧，三条对应关系：
+ *  1. **页面级单例**：守卫装在父页面全局（`__mycompanionPanelGuard`），全页只有一套
+ *     监听器；卡文档重建时新脚本按角色 id 决定是整表替换（换了卡）还是按时间戳采纳
+ *     （同一张卡的重建——内联存档可能比拖动中的内存值旧，绝不用旧值覆盖新值）。
+ *  2. **让卡的写入打不进来**：位置用 `!important` CSS 规则锁定，而不是改内联样式——
+ *     卡的初始化/重建写任何默认值都赢不了 `!important`；选择器按 id 匹配，元素
+ *     销毁重建也自动生效。悬浮球与配置面板是两个独立目标，各锁各的。
+ *  3. **拖动途中就记值**：用户 `pointerdown` 落在目标上才解锁（先把锁定位置写成内联
+ *     样式防止跳变），`pointermove` 期间持续把 px 位置记入内存（带时间戳），
+ *     `pointerup` 后等吸附动画停稳再落盘并重新上锁。这样即使松手后的 800ms 窗口里
+ *     文档被重建（新元素内联样式是默认值、vh 单位读不出 px），拖动成果也不会丢——
+ *     实测"发消息后弹回最初位置"正是这个竞态。
  */
-export function buildCardPanelScript(storageKey: string, stored: { left: number; top: number } | null): string {
+export function buildCardPanelScript(storageKey: string, characterId: string, stored: CardPanelPositions | null): string {
   return `(function () {
   var MESSAGE = ${JSON.stringify(CARD_PANEL_MESSAGE)};
   var STORAGE_KEY = ${JSON.stringify(storageKey)};
+  var CHARACTER_ID = ${JSON.stringify(characterId)};
   var SAVED = ${toInlineLiteral(stored)};
-  var BUBBLE_ID = 'bp-switch-bubble';
+  var LOCK_ID = 'mycompanion:panel-lock';
+  var TARGETS = { bubble: 'bp-switch-bubble', panel: 'bp-switch-panel' };
   var host = null;
   try { host = window.parent && window.parent !== window ? window.parent : null; } catch (error) { host = null; }
   if (!host || !host.document) return;
-  var restored = false;
-  var observed = null;
+
+  function now() { return Date.now(); }
+  function valid(pos) { return pos && typeof pos.left === 'number' && typeof pos.top === 'number'; }
+  function at(pos) { return pos && typeof pos.at === 'number' && isFinite(pos.at) ? pos.at : 0; }
+  function adoptable(pos) { return valid(pos) ? { left: pos.left, top: pos.top, at: at(pos) } : null; }
+
+  // 守卫已存在（卡文档重建）：换了卡就整表替换（无存档也要清，否则上一张卡的坐标
+  // 会被锁到这张卡的气泡上）；同一张卡的重建按时间戳采纳，内联旧值不覆盖内存新值。
+  var existing = host.__mycompanionPanelGuard;
+  if (existing) {
+    if (existing.characterId !== CHARACTER_ID) existing.reset(SAVED);
+    else existing.adopt(SAVED);
+    existing.relock();
+    return;
+  }
+
+  var positions = { bubble: null, panel: null };
+  var dragging = null;
 
   function pixels(value) {
     var text = String(value == null ? '' : value).trim();
@@ -179,9 +221,10 @@ export function buildCardPanelScript(storageKey: string, stored: { left: number;
   }
 
   /** 把位置夹进当前视口；卡自己的越界回退逻辑同样会这么做。 */
-  function clamp(left, top, element) {
-    var width = element.offsetWidth || 66;
-    var height = element.offsetHeight || 88;
+  function clamp(key, left, top) {
+    var el = host.document.getElementById(TARGETS[key]);
+    var width = el && el.offsetWidth || 66;
+    var height = el && el.offsetHeight || 88;
     var viewportWidth = host.innerWidth || host.document.documentElement.clientWidth || 0;
     var viewportHeight = host.innerHeight || host.document.documentElement.clientHeight || 0;
     if (viewportWidth > 0) left = Math.max(0, Math.min(left, Math.max(0, viewportWidth - width)));
@@ -189,60 +232,118 @@ export function buildCardPanelScript(storageKey: string, stored: { left: number;
     return { left: left, top: top };
   }
 
-  function restore(element) {
-    if (restored || !SAVED) return;
-    restored = true;
-    if (typeof SAVED.left !== 'number' || typeof SAVED.top !== 'number') return;
-    var position = clamp(SAVED.left, SAVED.top, element);
-    // 卡给气泡设了 transition: left/top。若直接改样式，会先按默认位置绘制、再动画到保存位置，
-    // 看起来就是"先出现在最开始的位置"（实测确认）。恢复期间临时屏蔽过渡，让它直接落到目标位置。
-    var suppress = null;
+  // 锁定用一条 CSS 规则（id 选择器 + !important），正在拖动的目标不锁。
+  function relock() {
+    var stale = host.document.getElementById(LOCK_ID);
+    if (stale) { try { stale.remove(); } catch (error) {} }
+    var css = '';
+    for (var key in TARGETS) {
+      if (key === dragging) continue;
+      var pos = positions[key];
+      if (!pos) continue;
+      var clamped = clamp(key, pos.left, pos.top);
+      pos.left = clamped.left; pos.top = clamped.top;
+      css += '#' + TARGETS[key] + '{left:' + pos.left + 'px !important;top:' + pos.top + 'px !important;transition:none !important;}';
+    }
+    if (!css) return;
     try {
-      suppress = host.document.createElement('style');
-      suppress.textContent = '#' + BUBBLE_ID + '{transition:none !important}';
-      (host.document.head || host.document.documentElement).appendChild(suppress);
-      element.style.left = position.left + 'px';
-      element.style.top = position.top + 'px';
-      // 强制重排：让上面的值成为过渡的**起点**，否则解除屏蔽后仍会补一段动画。
-      void element.offsetWidth;
-    } catch (error) {
-      // 插入样式失败时退回到直接赋值：位置仍然正确，可能多一段过渡动画。
-      element.style.left = position.left + 'px';
-      element.style.top = position.top + 'px';
-    }
-    if (suppress) {
-      // 下一帧再移除，确保浏览器已经以最终位置绘制过一帧。
-      (host.requestAnimationFrame || function (fn) { return host.setTimeout(fn, 16); })(function () {
-        try { suppress.remove(); } catch (error) {}
-      });
-    }
+      var rule = host.document.createElement('style');
+      rule.id = LOCK_ID;
+      rule.textContent = css;
+      (host.document.head || host.document.documentElement).appendChild(rule);
+    } catch (error) {}
   }
 
-  function report(element) {
-    var left = pixels(element.style.left);
-    var top = pixels(element.style.top);
-    // 卡默认写的是视口单位（如 40vh）：不把它当成像素存下来。
+  function targetOf(event) {
+    for (var key in TARGETS) {
+      var el = host.document.getElementById(TARGETS[key]);
+      if (el && (event.target === el || el.contains(event.target))) return key;
+    }
+    return null;
+  }
+
+  host.document.addEventListener('pointerdown', function (event) {
+    var key = targetOf(event);
+    if (!key) return;
+    dragging = key;
+    // 解锁前把锁定位置写成内联样式：否则解锁瞬间元素跳回卡的默认值再被拖走。
+    var pos = positions[key];
+    var el = host.document.getElementById(TARGETS[key]);
+    if (pos && el) {
+      el.style.left = pos.left + 'px';
+      el.style.top = pos.top + 'px';
+      void el.offsetWidth;
+    }
+    relock();
+  }, true);
+
+  // 拖动途中持续把 px 位置记入内存：松手后即使文档立刻重建（新元素内联是默认值），
+  // 最后已知位置仍在，不会读不到值而丢弃整次拖动。
+  host.document.addEventListener('pointermove', function () {
+    if (!dragging) return;
+    var el = host.document.getElementById(TARGETS[dragging]);
+    if (!el) return;
+    var left = pixels(el.style.left);
+    var top = pixels(el.style.top);
     if (left === null || top === null) return;
-    var position = clamp(left, top, element);
-    try { host.postMessage({ type: MESSAGE, key: STORAGE_KEY, left: position.left, top: position.top }, '*'); } catch (error) {}
+    positions[dragging] = { left: left, top: top, at: now() };
+  }, true);
+
+  host.document.addEventListener('pointerup', scheduleFinish, true);
+  // 拖动被系统打断（触摸取消、窗口失焦）时 pointerup 不触发：cancel 同样收尾。
+  host.document.addEventListener('pointercancel', scheduleFinish, true);
+
+  function scheduleFinish() {
+    if (!dragging) return;
+    var key = dragging;
+    dragging = null;
+    // 吸附动画在松手后仍写 px：等它停稳再读最终位置。
+    setTimeout(function () { finishDrag(key); }, 800);
   }
 
-  function watch(element) {
-    if (!element || observed === element) return;
-    observed = element;
-    restore(element);
-    // 拖动与吸附都会改写内联样式，因此观察属性即可，无需介入它的事件处理。
-    if (typeof host.MutationObserver === 'function') {
-      new host.MutationObserver(function () { report(element); }).observe(element, { attributes: true, attributeFilter: ['style'] });
+  function finishDrag(key) {
+    // 等待期间用户又抓住了面板：推迟到这次拖动结束，绝不在拖动途中读值/上锁。
+    if (dragging) { setTimeout(function () { finishDrag(key); }, 300); return; }
+    // DOM 读得出 px 就刷新内存值（保留原时间戳）；读不出（重建后的 vh 默认值）
+    // 就落拖动途中记下的最后已知位置——两种来源都不会丢。
+    var el = host.document.getElementById(TARGETS[key]);
+    if (el) {
+      var left = pixels(el.style.left);
+      var top = pixels(el.style.top);
+      if (left !== null && top !== null) {
+        var prev = positions[key];
+        positions[key] = { left: left, top: top, at: prev ? prev.at : now() };
+      }
     }
+    var pos = positions[key];
+    if (pos) {
+      var clamped = clamp(key, pos.left, pos.top);
+      pos.left = clamped.left; pos.top = clamped.top;
+      try { host.postMessage({ type: MESSAGE, key: STORAGE_KEY, target: key, left: pos.left, top: pos.top, at: pos.at }, '*'); } catch (error) {}
+    }
+    relock();
   }
 
-  watch(host.document.getElementById(BUBBLE_ID));
-  // 助手是异步挂载气泡的（模块要等 CDN 加载），因此还要等它出现。
-  if (typeof host.MutationObserver === 'function') {
-    new host.MutationObserver(function () { watch(host.document.getElementById(BUBBLE_ID)); })
-      .observe(host.document.body || host.document.documentElement, { childList: true, subtree: true });
-  }
+  // 窗口尺寸变化后重新夹取并锁定。
+  host.addEventListener('resize', function () { if (!dragging) relock(); });
+
+  host.__mycompanionPanelGuard = {
+    characterId: CHARACTER_ID,
+    relock: relock,
+    // 同卡重建：逐目标按时间戳采纳，内存里的新拖动成果优先于内联旧存档。
+    adopt: function (incoming) {
+      for (var key in TARGETS) {
+        var inc = incoming ? adoptable(incoming[key]) : null;
+        if (inc && (!positions[key] || inc.at > positions[key].at)) positions[key] = inc;
+      }
+    },
+    // 换卡：整表替换（含 null），绝不把上一张卡的坐标锁到这张卡上。
+    reset: function (incoming) {
+      for (var key in TARGETS) positions[key] = incoming ? adoptable(incoming[key]) : null;
+    },
+  };
+  for (var key in TARGETS) positions[key] = SAVED ? adoptable(SAVED[key]) : null;
+  relock();
 })();`;
 }
 
@@ -280,34 +381,71 @@ export function readCardStorage(conversationId: string): { local: Record<string,
   return { local: read("local"), session: read("session") };
 }
 
+/**
+ * 浮动面板位置的存储键前缀。
+ *
+ * 面板位置是**界面偏好**而非游戏存档，因此按**角色卡**记忆（同一张卡无论开多少
+ * 新故事都保持用户调好的位置），与按故事隔离的卡存储（`CARD_STORAGE_PREFIX`）分开。
+ */
+export const CARD_PANEL_POSITION_PREFIX = "mycompanion:panel-position";
+
+/** 浮动面板目标的合法名字（悬浮球 / 配置面板）。 */
+export type CardPanelTarget = "bubble" | "panel";
+
+function validPanelEntry(value: unknown): CardPanelPosition | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const { left, top, at } = value as { left?: unknown; top?: unknown; at?: unknown };
+  if (typeof left !== "number" || typeof top !== "number") return null;
+  if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
+  // 负值说明存下来的数据已不可信（窗口尺寸变化等），交给卡自己决定。
+  if (left < 0 || top < 0) return null;
+  return { left, top, at: typeof at === "number" && Number.isFinite(at) ? at : 0 };
+}
+
 /** 读取宿主代记的浮动面板位置；没有或数据不可用时返回 null（由卡用它自己的默认值）。 */
-export function readCardPanelPosition(conversationId: string): { left: number; top: number } | null {
+export function readCardPanelPositions(characterId: string): CardPanelPositions | null {
   try {
-    const raw = readCardStorage(conversationId).local[CARD_PANEL_STORAGE_KEY];
+    const raw = window.localStorage.getItem(`${CARD_PANEL_POSITION_PREFIX}:${characterId}`);
     if (!raw) return null;
     const parsed: unknown = JSON.parse(raw);
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-    const { left, top } = parsed as { left?: unknown; top?: unknown };
-    if (typeof left !== "number" || typeof top !== "number") return null;
-    if (!Number.isFinite(left) || !Number.isFinite(top)) return null;
-    // 负值说明存下来的数据已不可信（窗口尺寸变化等），交给卡自己决定。
-    if (left < 0 || top < 0) return null;
-    return { left, top };
+    // 旧版存档是单个 {left, top}（只有气泡）：迁成 bubble 条目，时间戳记 0，
+    // 任何一次新的拖动都会凭更大的 at 盖过它。
+    const legacy = validPanelEntry(parsed);
+    const record = parsed as { bubble?: unknown; panel?: unknown };
+    const bubble = validPanelEntry(record.bubble) ?? legacy;
+    const panel = validPanelEntry(record.panel);
+    if (!bubble && !panel) return null;
+    return { ...(bubble ? { bubble } : {}), ...(panel ? { panel } : {}) };
   } catch {
     return null;
   }
 }
 
-/** 保存宿主代记的浮动面板位置；数值不合法时忽略，避免把坏坐标写进去。 */
-export function persistCardPanelPosition(conversationId: string, left: unknown, top: unknown): void {
+/**
+ * 保存宿主代记的浮动面板位置；数值不合法时忽略，避免把坏坐标写进去。
+ *
+ * `at` 是拖动方记值的时间戳：只有更新的存档才覆盖旧的——松手后的落盘与文档重建
+ * 可能乱序到达，绝不让旧值把新拖动成果顶掉。
+ */
+export function persistCardPanelPosition(characterId: string, target: unknown, left: unknown, top: unknown, at: unknown): void {
+  if (target !== "bubble" && target !== "panel") return;
   if (typeof left !== "number" || typeof top !== "number") return;
   if (!Number.isFinite(left) || !Number.isFinite(top) || left < 0 || top < 0) return;
-  // 与卡自己的存储走同一条落盘路径，因此切故事/重载后一并恢复。
-  persistCardStorage(conversationId, {
-    kind: "local",
-    key: CARD_PANEL_STORAGE_KEY,
-    value: JSON.stringify({ left: Math.round(left), top: Math.round(top) }),
-  });
+  const stamp = typeof at === "number" && Number.isFinite(at) ? at : Date.now();
+  try {
+    const key = `${CARD_PANEL_POSITION_PREFIX}:${characterId}`;
+    const existing = readCardPanelPositions(characterId) ?? {};
+    const current = existing[target];
+    if (current && current.at > stamp) return;
+    const next: CardPanelPositions = {
+      ...existing,
+      [target]: { left: Math.round(left), top: Math.round(top), at: stamp },
+    };
+    window.localStorage.setItem(key, JSON.stringify(next));
+  } catch {
+    // 忽略：存储不可用（配额、隐私模式）时面板仍可拖动，只是位置不保留。
+  }
 }
 
 /**
@@ -449,7 +587,9 @@ export const CARD_HEIGHT_SCRIPT = `(function () {
     var top = Infinity, bottom = 0;
     for (var i = 0; i < children.length; i++) {
       var el = children[i];
-      if (getComputedStyle(el).position === 'fixed') continue;
+      // 固定/绝对定位的装饰层不参与（卡片的"整屏"容器已被上方规则改为 relative）。
+      var positioned = getComputedStyle(el).position;
+      if (positioned === 'fixed' || positioned === 'absolute') continue;
       var rect = el.getBoundingClientRect();
       if (rect.height <= 0 && rect.width <= 0) continue;
       var childTop = rect.top + window.scrollY;

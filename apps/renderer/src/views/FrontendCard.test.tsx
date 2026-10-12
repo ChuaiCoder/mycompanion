@@ -1,7 +1,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import type { ConversationDetail } from "@mycompanion/shared";
-import { buildCardDocument, buildCardPanelScript, buildCardStorageScript, cardStorageKey, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX, CARD_PANEL_MESSAGE, CARD_PANEL_STORAGE_KEY, CARD_STORAGE_MESSAGE, CARD_STORAGE_PREFIX, persistCardPanelPosition, persistCardStorage, readCardPanelPosition, readCardStorage } from "../frontend-card-frame";
+import { buildCardDocument, buildCardPanelScript, buildCardStorageScript, cardStorageKey, CARD_HEIGHT_MESSAGE, CARD_HEIGHT_SCRIPT, CARD_IFRAME_CSP, CARD_IFRAME_SANDBOX, CARD_PANEL_MESSAGE, CARD_PANEL_STORAGE_KEY, CARD_STORAGE_MESSAGE, CARD_STORAGE_PREFIX, persistCardPanelPosition, persistCardStorage, readCardPanelPositions, readCardStorage } from "../frontend-card-frame";
 import { frontendCardOf, hasCardScript } from "../frontend-card";
 import { ChatView, type ChatViewProps } from "./ChatView";
 
@@ -112,47 +112,74 @@ it("persists and clears card storage per story on the host side", () => {
 });
 
 it("remembers the card assistant's panel position, which the card itself never saves", () => {
-  // 实测这张卡的配置助手把面板位置放在内联样式里，全文件只有出生地与模式两处写入，
-  // 所以每次文档重建都回到默认值。酒馆助手自己的浮窗是会存的（TH-Dialog-<id>:pos），
-  // 这里按同一思路代它记住。
-  const script = buildCardPanelScript(CARD_PANEL_STORAGE_KEY, { left: 321, top: 654 });
+  // 实测这张卡的配置助手（远程脚本 道渊配置小助手.min.js）把悬浮球与面板挂到父页面
+  // 文档，位置只写内联样式（气泡默认 left:60px; top:40vh），从未落盘，所以每次文档
+  // 重建都回到默认值。酒馆助手自己的浮窗是会存的（TH-Dialog-<id>:pos），这里按同一
+  // 思路代它记住。
+  const character = "33333333-3333-4333-8333-333333333333";
+  const script = buildCardPanelScript(CARD_PANEL_STORAGE_KEY, character, { bubble: { left: 321, top: 654, at: 7 } });
   // 位置同步内联进去（助手可能在窗口 resize 前就要恢复）。
   expect(script).toContain(CARD_PANEL_STORAGE_KEY);
+  expect(script).toContain(character);
   expect(script).toContain("321");
   expect(script).toContain("654");
-  // 只恢复一次，之后完全由卡掌控——卡若自己会恢复，它的值必须胜出。
-  expect(script).toContain("if (restored || !SAVED) return");
-  expect(script).toContain("restored = true");
-  // 恢复时必须临时屏蔽过渡：否则气泡先按默认位置绘制、再动画过去，
-  // 用户看到的就是"先出现在最开始的位置"（实测确认）。
-  expect(script).toContain("transition:none !important");
-  expect(script).toContain("offsetWidth");
-  // 只接受像素值：卡默认写的是 40vh 这类视口单位，不能当像素读。
+  // 移植酒馆助手 Dialog.vue 的思路：页面级单例守卫 + !important CSS 规则锁定位置，
+  // 卡的初始化/重建写任何默认值都打不过 !important，元素销毁重建也自动生效。
+  expect(script).toContain("__mycompanionPanelGuard");
+  expect(script).toContain("mycompanion:panel-lock");
+  expect(script).toContain("!important");
+  // 悬浮球与配置面板是两个独立目标，各锁各的。
+  expect(script).toContain("bp-switch-bubble");
+  expect(script).toContain("bp-switch-panel");
+  // 用户拖动才解锁并重存：pointerdown 解锁、pointerup 后读最终位置存档再上锁；
+  // 卡的程序性写入（px 或 40vh）一律被锁挡住，不会污染存档（实测：发消息重建后弹回）。
+  expect(script).toContain("pointerdown");
+  expect(script).toContain("pointerup");
+  // 拖动途中持续记值：松手后的 800ms 窗口里文档被重建（流式逐 delta 重建 srcdoc），
+  // 新元素内联是默认值、读不出 px——内存里的最后已知位置保证拖动成果不丢。
+  expect(script).toContain("pointermove");
+  // 拖动被系统打断（pointercancel）也要收尾；快速二次抓取时绝不在拖动途中读值/上锁。
+  expect(script).toContain("pointercancel");
+  expect(script).toContain("if (dragging) { setTimeout(function () { finishDrag(key); }, 300); return; }");
   expect(script).toContain("px$");
-  // 恢复前夹进当前视口，与助手自己的边界处理同理。
+  // 重建时同一张卡按时间戳采纳（内联旧值不覆盖内存新值），换了卡整表替换。
+  expect(script).toContain("inc.at > positions[key].at");
+  expect(script).toContain("existing.characterId !== CHARACTER_ID");
+  // 恢复前夹进当前视口，与助手自己的边界处理同理；窗口变化后重新夹取。
   expect(script).toContain("clamp");
   expect(script).toContain("innerWidth");
-  // 拖动与吸附都改内联样式，因此观察属性而不是介入它的事件。
-  expect(script).toContain("MutationObserver");
+  expect(script).toContain("resize");
   expect(script).toContain(CARD_PANEL_MESSAGE);
 
   // 首次运行没有存过位置时，注入 null，由卡用默认值。
-  expect(buildCardPanelScript(CARD_PANEL_STORAGE_KEY, null)).toContain("var SAVED = null");
+  expect(buildCardPanelScript(CARD_PANEL_STORAGE_KEY, character, null)).toContain("var SAVED = null");
 
-  // 宿主侧读写：按故事隔离、坏值不写入、坏数据不返回。
-  const story = "33333333-3333-4333-8333-333333333333";
-  expect(readCardPanelPosition(story)).toBeNull();
-  persistCardPanelPosition(story, 120, 240);
-  expect(readCardPanelPosition(story)).toEqual({ left: 120, top: 240 });
-  // 非有限值、负值、非数值一律忽略，避免把坏坐标覆盖上去。
-  persistCardPanelPosition(story, Number.NaN, 10);
-  persistCardPanelPosition(story, -5, 10);
-  persistCardPanelPosition(story, "120", 10);
-  expect(readCardPanelPosition(story)).toEqual({ left: 120, top: 240 });
+  // 宿主侧读写：按角色卡记忆、坏值不写入、坏数据不返回。
+  expect(readCardPanelPositions(character)).toBeNull();
+  persistCardPanelPosition(character, "bubble", 120, 240, 10);
+  expect(readCardPanelPositions(character)).toEqual({ bubble: { left: 120, top: 240, at: 10 } });
+  // 非有限值、负值、非数值、未知目标一律忽略，避免把坏坐标覆盖上去。
+  persistCardPanelPosition(character, "bubble", Number.NaN, 10, 11);
+  persistCardPanelPosition(character, "bubble", -5, 10, 11);
+  persistCardPanelPosition(character, "bubble", "120", 10, 11);
+  persistCardPanelPosition(character, "toast", 500, 500, 12);
+  expect(readCardPanelPositions(character)).toEqual({ bubble: { left: 120, top: 240, at: 10 } });
+  // 面板是独立条目；旧时间戳的落盘（乱序到达）不覆盖新值。
+  persistCardPanelPosition(character, "panel", 30, 40, 9);
+  expect(readCardPanelPositions(character)).toEqual({
+    bubble: { left: 120, top: 240, at: 10 },
+    panel: { left: 30, top: 40, at: 9 },
+  });
+  persistCardPanelPosition(character, "bubble", 999, 999, 5);
+  expect(readCardPanelPositions(character)?.bubble).toEqual({ left: 120, top: 240, at: 10 });
 
-  window.localStorage.setItem(cardStorageKey(story, "local"), JSON.stringify({ [CARD_PANEL_STORAGE_KEY]: "{ broken" }));
-  expect(readCardPanelPosition(story)).toBeNull();
-  window.localStorage.removeItem(cardStorageKey(story, "local"));
+  // 旧版存档（单个 {left, top}，只有气泡）迁成 bubble 条目，时间戳记 0。
+  window.localStorage.setItem(`mycompanion:panel-position:${character}`, JSON.stringify({ left: 60, top: 70 }));
+  expect(readCardPanelPositions(character)).toEqual({ bubble: { left: 60, top: 70, at: 0 } });
+
+  window.localStorage.setItem(`mycompanion:panel-position:${character}`, "{ broken");
+  expect(readCardPanelPositions(character)).toBeNull();
+  window.localStorage.removeItem(`mycompanion:panel-position:${character}`);
 });
 
 it("lays the card's screens out at full width, one at a time", () => {

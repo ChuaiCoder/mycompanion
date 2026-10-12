@@ -2,7 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 import { useTranslation } from "react-i18next";
 import "../../i18n";
 
-import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX, CARD_PANEL_MESSAGE, CARD_PANEL_STORAGE_KEY, CARD_STORAGE_MESSAGE, persistCardPanelPosition, persistCardStorage, readCardPanelPosition, readCardStorage } from "../../frontend-card-frame";
+import { buildCardDocument, CARD_HEIGHT_MESSAGE, CARD_IFRAME_SANDBOX, CARD_PANEL_MESSAGE, CARD_PANEL_STORAGE_KEY, CARD_STORAGE_MESSAGE, persistCardPanelPosition, persistCardStorage, readCardPanelPositions, readCardStorage } from "../../frontend-card-frame";
 import { CARD_BRIDGE_RESPONSE, parseCardBridgeRequest, runCardBridgeRequest, type CardBridgeHost } from "../../frontend-card-bridge";
 import { hasCardScript } from "../../frontend-card";
 
@@ -15,7 +15,7 @@ const MAX_HEIGHT = 4000;
 //
 // 这里刻意不消毒卡片 HTML —— 消毒会抹掉文档级结构（整段变空）。子文档的作用是隔离
 // CSS 与文档结构；它不是安全边界——按产品决策（spec §5.10），卡脚本是可信的高权限代码。
-export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, hostGlobals, conversationId }: {
+export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, hostGlobals, conversationId, characterId }: {
   markup: string;
   messageId: string;
   /** 卡片可调用的宿主能力；缺省时卡片脚本会走自己的降级分支。 */
@@ -26,14 +26,18 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
   hostGlobals?: Record<string, unknown> | undefined;
   /** 当前故事 id：卡存储按故事隔离，切故事不会串。 */
   conversationId: string;
+  /** 当前角色卡 id：面板位置按卡记忆，同一张卡跨故事保持。 */
+  characterId: string;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [height, setHeight] = useState(FALLBACK_HEIGHT);
   const { t } = useTranslation();
   const scripted = hasCardScript(markup);
-  // 消息监听器只装一次，因此用 ref 取当前故事 id 来落盘。
+  // 消息监听器只装一次，因此用 ref 取当前故事 id 与角色 id 来落盘。
   const storyRef = useRef(conversationId);
   storyRef.current = conversationId;
+  const characterRef = useRef(characterId);
+  characterRef.current = characterId;
 
   // 桥的宿主信息放进 ref：消息按引用变化不应重建 iframe，否则卡片界面会被整块重载。
   const host = useRef(bridge);
@@ -48,9 +52,10 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
   useLayoutEffect(() => {
     const element = frame.current;
     if (!element) return;
-    // 已保存的卡存储同步注入：卡在初始化阶段就同步读取它（面板位置、存档选择等）。
-    element.srcdoc = buildCardDocument(markup, runtimeSource, initialHostGlobals.current, readCardStorage(conversationId), readCardPanelPosition(conversationId));
-  }, [markup, runtimeSource, conversationId]);
+    // 已保存的卡存储同步注入：卡在初始化阶段就同步读取它（存档选择等）。
+    // 面板位置按角色卡读取（界面偏好，跨故事保持），不走按故事隔离的卡存储。
+    element.srcdoc = buildCardDocument(markup, runtimeSource, initialHostGlobals.current, readCardStorage(conversationId), { characterId, positions: readCardPanelPositions(characterId) });
+  }, [markup, runtimeSource, conversationId, characterId]);
 
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
@@ -58,7 +63,7 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
       // 只接受本 iframe 发来的消息。
       if (!element || event.source !== element.contentWindow) return;
 
-      const data = event.data as { type?: unknown; height?: unknown; kind?: unknown; key?: unknown; value?: unknown; left?: unknown; top?: unknown } | null;
+      const data = event.data as { type?: unknown; height?: unknown; kind?: unknown; key?: unknown; value?: unknown; target?: unknown; left?: unknown; top?: unknown; at?: unknown } | null;
       if (data && data.type === CARD_HEIGHT_MESSAGE) {
         const value = typeof data.height === "number" ? data.height : 0;
         if (!Number.isFinite(value) || value <= 0) return;
@@ -66,10 +71,10 @@ export function FrontendCardMessage({ markup, messageId, bridge, runtimeSource, 
         return;
       }
 
-      // 卡的助手报了浮动面板位置：由宿主代记，下一次文档重建时写回。
+      // 卡的助手报了浮动面板位置：由宿主按角色卡代记，下一次文档重建时写回。
       if (data && data.type === CARD_PANEL_MESSAGE) {
         if (data.key !== CARD_PANEL_STORAGE_KEY) return;
-        persistCardPanelPosition(storyRef.current, data.left, data.top);
+        persistCardPanelPosition(characterRef.current, data.target, data.left, data.top, data.at);
         return;
       }
 
